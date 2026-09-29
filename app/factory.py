@@ -15,6 +15,7 @@ from app.db.session import (
 from app.providers.mock import MockProvider
 from app.providers.registry import ProviderRegistry
 from app.providers.venice import VeniceProvider
+from app.services.usage import UsageService
 
 
 def build_provider_registry(settings: Settings) -> ProviderRegistry:
@@ -29,6 +30,7 @@ def create_app(
     settings: Settings | None = None,
     registry: ProviderRegistry | None = None,
     session_factory: SessionFactory | None = None,
+    usage_service: UsageService | None = None,
 ) -> FastAPI:
     """Build and configure the FastAPI application."""
 
@@ -45,11 +47,14 @@ def create_app(
         initialize_database(database_engine)
         resolved_session_factory = create_session_factory(database_engine)
 
+    resolved_usage_service = usage_service or UsageService(resolved_session_factory)
+
     app = FastAPI(title="Shluz", version=resolved_settings.service_version)
     app.state.settings = resolved_settings
     app.state.provider_registry = resolved_registry
     app.state.database_engine = database_engine
     app.state.session_factory = resolved_session_factory
+    app.state.usage_service = resolved_usage_service
 
     @app.get("/health", tags=["system"])
     def health() -> dict[str, str]:

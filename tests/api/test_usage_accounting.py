@@ -1,6 +1,5 @@
 from decimal import Decimal
 
-from app.services.usage import UsageStorageError
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -18,6 +17,7 @@ from app.providers.base import (
     ProviderRateLimitError,
 )
 from app.providers.registry import ProviderRegistry
+from app.services.usage import UsageStorageError
 
 
 class SuccessfulProvider:
