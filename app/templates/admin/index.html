@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Shluz — управление</title>
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+    <main class="shell">
+        <header class="hero">
+            <div>
+                <p class="eyebrow">Центральный API-шлюз</p>
+                <h1>{{ service_name }}</h1>
+                <p class="muted">Простая панель состояния. Секреты здесь не отображаются.</p>
+            </div>
+            <span class="status">Работает</span>
+        </header>
+
+        <section class="grid" aria-label="Состояние системы">
+            <article class="card">
+                <span class="label">Окружение</span>
+                <strong>{{ environment }}</strong>
+            </article>
+            <article class="card">
+                <span class="label">Версия</span>
+                <strong>{{ version }}</strong>
+            </article>
+            <article class="card">
+                <span class="label">Моделей</span>
+                <strong>{{ model_count }}</strong>
+            </article>
+            <article class="card">
+                <span class="label">Провайдеры</span>
+                <strong>{{ provider_names | join(', ') }}</strong>
+            </article>
+        </section>
+
+        <section class="links" aria-label="Быстрые ссылки">
+            <a href="/docs">Интерактивная документация API</a>
+            <a href="/health">Проверка состояния сервера</a>
+        </section>
+
+        <footer>
+            На следующих этапах здесь появятся пользователи, тарифы, расход и провайдеры.
+        </footer>
+    </main>
+</body>
+</html>

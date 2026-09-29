@@ -1,85 +1,83 @@
 # Shluz
 
-Очень простой proof of concept центрального API-шлюза.
+Shluz — центральный API-шлюз между пользовательскими приложениями и поставщиками нейросетей.
 
-Сейчас он **не подключён к Venice или Supabase**. Цель этого этапа — проверить саму схему:
-
-```
+```text
 Harness / сайт / Telegram
           ↓
         Shluz
           ↓
-   будущие AI-провайдеры
+Venice / Nous / OpenRouter / собственные модели
 ```
 
-## Что уже есть
+Пользовательские приложения обращаются только к Shluz. Реальные ключи поставщиков хранятся на сервере и не попадают в Harness, браузер или Telegram.
 
-- `GET /health` — проверка, что сервер работает.
-- `POST /v1/chat/completions` — минимально похожий на OpenAI API endpoint.
-- Простая проверка `Bearer`-токена.
-- Mock-ответ вместо реального запроса к модели.
-- Заготовки переменных окружения для Supabase и Venice.
+## Что уже работает
 
-## Запуск локально
+- проверка состояния сервера: `GET /health`;
+- список моделей в формате OpenAI API: `GET /v1/models`;
+- чат в формате OpenAI API: `POST /v1/chat/completions`;
+- временная авторизация через Bearer-токен;
+- тестовый `MockProvider`, не расходующий деньги;
+- закрытая браузерная панель `/admin`;
+- интерактивная документация `/docs`;
+- Docker-упаковка и автоматические тесты.
 
-Требуется Python 3.11+.
+Сейчас это безопасный технический фундамент. Venice, Supabase, пользователи, тарифы и платежи ещё не подключены.
+
+## Самый простой запуск через Docker
+
+1. Установите Docker Desktop.
+2. Скопируйте `.env.example` в файл `.env`.
+3. Замените значения `CHANGE_ME` на длинные случайные значения.
+4. Запустите:
 
 ```bash
-python -m venv .venv
+docker compose up --build
 ```
 
-Windows:
+После запуска откройте:
+
+- панель управления: <http://localhost:8000/admin>;
+- документацию API: <http://localhost:8000/docs>;
+- состояние сервера: <http://localhost:8000/health>.
+
+Для входа в `/admin` используйте `SHLUZ_ADMIN_USERNAME` и `SHLUZ_ADMIN_PASSWORD` из `.env`.
+
+## Локальный запуск на Windows без Docker
+
+Требуется Python 3.12 или новее.
 
 ```powershell
-.venv\Scripts\activate
-pip install -r requirements.txt
-set SHLUZ_TEST_TOKEN=dev-token
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -e ".[dev]"
+Copy-Item .env.example .env
 uvicorn app.main:app --reload
 ```
 
-После запуска:
+Перед запуском откройте `.env` и замените значения `CHANGE_ME`.
 
-- http://127.0.0.1:8000/health
-- http://127.0.0.1:8000/docs — графическая документация API
+## Проверка API
 
-## Тест запроса
+В браузере откройте <http://localhost:8000/docs>, нажмите **Authorize** и укажите токен из `SHLUZ_BOOTSTRAP_API_TOKEN`. После этого можно выполнять тестовые запросы кнопкой **Try it out**.
 
-```bash
-curl http://127.0.0.1:8000/v1/chat/completions \
-  -H "Authorization: Bearer dev-token" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "demo-model",
-    "messages": [
-      {"role": "user", "content": "Привет"}
-    ]
-  }'
-```
+Тестовая модель называется `mock-chat`. Она возвращает сообщение пользователя обратно и не обращается к внешним сервисам.
 
-Ожидаемый ответ содержит:
+## Безопасность
 
-```json
-{
-  "choices": [
-    {
-      "message": {
-        "role": "assistant",
-        "content": "Shluz mock reply: Привет"
-      }
-    }
-  ]
-}
-```
+- Никогда не коммитьте `.env`.
+- Не встраивайте ключи Venice или других поставщиков в пользовательское приложение.
+- В production используйте HTTPS.
+- До публичного запуска замените временную авторизацию полноценными пользовательскими токенами и лимитами.
+
+Подробнее: [`docs/operations.md`](docs/operations.md).
+
+## Архитектура и план
+
+- [Архитектура центрального шлюза](docs/superpowers/specs/2026-09-29-central-api-gateway-design.md)
+- [План первого этапа](docs/superpowers/plans/2026-09-29-gateway-foundation.md)
 
 ## Следующий этап
 
-После проверки каркаса сюда можно добавить:
-
-1. Supabase Auth — определить, кто пользователь.
-2. Таблицу тарифов и расхода.
-3. Реальный вызов Venice API.
-4. Учёт стоимости каждого запроса.
-5. Потоковую выдачу ответа.
-6. Подключение выбранного Harness как клиента к этому адресу.
-
-Важно: реальные ключи AI-провайдеров должны храниться только на сервере и никогда не попадать в Harness, браузер или Telegram-бота.
+Следующая отдельная работа — адаптер Venice с потоковыми ответами, контролируемыми таймаутами и учётом фактической стоимости запросов.

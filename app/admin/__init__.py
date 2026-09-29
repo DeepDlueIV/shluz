@@ -1,0 +1,1 @@
+"""Internal visual administration interface."""
