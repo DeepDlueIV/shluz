@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.db.models import (
     Account,
+    AccountBalance,
     ApiToken,
     AuditEvent,
     Identity,
@@ -46,15 +47,22 @@ def test_core_entities_are_persisted_with_exact_money_values():
             external_id="123456789",
             label="@test_user",
         )
+        balance = AccountBalance(
+            account_id=account.id,
+            available_credits=Decimal("750000.000000"),
+            reserved_credits=Decimal("100.000000"),
+        )
         plan = Plan(
             code="pro",
             name="Pro",
             currency="RUB",
             monthly_price_minor=1990_00,
             included_credits=Decimal("1000000.000000"),
+            entitlements={"features": ["chat", "files", "images"]},
+            usage_limits={"monthly_credits": 1000000, "max_parallel_requests": 2},
             is_active=True,
         )
-        session.add_all([identity, plan])
+        session.add_all([identity, balance, plan])
         session.flush()
 
         subscription = Subscription(
@@ -98,8 +106,11 @@ def test_core_entities_are_persisted_with_exact_money_values():
     with session_factory() as session:
         stored_usage = session.scalar(select(UsageEvent))
         stored_token = session.scalar(select(ApiToken))
+        stored_balance = session.scalar(select(AccountBalance))
+        stored_plan = session.scalar(select(Plan))
 
         assert session.scalar(select(func.count(Account.id))) == 1
+        assert session.scalar(select(func.count(AccountBalance.account_id))) == 1
         assert session.scalar(select(func.count(Identity.id))) == 1
         assert session.scalar(select(func.count(Plan.id))) == 1
         assert session.scalar(select(func.count(Subscription.id))) == 1
@@ -111,6 +122,12 @@ def test_core_entities_are_persisted_with_exact_money_values():
         assert stored_usage.billed_credits == Decimal("1.250000")
         assert stored_token is not None
         assert stored_token.scopes == ["chat", "files"]
+        assert stored_balance is not None
+        assert stored_balance.available_credits == Decimal("750000.000000")
+        assert stored_balance.reserved_credits == Decimal("100.000000")
+        assert stored_plan is not None
+        assert stored_plan.entitlements == {"features": ["chat", "files", "images"]}
+        assert stored_plan.usage_limits["max_parallel_requests"] == 2
 
 
 def test_identity_source_and_external_id_are_unique_together():
