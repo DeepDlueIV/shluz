@@ -12,6 +12,7 @@ def test_settings() -> Settings:
         bootstrap_api_token=SecretStr("test-api-token"),
         admin_username="test-admin",
         admin_password=SecretStr("test-admin-password"),
+        database_url="sqlite+pysqlite:///:memory:",
     )
 
 

@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password: SecretStr = SecretStr("change-me")
 
+    database_url: str = "sqlite+pysqlite:///./data/shluz.db"
+    database_echo: bool = False
+
     active_provider: Literal["mock", "venice"] = "mock"
     venice_api_key: SecretStr | None = None
     venice_base_url: str = "https://api.venice.ai/api/v1"
