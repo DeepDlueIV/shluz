@@ -103,6 +103,7 @@ class ApiToken(Base):
         index=True,
     )
     name: Mapped[str] = mapped_column(String(200))
+    source: Mapped[str] = mapped_column(String(32), default="harness", index=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     token_prefix: Mapped[str] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)

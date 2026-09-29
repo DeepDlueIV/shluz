@@ -13,10 +13,40 @@
             <div>
                 <p class="eyebrow">Управление доступом</p>
                 <h1>Пользователи</h1>
-                <p class="muted">Роли, статус, способы входа, подписки и фактическая себестоимость.</p>
+                <p class="muted">Роли, статус, токены, каналы и фактическая себестоимость.</p>
             </div>
             <span class="status">{{ accounts | length }}</span>
         </header>
+
+        <section class="form-card section-block">
+            <div>
+                <p class="eyebrow">Новый аккаунт</p>
+                <h2>Добавить пользователя</h2>
+                <p class="muted">На этом этапе аккаунт создаётся администратором. Самостоятельная регистрация появится позже.</p>
+            </div>
+            <form method="post" action="/admin/users" class="admin-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <label>
+                    Отображаемое имя
+                    <input name="display_name" maxlength="200" required placeholder="Например, Анна или Telegram demo">
+                </label>
+                <label>
+                    Роль
+                    <select name="role">
+                        <option value="user">Пользователь</option>
+                        <option value="admin">Администратор</option>
+                    </select>
+                </label>
+                <label>
+                    Статус
+                    <select name="status">
+                        <option value="active">Активен</option>
+                        <option value="disabled">Заблокирован</option>
+                    </select>
+                </label>
+                <button type="submit">Создать пользователя</button>
+            </form>
+        </section>
 
         {% if accounts %}
             <div class="table-wrap section-block">
@@ -27,12 +57,13 @@
                             <th>Роль и статус</th>
                             <th>Способы входа</th>
                             <th>Тариф</th>
-                            <th>Токены доступа</th>
+                            <th>Доступы</th>
                             <th>Использование</th>
                         </tr>
                     </thead>
                     <tbody>
                     {% for account in accounts %}
+                        {% set tokens = tokens_by_account.get(account.id, ()) %}
                         <tr>
                             <td>
                                 <strong>{{ account.display_name }}</strong>
@@ -55,7 +86,52 @@
                                     <small>{{ account.plan_code }}</small>
                                 {% else %}Без тарифа{% endif %}
                             </td>
-                            <td>{{ account.token_count }}</td>
+                            <td class="access-cell">
+                                {% if tokens %}
+                                    <div class="token-list">
+                                    {% for token in tokens %}
+                                        <div class="token-row">
+                                            <div>
+                                                <strong>{{ token.name }}</strong>
+                                                <small><code>{{ token.prefix }}…</code> · {{ token.source }}</small>
+                                                <small>{{ "Отозван" if token.revoked else "Активен" }}</small>
+                                            </div>
+                                            {% if not token.revoked %}
+                                                <form method="post" action="/admin/tokens/{{ token.id }}/revoke">
+                                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                                    <button type="submit" class="danger-button">Отозвать</button>
+                                                </form>
+                                            {% endif %}
+                                        </div>
+                                    {% endfor %}
+                                    </div>
+                                {% else %}
+                                    <span class="muted">Нет личных токенов</span>
+                                {% endif %}
+
+                                {% if account.id != "bootstrap" and account.status == "active" %}
+                                    <details class="token-issuer">
+                                        <summary>Выдать доступ</summary>
+                                        <form method="post" action="/admin/users/{{ account.id }}/tokens" class="compact-form">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                            <label>
+                                                Название
+                                                <input name="name" maxlength="200" required placeholder="Основной Harness">
+                                            </label>
+                                            <label>
+                                                Канал
+                                                <select name="source">
+                                                    <option value="harness">Harness</option>
+                                                    <option value="site">Сайт</option>
+                                                    <option value="telegram">Telegram</option>
+                                                    <option value="api">Другое API</option>
+                                                </select>
+                                            </label>
+                                            <button type="submit">Создать токен</button>
+                                        </form>
+                                    </details>
+                                {% endif %}
+                            </td>
                             <td>
                                 <strong>{{ "{:,}".format(account.request_count) }} запросов</strong>
                                 <small>{{ "{:,}".format(account.prompt_tokens + account.completion_tokens) }} токенов</small>
@@ -69,13 +145,13 @@
         {% else %}
             <section class="empty-state">
                 <h2>Пользователей пока нет</h2>
-                <p>После подключения регистрации здесь появятся аккаунты сайта, Telegram и Harness.</p>
+                <p>Создайте первый аккаунт формой выше.</p>
             </section>
         {% endif %}
 
         <section class="notice">
-            <strong>Секретные токены здесь не показываются.</strong>
-            <p>Администратор видит только безопасные идентификаторы, статус и агрегированный расход.</p>
+            <strong>Секретный токен показывается только один раз.</strong>
+            <p>После выдачи его нужно передать пользователю безопасным способом. В дальнейшем панель показывает только короткий префикс, статус и расход.</p>
         </section>
     </main>
 </body>
