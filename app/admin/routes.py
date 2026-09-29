@@ -5,7 +5,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
@@ -189,7 +189,9 @@ async def assign_user_plan(
         if account is None:
             raise HTTPException(status_code=404, detail="Пользователь не найден")
         if account.status == "archived":
-            raise HTTPException(status_code=409, detail="Сначала восстановите пользователя из архива")
+            raise HTTPException(
+                status_code=409, detail="Сначала восстановите пользователя из архива",
+            )
         if plan_id:
             plan = session.scalar(select(Plan).where(Plan.id == plan_id).with_for_update())
             if plan is None or not plan.active:
@@ -362,7 +364,9 @@ def usage_dashboard(
 ) -> HTMLResponse:
     with database.session() as session:
         usage = get_usage_summary(session)
-    return templates.TemplateResponse(request=request, name="admin/usage.html", context={"usage": usage})
+    return templates.TemplateResponse(
+        request=request, name="admin/usage.html", context={"usage": usage},
+    )
 
 
 @router.get("/providers/venice", response_class=HTMLResponse)
