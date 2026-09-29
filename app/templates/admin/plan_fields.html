@@ -1,6 +1,6 @@
 {% macro plan_fields(values, csrf_token) -%}
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-<label>Код тарифа<input name="code" maxlength="64" required pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,63}" title="Латинские буквы, цифры, дефис или подчёркивание. Например: test" value="{{ values.get('code', '') }}" placeholder="test"><small>Латиница, без пробелов. Начните с буквы или цифры.</small></label>
+<label>Код тарифа<input name="code" maxlength="64" required pattern="[A-Za-z0-9][A-Za-z0-9_\-]{0,63}" title="Латинские буквы, цифры, дефис или подчёркивание. Например: test" value="{{ values.get('code', '') }}" placeholder="test"><small>Латиница, без пробелов. Начните с буквы или цифры.</small></label>
 <label>Название<input name="name" maxlength="200" required value="{{ values.get('name', '') }}" placeholder="Тестовый"><small>Можно на русском.</small></label>
 {% for key, label, step, default in [
 ('monthly_price_usd', 'Цена в месяц, USD', '0.01', '0'),
