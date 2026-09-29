@@ -5,4 +5,9 @@ services:
       - .env
     ports:
       - "8000:8000"
+    volumes:
+      - shluz_data:/app/data
     restart: unless-stopped
+
+volumes:
+  shluz_data:

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Пользователи — Shluz</title>
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+    <main class="shell wide">
+        <nav class="breadcrumbs"><a href="/admin">← Главная</a></nav>
+        <header class="hero compact">
+            <div>
+                <p class="eyebrow">Управление доступом</p>
+                <h1>Пользователи</h1>
+                <p class="muted">Роли, статус, способы входа, подписки и фактическая себестоимость.</p>
+            </div>
+            <span class="status">{{ accounts | length }}</span>
+        </header>
+
+        {% if accounts %}
+            <div class="table-wrap section-block">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Пользователь</th>
+                            <th>Роль и статус</th>
+                            <th>Способы входа</th>
+                            <th>Тариф</th>
+                            <th>Токены доступа</th>
+                            <th>Использование</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for account in accounts %}
+                        <tr>
+                            <td>
+                                <strong>{{ account.display_name }}</strong>
+                                <small>{{ account.id }}</small>
+                            </td>
+                            <td>
+                                <span class="metric">{{ account.role }}</span>
+                                <span class="metric">{{ account.status }}</span>
+                            </td>
+                            <td>
+                                {% if account.identities %}
+                                    {% for identity in account.identities %}
+                                        <span class="metric">{{ identity.provider }}: {{ identity.username or identity.email or identity.subject }}</span>
+                                    {% endfor %}
+                                {% else %}—{% endif %}
+                            </td>
+                            <td>
+                                {% if account.plan_name %}
+                                    <strong>{{ account.plan_name }}</strong>
+                                    <small>{{ account.plan_code }}</small>
+                                {% else %}Без тарифа{% endif %}
+                            </td>
+                            <td>{{ account.token_count }}</td>
+                            <td>
+                                <strong>{{ "{:,}".format(account.request_count) }} запросов</strong>
+                                <small>{{ "{:,}".format(account.prompt_tokens + account.completion_tokens) }} токенов</small>
+                                <small>{{ account.cost_usd }} USD · {{ account.cost_diem }} DIEM</small>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <section class="empty-state">
+                <h2>Пользователей пока нет</h2>
+                <p>После подключения регистрации здесь появятся аккаунты сайта, Telegram и Harness.</p>
+            </section>
+        {% endif %}
+
+        <section class="notice">
+            <strong>Секретные токены здесь не показываются.</strong>
+            <p>Администратор видит только безопасные идентификаторы, статус и агрегированный расход.</p>
+        </section>
+    </main>
+</body>
+</html>
