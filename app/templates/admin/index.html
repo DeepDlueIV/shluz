@@ -7,7 +7,7 @@
 <article class="card"><span class="label">Себестоимость USD</span><strong>{{ usage_cost_usd }}</strong></article>
 <article class="card"><span class="label">Моделей</span><strong>{{ model_count }}</strong>{% if model_warning %}<small>{{ model_warning }}</small>{% endif %}</article>
 <article class="card"><span class="label">Провайдеры</span><strong>{{ provider_names | join(', ') }}</strong></article>
-</section><h2>Управление</h2><section class="feature-grid" aria-label="Разделы управления">
+</section><h2>Управление</h2><p class="muted">Пользователи и тарифы доступны для изменения. Все административные изменения фиксируются в журнале.</p><section class="feature-grid" aria-label="Разделы управления">
 <a class="feature-card" href="/admin/users"><h3>Пользователи</h3><p>Аккаунты, тарифы, личные доступы и архив.</p></a>
 <a class="feature-card" href="/admin/plans"><h3>Тарифы</h3><p>Создание, редактирование, ограничения и архив.</p></a>
 <a class="feature-card" href="/admin/usage"><h3>Расход</h3><p>Токены, себестоимость, маржа и результаты запросов.</p></a>
