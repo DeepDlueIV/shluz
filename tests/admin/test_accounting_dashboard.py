@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.db.models import (
     Account,
+    AccountBalance,
     ApiToken,
     Identity,
     Plan,
@@ -40,12 +41,19 @@ def _client_with_accounting_data(test_settings) -> TestClient:
             currency="RUB",
             monthly_price_minor=199000,
             included_credits=Decimal("1000000"),
+            entitlements={"features": ["chat", "files", "images"]},
+            usage_limits={"monthly_credits": 1000000},
             is_active=True,
         )
         session.add_all([account, plan])
         session.flush()
         session.add_all(
             [
+                AccountBalance(
+                    account_id=account.id,
+                    available_credits=Decimal("750000.000000"),
+                    reserved_credits=Decimal("100.000000"),
+                ),
                 Identity(
                     account_id=account.id,
                     kind="telegram",
@@ -118,7 +126,7 @@ def test_accounting_pages_explain_empty_state(client):
         assert text in response.text
 
 
-def test_users_page_shows_identity_subscription_and_spend(test_settings):
+def test_users_page_shows_identity_subscription_balance_and_spend(test_settings):
     client = _client_with_accounting_data(test_settings)
 
     response = client.get("/admin/users", auth=ADMIN_AUTH)
@@ -128,10 +136,11 @@ def test_users_page_shows_identity_subscription_and_spend(test_settings):
     assert "admin" in response.text
     assert "@owner" in response.text
     assert "Профессиональный" in response.text
+    assert "750000.000000" in response.text
     assert "0.00420000" in response.text
 
 
-def test_plans_page_shows_price_credits_and_subscription_count(test_settings):
+def test_plans_page_shows_price_credits_rights_limits_and_subscription_count(test_settings):
     client = _client_with_accounting_data(test_settings)
 
     response = client.get("/admin/plans", auth=ADMIN_AUTH)
@@ -141,6 +150,8 @@ def test_plans_page_shows_price_credits_and_subscription_count(test_settings):
     assert "pro" in response.text
     assert "1990.00" in response.text
     assert "1000000" in response.text
+    assert "images" in response.text
+    assert "monthly_credits" in response.text
     assert "1" in response.text
 
 
