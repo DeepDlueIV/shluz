@@ -83,7 +83,7 @@ def test_dark_theme_and_plan_code_hint(client):
     assert "color-scheme: dark" in css
     page = client.get("/admin/plans", auth=AUTH).text
     assert "латин" in page.lower()
-    assert 'pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,63}"' in page
+    assert r'pattern="[A-Za-z0-9][A-Za-z0-9_\-]{0,63}"' in page
 
 
 def _account(client):
