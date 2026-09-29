@@ -13,7 +13,7 @@
             <div>
                 <p class="eyebrow">Управление доступом</p>
                 <h1>Пользователи</h1>
-                <p class="muted">Роли, статус, токены, каналы и фактическая себестоимость.</p>
+                <p class="muted">Роли, тарифы, остатки, токены, каналы, себестоимость и маржа.</p>
             </div>
             <span class="status">{{ accounts | length }}</span>
         </header>
@@ -50,15 +50,14 @@
 
         {% if accounts %}
             <div class="table-wrap section-block">
-                <table>
+                <table class="users-table">
                     <thead>
                         <tr>
                             <th>Пользователь</th>
-                            <th>Роль и статус</th>
-                            <th>Способы входа</th>
-                            <th>Тариф</th>
+                            <th>Роль, статус и вход</th>
+                            <th>Тариф и ограничения</th>
                             <th>Доступы</th>
-                            <th>Использование</th>
+                            <th>Расход в этом месяце</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -68,23 +67,61 @@
                             <td>
                                 <strong>{{ account.display_name }}</strong>
                                 <small>{{ account.id }}</small>
+                                {% if account.blocked_reason %}
+                                    <span class="pill blocked">{{ account.blocked_reason }}</span>
+                                {% else %}
+                                    <span class="pill ready">Доступ разрешён</span>
+                                {% endif %}
                             </td>
                             <td>
                                 <span class="metric">{{ account.role }}</span>
                                 <span class="metric">{{ account.status }}</span>
-                            </td>
-                            <td>
                                 {% if account.identities %}
                                     {% for identity in account.identities %}
-                                        <span class="metric">{{ identity.provider }}: {{ identity.username or identity.email or identity.subject }}</span>
+                                        <small>{{ identity.provider }}: {{ identity.username or identity.email or identity.subject }}</small>
                                     {% endfor %}
-                                {% else %}—{% endif %}
+                                {% else %}<small>Способ входа ещё не привязан</small>{% endif %}
                             </td>
-                            <td>
+                            <td class="plan-cell">
                                 {% if account.plan_name %}
                                     <strong>{{ account.plan_name }}</strong>
                                     <small>{{ account.plan_code }}</small>
-                                {% else %}Без тарифа{% endif %}
+                                {% else %}<strong>Без тарифа</strong>{% endif %}
+
+                                {% if account.id != "bootstrap" %}
+                                    <form method="post" action="/admin/users/{{ account.id }}/plan" class="inline-form">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <select name="plan_id" aria-label="Тариф пользователя">
+                                            <option value="">Без тарифа</option>
+                                            {% for plan in plans %}
+                                                <option value="{{ plan.id }}" {% if account.plan_id == plan.id %}selected{% endif %}>{{ plan.name }} ({{ plan.code }})</option>
+                                            {% endfor %}
+                                        </select>
+                                        <button type="submit">Назначить</button>
+                                    </form>
+                                {% endif %}
+
+                                <small>
+                                    Запросы: {{ "{:,}".format(account.month_request_count) }} /
+                                    {% if account.monthly_request_limit is not none and account.monthly_request_limit > 0 %}
+                                        {{ "{:,}".format(account.monthly_request_limit) }}
+                                    {% else %}∞{% endif %}
+                                </small>
+                                <small>
+                                    Кредиты: {{ "{:,}".format(account.month_internal_credits) }} /
+                                    {% if account.monthly_credit_limit is not none and account.monthly_credit_limit > 0 %}
+                                        {{ "{:,}".format(account.monthly_credit_limit) }}
+                                    {% else %}∞{% endif %}
+                                </small>
+                                {% if account.remaining_requests is not none %}
+                                    <small>Осталось запросов: {{ "{:,}".format(account.remaining_requests) }}</small>
+                                {% endif %}
+                                {% if account.remaining_credits is not none %}
+                                    <small>Осталось кредитов: {{ "{:,}".format(account.remaining_credits) }}</small>
+                                {% endif %}
+                                {% if account.remaining_cost_usd is not none %}
+                                    <small>Остаток себестоимости: {{ account.remaining_cost_usd }} USD</small>
+                                {% endif %}
                             </td>
                             <td class="access-cell">
                                 {% if tokens %}
@@ -95,6 +132,7 @@
                                                 <strong>{{ token.name }}</strong>
                                                 <small><code>{{ token.prefix }}…</code> · {{ token.source }}</small>
                                                 <small>{{ "Отозван" if token.revoked else "Активен" }}</small>
+                                                {% if token.last_used_at %}<small>Последний запрос: {{ token.last_used_at }}</small>{% endif %}
                                             </div>
                                             {% if not token.revoked %}
                                                 <form method="post" action="/admin/tokens/{{ token.id }}/revoke">
@@ -133,9 +171,10 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <strong>{{ "{:,}".format(account.request_count) }} запросов</strong>
-                                <small>{{ "{:,}".format(account.prompt_tokens + account.completion_tokens) }} токенов</small>
-                                <small>{{ account.cost_usd }} USD · {{ account.cost_diem }} DIEM</small>
+                                <strong>{{ account.month_cost_usd }} USD себестоимость</strong>
+                                <small>{{ account.month_billed_usd }} USD расчётная выручка</small>
+                                <small>{{ account.month_margin_usd }} USD маржа</small>
+                                <small>{{ "{:,}".format(account.prompt_tokens + account.completion_tokens) }} токенов за всё время</small>
                             </td>
                         </tr>
                     {% endfor %}
@@ -151,7 +190,7 @@
 
         <section class="notice">
             <strong>Секретный токен показывается только один раз.</strong>
-            <p>После выдачи его нужно передать пользователю безопасным способом. В дальнейшем панель показывает только короткий префикс, статус и расход.</p>
+            <p>После выдачи его нужно передать пользователю безопасным способом. В дальнейшем панель показывает только короткий префикс, статус, тариф и расход.</p>
         </section>
     </main>
 </body>

@@ -1,5 +1,8 @@
 import hmac
+import re
 import secrets
+from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from pathlib import Path
 from typing import Annotated, Any
@@ -13,7 +16,7 @@ from sqlalchemy import select
 
 from app.config import Settings
 from app.db.database import Database
-from app.db.models import Account, ApiToken
+from app.db.models import Account, ApiToken, Plan, Subscription
 from app.db.reports import get_usage_summary, list_accounts_overview, list_plans_overview
 from app.db.repositories import create_api_token, generate_api_token, revoke_api_token
 from app.providers.base import ProviderError
@@ -28,6 +31,7 @@ templates = Jinja2Templates(
 _ALLOWED_ROLES = {"user", "admin"}
 _ALLOWED_STATUSES = {"active", "disabled"}
 _ALLOWED_SOURCES = {"harness", "site", "telegram", "api"}
+_PLAN_CODE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _MAX_FORM_BYTES = 16_384
 
 
@@ -120,6 +124,75 @@ def _choice(form: dict[str, str], key: str, allowed: set[str]) -> str:
     return value
 
 
+def _optional_int(form: dict[str, str], key: str) -> int | None:
+    raw = form.get(key, "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Поле {key} должно быть целым числом",
+        ) from exc
+    if value < 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Поле {key} не может быть отрицательным",
+        )
+    return value
+
+
+def _decimal_value(
+    form: dict[str, str],
+    key: str,
+    *,
+    optional: bool = False,
+) -> Decimal | None:
+    raw = form.get(key, "").strip().replace(",", ".")
+    if not raw and optional:
+        return None
+    if not raw:
+        raw = "0"
+    try:
+        value = Decimal(raw)
+    except InvalidOperation as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Поле {key} должно быть числом",
+        ) from exc
+    if not value.is_finite() or value < 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Поле {key} не может быть отрицательным",
+        )
+    return value
+
+
+def _plan_values(form: dict[str, str]) -> dict[str, object]:
+    code = _required_text(form, "code", max_length=64).lower()
+    if not _PLAN_CODE_PATTERN.fullmatch(code):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Код тарифа: латинские буквы, цифры, дефис и подчёркивание",
+        )
+    return {
+        "code": code,
+        "name": _required_text(form, "name", max_length=200),
+        "monthly_price_usd": _decimal_value(form, "monthly_price_usd"),
+        "monthly_cost_limit_usd": _decimal_value(
+            form,
+            "monthly_cost_limit_usd",
+            optional=True,
+        ),
+        "monthly_credit_limit": _optional_int(form, "monthly_credit_limit"),
+        "monthly_request_limit": _optional_int(form, "monthly_request_limit"),
+        "request_credit_reserve": _optional_int(form, "request_credit_reserve") or 0,
+        "markup_percent": _decimal_value(form, "markup_percent"),
+        "active": form.get("active", "").lower() in {"on", "true", "1", "yes"},
+    }
+
+
 def _safe_tokens_by_account(database: Database) -> dict[str, tuple[dict[str, Any], ...]]:
     grouped: dict[str, list[dict[str, Any]]] = {}
     with database.session() as session:
@@ -183,12 +256,18 @@ def users_dashboard(
 ) -> HTMLResponse:
     with database.session() as session:
         accounts = list_accounts_overview(session)
+        plans = list(
+            session.scalars(
+                select(Plan).where(Plan.active.is_(True)).order_by(Plan.name, Plan.code)
+            )
+        )
 
     return templates.TemplateResponse(
         request=request,
         name="admin/users.html",
         context={
             "accounts": accounts,
+            "plans": plans,
             "tokens_by_account": _safe_tokens_by_account(database),
             "csrf_token": _admin_csrf_token(settings),
         },
@@ -216,6 +295,55 @@ async def create_user(
                 status=account_status,
             )
         )
+
+    return RedirectResponse(url="/admin/users", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/users/{account_id}/plan")
+async def assign_user_plan(
+    account_id: str,
+    request: Request,
+    _: Annotated[str, Depends(_require_admin)],
+    settings: Annotated[Settings, Depends(_settings)],
+    database: Annotated[Database, Depends(_database)],
+) -> RedirectResponse:
+    form = await _read_form(request)
+    _require_csrf(form.get("csrf_token", ""), settings)
+    plan_id = form.get("plan_id", "").strip()
+    now = datetime.now(UTC)
+
+    with database.session() as session:
+        account = session.get(Account, account_id)
+        if account is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Пользователь не найден",
+            )
+        active_subscriptions = session.scalars(
+            select(Subscription).where(
+                Subscription.account_id == account_id,
+                Subscription.status == "active",
+            )
+        )
+        for subscription in active_subscriptions:
+            subscription.status = "cancelled"
+            subscription.ends_at = now
+
+        if plan_id:
+            plan = session.get(Plan, plan_id)
+            if plan is None or not plan.active:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="Выбранный тариф недоступен",
+                )
+            session.add(
+                Subscription(
+                    account_id=account_id,
+                    plan_id=plan.id,
+                    status="active",
+                    starts_at=now,
+                )
+            )
 
     return RedirectResponse(url="/admin/users", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -291,6 +419,7 @@ async def revoke_user_token(
 def plans_dashboard(
     request: Request,
     _: Annotated[str, Depends(_require_admin)],
+    settings: Annotated[Settings, Depends(_settings)],
     database: Annotated[Database, Depends(_database)],
 ) -> HTMLResponse:
     with database.session() as session:
@@ -299,8 +428,66 @@ def plans_dashboard(
     return templates.TemplateResponse(
         request=request,
         name="admin/plans.html",
-        context={"plans": plans},
+        context={
+            "plans": plans,
+            "csrf_token": _admin_csrf_token(settings),
+        },
     )
+
+
+@router.post("/plans")
+async def create_plan(
+    request: Request,
+    _: Annotated[str, Depends(_require_admin)],
+    settings: Annotated[Settings, Depends(_settings)],
+    database: Annotated[Database, Depends(_database)],
+) -> RedirectResponse:
+    form = await _read_form(request)
+    _require_csrf(form.get("csrf_token", ""), settings)
+    values = _plan_values(form)
+
+    with database.session() as session:
+        if session.scalar(select(Plan).where(Plan.code == values["code"])) is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Тариф с таким кодом уже существует",
+            )
+        session.add(Plan(**values))
+
+    return RedirectResponse(url="/admin/plans", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/plans/{plan_id}")
+async def update_plan(
+    plan_id: str,
+    request: Request,
+    _: Annotated[str, Depends(_require_admin)],
+    settings: Annotated[Settings, Depends(_settings)],
+    database: Annotated[Database, Depends(_database)],
+) -> RedirectResponse:
+    form = await _read_form(request)
+    _require_csrf(form.get("csrf_token", ""), settings)
+    values = _plan_values(form)
+
+    with database.session() as session:
+        plan = session.get(Plan, plan_id)
+        if plan is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Тариф не найден",
+            )
+        duplicate = session.scalar(
+            select(Plan).where(Plan.code == values["code"], Plan.id != plan_id)
+        )
+        if duplicate is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Тариф с таким кодом уже существует",
+            )
+        for key, value in values.items():
+            setattr(plan, key, value)
+
+    return RedirectResponse(url="/admin/plans", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/usage", response_class=HTMLResponse)
