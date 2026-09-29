@@ -45,7 +45,7 @@ def create_app(
     resolved_database.create_schema()
     with resolved_database.session() as session:
         ensure_bootstrap_account(session)
-    usage_service = UsageService(resolved_database)
+    usage_service = UsageService(resolved_database, resolved_settings)
 
     app = FastAPI(title="Shluz", version=resolved_settings.service_version)
     app.state.settings = resolved_settings
