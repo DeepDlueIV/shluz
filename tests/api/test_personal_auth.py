@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import desc, select
 
-from app.db.models import Account, ApiToken, UsageEvent
+from app.db.models import Account, ApiToken, Plan, Subscription, UsageEvent
 from app.db.repositories import create_api_token
 
 
@@ -11,8 +11,10 @@ def _issue_token(client, *, source: str = "harness") -> tuple[str, str, str]:
     database = client.app.state.database
     with database.session() as session:
         account = Account(display_name=f"Пользователь {source}")
-        session.add(account)
+        plan = Plan(code=f"plan-{source}", name=f"Тариф {source}")
+        session.add_all([account, plan])
         session.flush()
+        session.add(Subscription(account_id=account.id, plan_id=plan.id))
         token = create_api_token(
             session,
             account_id=account.id,
