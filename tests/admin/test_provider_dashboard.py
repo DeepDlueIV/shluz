@@ -152,4 +152,6 @@ def test_admin_dashboard_links_to_provider_control(client):
     assert response.status_code == 200
     assert 'href="/admin/providers/venice"' in response.text
     assert "Пользователи и тарифы" in response.text
-    assert "Следующий этап" in response.text
+    assert 'href="/admin/logs"' in response.text
+    assert 'href="/admin/test"' in response.text
+    assert "Приём платежей пока не подключён" in response.text
