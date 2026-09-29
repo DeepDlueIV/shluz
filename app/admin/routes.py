@@ -261,6 +261,10 @@ async def issue_user_token(
             "token_prefix": token_prefix,
             "raw_token": raw_token,
         },
+        headers={
+            "Cache-Control": "no-store",
+            "Pragma": "no-cache",
+        },
     )
 
 
