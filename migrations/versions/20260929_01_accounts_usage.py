@@ -163,6 +163,11 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["account_id"], ["accounts.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "provider",
+            "provider_request_id",
+            name="uq_usage_provider_request",
+        ),
     )
     op.create_index("ix_usage_events_account_id", "usage_events", ["account_id"])
     op.create_index(

@@ -113,6 +113,11 @@ class ApiToken(Base):
 class UsageEvent(Base):
     __tablename__ = "usage_events"
     __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "provider_request_id",
+            name="uq_usage_provider_request",
+        ),
         Index("ix_usage_events_account_created", "account_id", "created_at"),
         Index("ix_usage_events_provider_model", "provider", "model"),
     )

@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
-from app.api.dependencies import get_provider_registry
+from app.api.dependencies import get_provider_registry, get_usage_service
 from app.api.schemas import (
     AssistantMessageSchema,
     ChatChoiceSchema,
@@ -25,6 +25,7 @@ from app.providers.base import (
     ProviderRateLimitError,
 )
 from app.providers.registry import ProviderRegistry
+from app.usage.service import UsageService
 
 router = APIRouter()
 
@@ -61,6 +62,7 @@ def _error_response(
 def chat_completions(
     payload: ChatCompletionRequestSchema,
     registry: Annotated[ProviderRegistry, Depends(get_provider_registry)],
+    usage_service: Annotated[UsageService, Depends(get_usage_service)],
 ) -> ChatCompletionResponseSchema | JSONResponse:
     try:
         provider = registry.provider_for_model(payload.model)
@@ -113,6 +115,14 @@ def chat_completions(
             param=None,
             code="provider_error",
         )
+
+    usage_service.record_success(
+        account_id="bootstrap",
+        source="bootstrap",
+        provider=provider.name,
+        model=payload.model,
+        result=result,
+    )
 
     return ChatCompletionResponseSchema(
         id=result.request_id or f"chatcmpl-{uuid.uuid4().hex}",

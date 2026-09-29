@@ -6,9 +6,12 @@ from fastapi.staticfiles import StaticFiles
 from app.admin.routes import router as admin_router
 from app.api.router import api_router
 from app.config import Settings, get_settings
+from app.db.database import Database
+from app.db.repositories import ensure_bootstrap_account
 from app.providers.mock import MockProvider
 from app.providers.registry import ProviderRegistry
 from app.providers.venice import VeniceProvider
+from app.usage.service import UsageService
 
 
 def build_provider_registry(settings: Settings) -> ProviderRegistry:
@@ -19,18 +22,36 @@ def build_provider_registry(settings: Settings) -> ProviderRegistry:
     return ProviderRegistry([MockProvider()])
 
 
+def build_database(settings: Settings) -> Database:
+    """Create the configured database and its required bootstrap records."""
+
+    database = Database(settings)
+    database.create_schema()
+    with database.session() as session:
+        ensure_bootstrap_account(session)
+    return database
+
+
 def create_app(
     settings: Settings | None = None,
     registry: ProviderRegistry | None = None,
+    database: Database | None = None,
 ) -> FastAPI:
     """Build and configure the FastAPI application."""
 
     resolved_settings = settings or get_settings()
     resolved_registry = registry or build_provider_registry(resolved_settings)
+    resolved_database = database or build_database(resolved_settings)
+    resolved_database.create_schema()
+    with resolved_database.session() as session:
+        ensure_bootstrap_account(session)
+    usage_service = UsageService(resolved_database)
 
     app = FastAPI(title="Shluz", version=resolved_settings.service_version)
     app.state.settings = resolved_settings
     app.state.provider_registry = resolved_registry
+    app.state.database = resolved_database
+    app.state.usage_service = usage_service
 
     @app.get("/health", tags=["system"])
     def health() -> dict[str, str]:
