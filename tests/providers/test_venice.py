@@ -165,6 +165,69 @@ def test_account_snapshot_keeps_balance_when_beta_analytics_is_unavailable():
     assert snapshot.warnings == ("Аналитика Venice временно недоступна",)
 
 
+def test_account_snapshot_parses_official_usage_analytics_shape():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/billing/balance"):
+            return httpx.Response(
+                200,
+                json={
+                    "canConsume": True,
+                    "consumptionCurrency": "USD",
+                    "balances": {"usd": 25.5, "diem": 3},
+                    "diemEpochAllocation": 100,
+                },
+            )
+        if request.url.path.endswith("/api_keys/rate_limits"):
+            return httpx.Response(200, json={"data": {"rateLimits": []}})
+        if request.url.path.endswith("/billing/usage-analytics"):
+            return httpx.Response(
+                200,
+                json={
+                    "lookback": "7d",
+                    "byDate": [
+                        {"date": "2026-09-28", "USD": 0.5, "DIEM": 10.25},
+                        {"date": "2026-09-29", "USD": 0.3, "DIEM": 8.75},
+                    ],
+                    "byModel": [
+                        {
+                            "modelName": "GLM 5.1",
+                            "unitType": "tokens",
+                            "modelType": "LLM",
+                            "totalUsd": 0.4,
+                            "totalDiem": 12.5,
+                            "totalUnits": 50000,
+                            "breakdown": [
+                                {"type": "Output", "usd": 0.3, "diem": 10, "units": 35000},
+                                {"type": "Input", "usd": 0.1, "diem": 2.5, "units": 15000},
+                            ],
+                        }
+                    ],
+                    "byKey": [
+                        {
+                            "apiKeyId": "key_abc123",
+                            "description": "Production Key",
+                            "totalUsd": 0.8,
+                            "totalDiem": 15,
+                            "totalUnits": 75000,
+                        }
+                    ],
+                },
+            )
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    analytics = _provider(handler).get_account_snapshot(lookback="7d").analytics
+
+    assert analytics is not None
+    assert analytics.lookback == "7d"
+    assert analytics.total_usd == Decimal("0.8")
+    assert analytics.total_diem == Decimal("19.00")
+    assert analytics.total_units == 50000
+    assert analytics.prompt_tokens == 15000
+    assert analytics.completion_tokens == 35000
+    assert analytics.by_model[0]["modelName"] == "GLM 5.1"
+    assert analytics.by_key[0]["description"] == "Production Key"
+
+
 @pytest.mark.parametrize(
     ("status_code", "exception_type"),
     [
