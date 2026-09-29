@@ -2,6 +2,7 @@ from decimal import Decimal
 
 import httpx
 import pytest
+from app.providers.venice import VeniceProvider
 from pydantic import SecretStr
 
 from app.config import Settings
@@ -13,7 +14,6 @@ from app.providers.base import (
     ProviderInsufficientBalanceError,
     ProviderRateLimitError,
 )
-from app.providers.venice import VeniceProvider
 
 
 def _provider(handler) -> VeniceProvider:
