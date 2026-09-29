@@ -1,0 +1,15 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Проверка запроса — Shluz</title><link rel="stylesheet" href="/static/admin.css"><script src="/static/test-client.js" defer></script></head><body><main class="shell">
+{% include 'admin/nav.html' %}<p class="eyebrow">Локальное тестирование</p><h1>Проверка запроса</h1><p>Здесь можно проверить доступ пользователя без технической документации. Используется только тестовая модель <code>mock-chat</code>, без обращения к Venice.</p>
+<section class="notice"><strong>Личный токен — что это?</strong><p>Это длинная строка <code>shluz_…</code>, которую вы получили кнопкой «Выдать доступ» у тестового пользователя. Она сообщает серверу, от чьего имени выполнить запрос. Это не пароль панели и не ключ Venice.</p><p>Ещё нет токена? Откройте «Пользователи», назначьте пользователю тестовый тариф и выдайте доступ. Потерянный токен нельзя посмотреть повторно — отзовите его и создайте новый.</p></section>
+{% if not mock_enabled %}<p class="alert" role="alert">Эта проверка отключена: включён реальный поставщик. Для бесплатного теста задайте SHLUZ_ACTIVE_PROVIDER=mock и перезапустите приложение.</p>{% endif %}
+<form id="test-form" class="test-form section-block" autocomplete="off">
+<label>Личный токен<input id="test-token" type="password" required autocomplete="off" spellcheck="false" placeholder="shluz_…"></label>
+<label>Модель<input value="mock-chat" readonly></label>
+<label>Сообщение<textarea id="test-message" rows="3" required maxlength="2000">Привет</textarea></label>
+<button id="test-send" type="button" {% if not mock_enabled %}disabled{% endif %}>Отправить тестовый запрос</button>
+<small>Вставьте токен целиком, без слова Bearer. Токен не сохраняется в браузерном хранилище. При закрытии страницы поле очищается.</small>
+<noscript><p class="alert">Для этой страницы нужен JavaScript. Токен не будет отправлен обычной формой.</p></noscript>
+</form>
+<section class="test-result" aria-live="polite"><h2 id="test-status">Ответ появится здесь</h2><pre id="test-output">Введите личный токен и нажмите кнопку.</pre><small id="test-request-id"></small></section>
+<section class="notice"><strong>Продолжаем проверку, на которой остановились</strong><p>Тариф с кодом <code>test</code> и лимитом <strong>2 запроса в месяц</strong> → пользователь → назначить тариф → выдать токен → вставить выше.</p><p>Сделайте три запроса: первые два должны пройти, третий — получить отказ по лимиту. Если пользователь уже делал запросы, они тоже учитываются. Откройте <a href="/admin/usage">Расходы</a> и проверьте записи.</p><p>У mock-модели стоимость и количество токенов равны нулю — для этой проверки это нормально. Проверяем доступ и число запросов, а не настоящий счёт Venice.</p></section>
+</main></body></html>

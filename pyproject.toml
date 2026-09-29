@@ -29,7 +29,7 @@ dev = [
 include = ["app*"]
 
 [tool.setuptools.package-data]
-app = ["templates/**/*.html", "static/*.css"]
+app = ["templates/**/*.html", "static/*.css", "static/*.js"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
