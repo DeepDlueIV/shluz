@@ -78,10 +78,53 @@
                 {% if snapshot and snapshot.analytics %}
                     <div class="grid">
                         <article class="card"><span class="label">Потрачено USD</span><strong>{{ snapshot.analytics.total_usd }}</strong></article>
-                        <article class="card"><span class="label">Запросов</span><strong>{{ "{:,}".format(snapshot.analytics.total_requests) }}</strong></article>
+                        <article class="card"><span class="label">Потрачено DIEM</span><strong>{{ snapshot.analytics.total_diem }}</strong></article>
+                        <article class="card"><span class="label">Всего единиц</span><strong>{{ "{:,}".format(snapshot.analytics.total_units) }}</strong></article>
                         <article class="card"><span class="label">Входных токенов</span><strong>{{ "{:,}".format(snapshot.analytics.prompt_tokens) }}</strong></article>
                         <article class="card"><span class="label">Выходных токенов</span><strong>{{ "{:,}".format(snapshot.analytics.completion_tokens) }}</strong></article>
                     </div>
+
+                    {% if snapshot.analytics.by_model %}
+                        <h3>Расход по моделям</h3>
+                        <div class="table-wrap">
+                            <table>
+                                <thead><tr><th>Модель</th><th>Тип</th><th>Единица</th><th>Количество</th><th>USD</th><th>DIEM</th></tr></thead>
+                                <tbody>
+                                {% for item in snapshot.analytics.by_model %}
+                                    <tr>
+                                        <td>{{ item.get("modelName") or item.get("model") or "—" }}</td>
+                                        <td>{{ item.get("modelType") or "—" }}</td>
+                                        <td>{{ item.get("unitType") or "—" }}</td>
+                                        <td>{{ "{:,}".format(item.get("totalUnits") or 0) }}</td>
+                                        <td>{{ item.get("totalUsd") or 0 }}</td>
+                                        <td>{{ item.get("totalDiem") or 0 }}</td>
+                                    </tr>
+                                {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% endif %}
+
+                    {% if snapshot.analytics.by_key %}
+                        <h3>Расход по API-ключам</h3>
+                        <div class="table-wrap">
+                            <table>
+                                <thead><tr><th>Описание</th><th>ID ключа</th><th>Единиц</th><th>USD</th><th>DIEM</th></tr></thead>
+                                <tbody>
+                                {% for item in snapshot.analytics.by_key %}
+                                    <tr>
+                                        <td>{{ item.get("description") or "Без описания" }}</td>
+                                        <td>{{ item.get("apiKeyId") or "Web App" }}</td>
+                                        <td>{{ "{:,}".format(item.get("totalUnits") or 0) }}</td>
+                                        <td>{{ item.get("totalUsd") or 0 }}</td>
+                                        <td>{{ item.get("totalDiem") or 0 }}</td>
+                                    </tr>
+                                {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="muted">Показывается только технический ID ключа, а не его секретное значение.</p>
+                    {% endif %}
                 {% else %}
                     <p class="empty-inline">Аналитика пока не получена.</p>
                 {% endif %}
