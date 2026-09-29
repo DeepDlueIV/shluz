@@ -1,11 +1,12 @@
 from hashlib import sha256
 
-from app.config import Settings
 from app.db.database import Database
 from app.db.models import Account, ApiToken
 from app.db.repositories import create_api_token, ensure_bootstrap_account
 from pydantic import SecretStr
 from sqlalchemy import func, inspect, select
+
+from app.config import Settings
 
 
 def _database(tmp_path) -> Database:
