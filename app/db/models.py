@@ -62,7 +62,7 @@ class Plan(Base):
     __tablename__ = "plans"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_new_id)
-    code: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    code: Mapped[str] = mapped_column(String(64), unique=True)
     name: Mapped[str] = mapped_column(String(200))
     monthly_price_usd: Mapped[Decimal] = mapped_column(
         Numeric(18, 2),
@@ -117,7 +117,7 @@ class ApiToken(Base):
     )
     name: Mapped[str] = mapped_column(String(200))
     source: Mapped[str] = mapped_column(String(32), default="harness", index=True)
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     token_prefix: Mapped[str] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
