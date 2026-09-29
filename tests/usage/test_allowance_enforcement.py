@@ -20,6 +20,12 @@ from app.usage.service import (
 _TEST_PERIOD_START = datetime(2026, 9, 1, tzinfo=UTC)
 
 
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def _service(tmp_path) -> tuple[Database, UsageService]:
     settings = Settings(
         database_url=SecretStr(f"sqlite+pysqlite:///{tmp_path / 'allowance.db'}"),
@@ -101,7 +107,8 @@ def test_authorize_request_creates_expiring_reservation(tmp_path):
     assert event.plan_id == plan_id
     assert event.reserved_credits == 100
     assert event.pricing_markup_percent == Decimal("25.00")
-    assert event.reservation_expires_at == now + timedelta(seconds=900)
+    assert event.reservation_expires_at is not None
+    assert _as_utc(event.reservation_expires_at) == now + timedelta(seconds=900)
 
 
 def test_request_credit_and_spend_limits_block_before_provider_call(tmp_path):
