@@ -13,7 +13,8 @@ COPY pyproject.toml ./
 COPY app ./app
 
 RUN python -m pip install --upgrade pip \
-    && python -m pip install .
+    && python -m pip install . \
+    && install -d -o shluz -g shluz /app/data
 
 USER shluz
 
