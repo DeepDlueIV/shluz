@@ -23,8 +23,16 @@
                 <strong>{{ environment }}</strong>
             </article>
             <article class="card">
-                <span class="label">Версия</span>
-                <strong>{{ version }}</strong>
+                <span class="label">Пользователей</span>
+                <strong>{{ account_count }}</strong>
+            </article>
+            <article class="card">
+                <span class="label">Запросов учтено</span>
+                <strong>{{ "{:,}".format(usage_request_count) }}</strong>
+            </article>
+            <article class="card">
+                <span class="label">Себестоимость USD</span>
+                <strong>{{ usage_cost_usd }}</strong>
             </article>
             <article class="card">
                 <span class="label">Моделей</span>
@@ -39,16 +47,26 @@
 
         <h2>Управление</h2>
         <section class="feature-grid" aria-label="Разделы управления">
+            <a class="feature-card" href="/admin/users">
+                <span class="pill ready">Доступно</span>
+                <h3>Пользователи</h3>
+                <p>Аккаунты, роли, способы входа, подписки и персональный расход.</p>
+            </a>
+            <a class="feature-card" href="/admin/plans">
+                <span class="pill ready">Доступно</span>
+                <h3>Тарифы</h3>
+                <p>Лимиты запросов и внутренних кредитов, статус и число подписчиков.</p>
+            </a>
+            <a class="feature-card" href="/admin/usage">
+                <span class="pill ready">Доступно</span>
+                <h3>Расход</h3>
+                <p>Токены, себестоимость, модели, каналы и последние запросы.</p>
+            </a>
             <a class="feature-card" href="/admin/providers/venice">
                 <span class="pill ready">Доступно</span>
-                <h3>Venice и расходы</h3>
-                <p>Баланс, ключ, модели, цены, лимиты и расход токенов.</p>
+                <h3>Venice</h3>
+                <p>Баланс, ключ, модели, цены, ограничения и общий расход провайдера.</p>
             </a>
-            <article class="feature-card disabled">
-                <span class="pill planned">Следующий этап</span>
-                <h3>Пользователи и тарифы</h3>
-                <p>Аккаунты, права, подписки, квоты, маржа и индивидуальный расход.</p>
-            </article>
         </section>
 
         <section class="links" aria-label="Быстрые ссылки">
@@ -57,7 +75,7 @@
         </section>
 
         <footer>
-            Данные провайдера и будущие данные пользователей разделены, чтобы расходы считались корректно.
+            Версия {{ version }}. Тексты запросов не сохраняются в журнале расходов.
         </footer>
     </main>
 </body>

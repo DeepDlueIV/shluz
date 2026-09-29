@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Расход — Shluz</title>
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+    <main class="shell wide">
+        <nav class="breadcrumbs"><a href="/admin">← Главная</a></nav>
+        <header class="hero compact">
+            <div>
+                <p class="eyebrow">Финансовый контроль</p>
+                <h1>Расход</h1>
+                <p class="muted">Фактические запросы, токены и себестоимость, полученная от поставщиков.</p>
+            </div>
+            <span class="status">{{ "{:,}".format(usage.request_count) }} запросов</span>
+        </header>
+
+        <section class="grid" aria-label="Итоги расхода">
+            <article class="card"><span class="label">Себестоимость USD</span><strong>{{ usage.cost_usd }}</strong></article>
+            <article class="card"><span class="label">Списано DIEM</span><strong>{{ usage.cost_diem }}</strong></article>
+            <article class="card"><span class="label">Входных токенов</span><strong>{{ "{:,}".format(usage.prompt_tokens) }}</strong></article>
+            <article class="card"><span class="label">Выходных токенов</span><strong>{{ "{:,}".format(usage.completion_tokens) }}</strong></article>
+        </section>
+
+        {% if usage.request_count == 0 %}
+            <section class="empty-state">
+                <h2>Расходов пока нет</h2>
+                <p>После первого успешного запроса здесь появятся токены, себестоимость, модель и источник.</p>
+            </section>
+        {% else %}
+            <section class="section-block">
+                <div class="section-heading">
+                    <div><p class="eyebrow">Разбивка</p><h2>По пользователям</h2></div>
+                    <p class="muted">До персональной авторизации запросы относятся к техническому аккаунту bootstrap.</p>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Пользователь</th><th>Запросы</th><th>Токены</th><th>USD</th><th>DIEM</th></tr></thead>
+                        <tbody>
+                        {% for row in usage.by_account %}
+                            <tr>
+                                <td><strong>{{ row.label }}</strong><small>{{ row.key }}</small></td>
+                                <td>{{ "{:,}".format(row.request_count) }}</td>
+                                <td>{{ "{:,}".format(row.prompt_tokens + row.completion_tokens) }}</td>
+                                <td>{{ row.cost_usd }}</td>
+                                <td>{{ row.cost_diem }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="split-grid section-block">
+                <article>
+                    <div class="section-heading"><div><p class="eyebrow">Разбивка</p><h2>По моделям</h2></div></div>
+                    <div class="table-wrap">
+                        <table class="compact-table">
+                            <thead><tr><th>Модель</th><th>Запросы</th><th>USD</th></tr></thead>
+                            <tbody>
+                            {% for row in usage.by_model %}
+                                <tr><td>{{ row.label }}</td><td>{{ row.request_count }}</td><td>{{ row.cost_usd }}</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+                <article>
+                    <div class="section-heading"><div><p class="eyebrow">Разбивка</p><h2>По каналам</h2></div></div>
+                    <div class="table-wrap">
+                        <table class="compact-table">
+                            <thead><tr><th>Канал</th><th>Запросы</th><th>USD</th></tr></thead>
+                            <tbody>
+                            {% for row in usage.by_source %}
+                                <tr><td>{{ row.label }}</td><td>{{ row.request_count }}</td><td>{{ row.cost_usd }}</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+            </section>
+
+            <section class="section-block">
+                <div class="section-heading">
+                    <div><p class="eyebrow">Журнал</p><h2>Последние запросы</h2></div>
+                    <p class="muted">Содержимое сообщений не сохраняется.</p>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Время</th><th>Пользователь</th><th>Канал</th><th>Поставщик / модель</th><th>Токены</th><th>Стоимость</th><th>ID поставщика</th></tr>
+                        </thead>
+                        <tbody>
+                        {% for event in usage.recent_events %}
+                            <tr>
+                                <td>{{ event.created_at }}</td>
+                                <td>{{ event.account_id }}</td>
+                                <td>{{ event.source }}</td>
+                                <td><strong>{{ event.provider }}</strong><small>{{ event.model }}</small></td>
+                                <td>{{ "{:,}".format(event.prompt_tokens) }} + {{ "{:,}".format(event.completion_tokens) }}</td>
+                                <td>{{ event.cost_usd }} USD<small>{{ event.cost_diem }} DIEM</small></td>
+                                <td>{{ event.provider_request_id or "—" }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        {% endif %}
+
+        <section class="notice">
+            <strong>Это себестоимость, а не цена для пользователя.</strong>
+            <p>Ваши внутренние тарифы, кредиты и маржу мы добавим отдельным расчётным слоем.</p>
+        </section>
+    </main>
+</body>
+</html>

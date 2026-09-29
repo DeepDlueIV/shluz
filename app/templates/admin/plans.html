@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Тарифы — Shluz</title>
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+    <main class="shell wide">
+        <nav class="breadcrumbs"><a href="/admin">← Главная</a></nav>
+        <header class="hero compact">
+            <div>
+                <p class="eyebrow">Коммерческие правила</p>
+                <h1>Тарифы</h1>
+                <p class="muted">Лимиты запросов, внутренних кредитов и число активных подписчиков.</p>
+            </div>
+            <span class="status">{{ plans | length }}</span>
+        </header>
+
+        {% if plans %}
+            <div class="table-wrap section-block">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Тариф</th>
+                            <th>Статус</th>
+                            <th>Кредитов в месяц</th>
+                            <th>Запросов в месяц</th>
+                            <th>Подписчиков</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for plan in plans %}
+                        <tr>
+                            <td>
+                                <strong>{{ plan.name }}</strong>
+                                <small>{{ plan.code }}</small>
+                            </td>
+                            <td>{{ "Активен" if plan.active else "Отключён" }}</td>
+                            <td>
+                                {% if plan.monthly_credit_limit is not none %}
+                                    {{ "{:,}".format(plan.monthly_credit_limit) }}
+                                {% else %}Без лимита{% endif %}
+                            </td>
+                            <td>
+                                {% if plan.monthly_request_limit is not none %}
+                                    {{ "{:,}".format(plan.monthly_request_limit) }}
+                                {% else %}Без лимита{% endif %}
+                            </td>
+                            <td>{{ "{:,}".format(plan.subscriber_count) }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <section class="empty-state">
+                <h2>Тарифов пока нет</h2>
+                <p>Схема уже готова. Конкретные тарифы добавим после определения цен и лимитов.</p>
+            </section>
+        {% endif %}
+
+        <section class="notice">
+            <strong>Пока это просмотр, а не редактор.</strong>
+            <p>Визуальное безопасное создание и изменение тарифов будет отдельным следующим шагом.</p>
+        </section>
+    </main>
+</body>
+</html>

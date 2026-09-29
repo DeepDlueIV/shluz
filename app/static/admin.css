@@ -41,8 +41,10 @@ a.feature-card:hover { transform: translateY(-2px); border-color: #939aa7; }
 .section-heading { display: flex; justify-content: space-between; gap: 28px; align-items: end; }
 .section-heading h2 { margin: 5px 0 0; }
 .section-heading > p { max-width: 520px; margin: 0; line-height: 1.5; }
+.split-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .table-wrap { overflow-x: auto; border: 1px solid #e1e3e8; border-radius: 16px; background: #fff; }
 table { width: 100%; border-collapse: collapse; min-width: 700px; }
+table.compact-table { min-width: 420px; }
 th, td { padding: 15px 16px; text-align: left; border-bottom: 1px solid #eceef2; vertical-align: top; }
 th { color: #666b75; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; background: #fafbfc; }
 tr:last-child td { border-bottom: 0; }
@@ -58,6 +60,10 @@ td small { margin-top: 4px; }
 .empty-inline { color: #666b75; }
 code { border-radius: 6px; background: #eceef2; padding: 2px 6px; }
 footer { border-top: 1px solid #dddfe4; padding-top: 24px; font-size: 14px; }
+
+@media (max-width: 800px) {
+    .split-grid { grid-template-columns: 1fr; }
+}
 
 @media (max-width: 700px) {
     .shell { padding: 28px 0; }
