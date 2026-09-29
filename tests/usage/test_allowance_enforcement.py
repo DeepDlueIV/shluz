@@ -86,6 +86,45 @@ def test_personal_request_requires_active_subscription(tmp_path):
         )
 
 
+def test_disabled_plan_and_expired_subscription_block_immediately(tmp_path):
+    database, service = _service(tmp_path)
+    account_id, plan_id = _subscribed_account(database)
+    now = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
+
+    with database.session() as session:
+        plan = session.get(Plan, plan_id)
+        assert plan is not None
+        plan.active = False
+
+    with pytest.raises(SubscriptionRequiredError):
+        service.authorize_request(
+            account_id=account_id,
+            source="harness",
+            provider="mock",
+            model="mock-chat",
+            now=now,
+        )
+
+    with database.session() as session:
+        plan = session.get(Plan, plan_id)
+        assert plan is not None
+        plan.active = True
+        subscription = session.scalar(
+            select(Subscription).where(Subscription.account_id == account_id)
+        )
+        assert subscription is not None
+        subscription.ends_at = now - timedelta(seconds=1)
+
+    with pytest.raises(SubscriptionRequiredError):
+        service.authorize_request(
+            account_id=account_id,
+            source="harness",
+            provider="mock",
+            model="mock-chat",
+            now=now,
+        )
+
+
 def test_authorize_request_creates_expiring_reservation(tmp_path):
     database, service = _service(tmp_path)
     account_id, plan_id = _subscribed_account(database)
@@ -233,6 +272,38 @@ def test_success_settlement_records_exact_credits_revenue_and_margin(tmp_path):
     assert event.internal_credits == 10
     assert event.reserved_credits == 0
     assert event.completed_at is not None
+
+
+def test_historical_charge_does_not_change_after_plan_edit(tmp_path):
+    database, service = _service(tmp_path)
+    account_id, plan_id = _subscribed_account(database, markup=Decimal("25"))
+    reservation = service.authorize_request(
+        account_id=account_id,
+        source="harness",
+        provider="venice",
+        model="model-a",
+    )
+    event = service.record_success(
+        reservation=reservation,
+        result=ChatResult(
+            content="Готово",
+            request_id="historical-1",
+            cost_usd=Decimal("0.008"),
+        ),
+    )
+
+    with database.session() as session:
+        plan = session.get(Plan, plan_id)
+        assert plan is not None
+        plan.markup_percent = Decimal("90")
+
+    with database.session() as session:
+        stored = session.get(UsageEvent, event.id)
+
+    assert stored is not None
+    assert stored.pricing_markup_percent == Decimal("25.00")
+    assert stored.billed_usd == Decimal("0.01000000")
+    assert stored.internal_credits == 10
 
 
 def test_provider_failure_releases_reservation_and_keeps_error_event(tmp_path):
