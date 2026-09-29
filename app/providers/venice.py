@@ -36,7 +36,7 @@ class VeniceUsageAnalytics:
     lookback: str
     total_usd: Decimal
     total_diem: Decimal
-    total_requests: int
+    total_units: int
     prompt_tokens: int
     completion_tokens: int
     by_model: tuple[dict[str, Any], ...]
@@ -244,18 +244,55 @@ class VeniceProvider:
         lookback: str,
     ) -> VeniceUsageAnalytics:
         data = payload.get("data", payload)
-        total = data.get("total") or data.get("totals") or data.get("summary") or {}
+        by_date = tuple(data.get("byDate") or data.get("by_date") or ())
+        by_model = tuple(data.get("byModel") or data.get("by_model") or ())
+        by_key = tuple(data.get("byKey") or data.get("by_key") or ())
+
+        if by_date:
+            total_usd = sum(
+                (_decimal(item.get("USD", item.get("usd"))) for item in by_date),
+                Decimal("0"),
+            )
+            total_diem = sum(
+                (_decimal(item.get("DIEM", item.get("diem"))) for item in by_date),
+                Decimal("0"),
+            )
+        else:
+            total_usd = sum(
+                (_decimal(item.get("totalUsd", item.get("total_usd"))) for item in by_model),
+                Decimal("0"),
+            )
+            total_diem = sum(
+                (_decimal(item.get("totalDiem", item.get("total_diem"))) for item in by_model),
+                Decimal("0"),
+            )
+
+        total_units = sum(
+            (_int(item.get("totalUnits", item.get("total_units"))) for item in by_model),
+            0,
+        )
+        prompt_tokens = 0
+        completion_tokens = 0
+        for model in by_model:
+            if str(model.get("unitType", model.get("unit_type", ""))).lower() != "tokens":
+                continue
+            for item in model.get("breakdown") or ():
+                item_type = str(item.get("type", "")).lower()
+                units = _int(item.get("units"))
+                if item_type in {"input", "prompt"}:
+                    prompt_tokens += units
+                elif item_type in {"output", "completion"}:
+                    completion_tokens += units
+
         return VeniceUsageAnalytics(
-            lookback=lookback,
-            total_usd=_decimal(total.get("usd") or total.get("amountUsd")),
-            total_diem=_decimal(total.get("diem") or total.get("amountDiem")),
-            total_requests=_int(total.get("requests") or total.get("requestCount")),
-            prompt_tokens=_int(total.get("promptTokens") or total.get("prompt_tokens")),
-            completion_tokens=_int(
-                total.get("completionTokens") or total.get("completion_tokens")
-            ),
-            by_model=tuple(data.get("byModel") or data.get("by_model") or ()),
-            by_key=tuple(data.get("byKey") or data.get("by_key") or ()),
+            lookback=str(data.get("lookback") or lookback),
+            total_usd=total_usd,
+            total_diem=total_diem,
+            total_units=total_units,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            by_model=by_model,
+            by_key=by_key,
         )
 
     def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
