@@ -205,14 +205,18 @@ class UsageService:
             or 0
         )
         if _enabled_numeric_limit(plan.monthly_cost_limit_usd):
-            if successful_cost >= plan.monthly_cost_limit_usd:
-                raise SpendLimitExceededError("Monthly provider cost limit exceeded")
-            reserve_billed = Decimal(reserve) * self._settings.credit_unit_usd
             multiplier = Decimal("1") + max(plan.markup_percent, Decimal("0")) / Decimal(
                 "100"
             )
+            pending_billed = Decimal(pending_credits) * self._settings.credit_unit_usd
+            pending_cost = pending_billed / multiplier if multiplier > 0 else pending_billed
+            committed_cost = successful_cost + pending_cost
+            if committed_cost >= plan.monthly_cost_limit_usd:
+                raise SpendLimitExceededError("Monthly provider cost limit exceeded")
+
+            reserve_billed = Decimal(reserve) * self._settings.credit_unit_usd
             reserve_cost = reserve_billed / multiplier if multiplier > 0 else reserve_billed
-            if reserve and successful_cost + reserve_cost > plan.monthly_cost_limit_usd:
+            if reserve and committed_cost + reserve_cost > plan.monthly_cost_limit_usd:
                 raise SpendLimitExceededError("Not enough provider budget for reservation")
 
     def record_success(
@@ -257,6 +261,7 @@ class UsageService:
             event.reserved_credits = 0
             event.status = "success"
             event.error_code = None
+            event.reservation_expires_at = None
             event.completed_at = datetime.now(UTC)
             session.flush()
             return event
@@ -274,6 +279,7 @@ class UsageService:
             event.status = "failed"
             event.error_code = error_code
             event.reserved_credits = 0
+            event.reservation_expires_at = None
             event.completed_at = datetime.now(UTC)
             session.flush()
             return event
