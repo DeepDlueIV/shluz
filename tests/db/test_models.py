@@ -2,8 +2,6 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 
 from app.db.models import (
     Account,
@@ -19,6 +17,8 @@ from app.db.session import (
     create_session_factory,
     initialize_database,
 )
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 
 def _session_factory():
