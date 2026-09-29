@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import Engine, create_engine, event, inspect
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -8,6 +8,18 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 
 SessionFactory = sessionmaker[Session]
+REQUIRED_TABLES = frozenset(
+    {
+        "accounts",
+        "account_balances",
+        "identities",
+        "plans",
+        "subscriptions",
+        "api_tokens",
+        "usage_events",
+        "audit_events",
+    }
+)
 
 
 def create_database_engine(database_url: str, *, echo: bool = False) -> Engine:
@@ -51,8 +63,18 @@ def create_session_factory(engine: Engine) -> SessionFactory:
 
 
 def initialize_database(engine: Engine) -> None:
-    """Create missing tables for the current development milestone."""
+    """Create local SQLite tables or validate a managed PostgreSQL schema."""
 
     from app.db import models as _models  # noqa: F401
 
-    Base.metadata.create_all(engine)
+    if engine.dialect.name == "sqlite":
+        Base.metadata.create_all(engine)
+        return
+
+    existing_tables = set(inspect(engine).get_table_names(schema="public"))
+    missing_tables = sorted(REQUIRED_TABLES - existing_tables)
+    if missing_tables:
+        missing = ", ".join(missing_tables)
+        raise RuntimeError(
+            "Database migration is required before startup; missing tables: " + missing
+        )
