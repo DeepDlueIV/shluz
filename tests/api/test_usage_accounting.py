@@ -1,8 +1,15 @@
 from decimal import Decimal
 
+from app.services.usage import UsageStorageError
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from app.db.models import UsageEvent
+from app.db.session import (
+    create_database_engine,
+    create_session_factory,
+    initialize_database,
+)
 from app.factory import create_app
 from app.providers.base import (
     ChatRequest,
@@ -11,13 +18,6 @@ from app.providers.base import (
     ProviderRateLimitError,
 )
 from app.providers.registry import ProviderRegistry
-from app.db.models import UsageEvent
-from app.db.session import (
-    create_database_engine,
-    create_session_factory,
-    initialize_database,
-)
-from app.services.usage import UsageStorageError
 
 
 class SuccessfulProvider:
