@@ -80,6 +80,7 @@ def test_admin_issues_token_once_and_later_shows_only_safe_prefix(client):
     )
 
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
     match = _TOKEN_PATTERN.search(response.text)
     assert match is not None
     raw_token = match.group(0)
