@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     bootstrap_api_token: SecretStr = SecretStr("dev-token")
     admin_username: str = "admin"
     admin_password: SecretStr = SecretStr("change-me")
+    database_url: SecretStr = SecretStr("sqlite+pysqlite:///./data/shluz.db")
 
     active_provider: Literal["mock", "venice"] = "mock"
     venice_api_key: SecretStr | None = None
