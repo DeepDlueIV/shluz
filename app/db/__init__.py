@@ -3,6 +3,7 @@
 from app.db.base import Base
 from app.db.models import (
     Account,
+    AccountBalance,
     ApiToken,
     AuditEvent,
     Identity,
@@ -19,6 +20,7 @@ from app.db.session import (
 
 __all__ = [
     "Account",
+    "AccountBalance",
     "ApiToken",
     "AuditEvent",
     "Base",

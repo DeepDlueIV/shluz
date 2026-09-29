@@ -7,12 +7,12 @@
     <link rel="stylesheet" href="/static/admin.css">
 </head>
 <body>
-    <main class="shell">
+    <main class="shell wide">
         <header class="hero">
             <div>
                 <p class="eyebrow">Центральный API-шлюз</p>
                 <h1>Shluz</h1>
-                <p class="muted">Понятная панель управления. Секретные ключи здесь не отображаются.</p>
+                <p class="muted">Понятная панель управления пользователями, тарифами и расходами. Секретные ключи здесь не отображаются.</p>
             </div>
             <span class="status">Работает</span>
         </header>
@@ -35,19 +35,55 @@
                 <span class="label">Провайдеры</span>
                 <strong>{{ provider_names | join(', ') }}</strong>
             </article>
+            <article class="card">
+                <span class="label">Пользователей</span>
+                <strong>{{ account_count }}</strong>
+            </article>
+            <article class="card">
+                <span class="label">Тарифов</span>
+                <strong>{{ plan_count }}</strong>
+            </article>
+            <article class="card">
+                <span class="label">Запросов учтено</span>
+                <strong>{{ usage_count }}</strong>
+            </article>
+            <article class="card">
+                <span class="label">Себестоимость USD</span>
+                <strong>{{ total_cost }}</strong>
+            </article>
         </section>
 
         <h2>Управление</h2>
         <section class="feature-grid" aria-label="Разделы управления">
             <a class="feature-card" href="/admin/providers/venice">
                 <span class="pill ready">Доступно</span>
-                <h3>Venice и расходы</h3>
-                <p>Баланс, ключ, модели, цены, лимиты и расход токенов.</p>
+                <h3>Venice и провайдер</h3>
+                <p>Баланс поставщика, модели, закупочные цены и внешние лимиты.</p>
+            </a>
+            <a class="feature-card" href="/admin/users">
+                <span class="pill ready">Доступно</span>
+                <h3>Пользователи и тарифы</h3>
+                <p>Аккаунты, роли, способы входа, баланс, подписка и расход.</p>
+            </a>
+            <a class="feature-card" href="/admin/plans">
+                <span class="pill ready">Доступно</span>
+                <h3>Тарифные планы</h3>
+                <p>Цена, включённые кредиты, права, ограничения и подписки.</p>
+            </a>
+            <a class="feature-card" href="/admin/usage">
+                <span class="pill ready">Доступно</span>
+                <h3>Расход и токены</h3>
+                <p>Запросы, каналы, модели, токены, себестоимость и ошибки.</p>
+            </a>
+            <a class="feature-card" href="/admin/tokens">
+                <span class="pill ready">Доступно</span>
+                <h3>Ключи доступа</h3>
+                <p>Владелец, префикс, права, статус и срок действия без показа секрета.</p>
             </a>
             <article class="feature-card disabled">
                 <span class="pill planned">Следующий этап</span>
-                <h3>Пользователи и тарифы</h3>
-                <p>Аккаунты, права, подписки, квоты, маржа и индивидуальный расход.</p>
+                <h3>Регистрация и платежи</h3>
+                <p>Вход через сайт и Telegram, пополнение, списание квот и платёжные события.</p>
             </article>
         </section>
 
@@ -57,7 +93,7 @@
         </section>
 
         <footer>
-            Данные провайдера и будущие данные пользователей разделены, чтобы расходы считались корректно.
+            Данные поставщика и данные ваших пользователей считаются отдельно, чтобы видеть себестоимость, лимиты и будущую маржу.
         </footer>
     </main>
 </body>

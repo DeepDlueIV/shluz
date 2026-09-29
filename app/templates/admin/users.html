@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Пользователи — Shluz</title>
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+    <main class="shell wide">
+        <nav class="breadcrumbs"><a href="/admin">← Главная</a></nav>
+        <header class="hero compact">
+            <div>
+                <p class="eyebrow">Аккаунты и права</p>
+                <h1>Пользователи</h1>
+                <p class="muted">Единый список пользователей из Harness, сайта, Telegram и будущих каналов.</p>
+            </div>
+            <span class="status">{{ rows | length }}</span>
+        </header>
+
+        {% if rows %}
+            <div class="table-wrap section-block">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Пользователь</th>
+                            <th>Роль и статус</th>
+                            <th>Способы входа</th>
+                            <th>Тариф</th>
+                            <th>Баланс</th>
+                            <th>Запросы</th>
+                            <th>Себестоимость USD</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for row in rows %}
+                        <tr>
+                            <td>
+                                <strong>{{ row.account.display_name }}</strong>
+                                <small>{{ row.account.id }}</small>
+                            </td>
+                            <td>
+                                <span class="metric">{{ row.account.role }}</span>
+                                <span class="metric">{{ row.account.status }}</span>
+                            </td>
+                            <td>
+                                {% if row.identities %}
+                                    {% for identity in row.identities %}<span class="metric">{{ identity }}</span>{% endfor %}
+                                {% else %}—{% endif %}
+                            </td>
+                            <td>{{ row.plan.name if row.plan else "Без тарифа" }}</td>
+                            <td>
+                                {% if row.balance %}
+                                    <strong>{{ row.balance.available_credits }}</strong>
+                                    <small>резерв: {{ row.balance.reserved_credits }}</small>
+                                {% else %}—{% endif %}
+                            </td>
+                            <td>{{ row.requests }}</td>
+                            <td>{{ row.cost }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <section class="empty-state">
+                <h2>Пользователей пока нет</h2>
+                <p>Здесь появятся аккаунты после подключения регистрации через сайт, Telegram или Harness.</p>
+                <p class="muted">Схема базы уже готова: один человек сможет иметь несколько способов входа и общий баланс.</p>
+            </section>
+        {% endif %}
+    </main>
+</body>
+</html>

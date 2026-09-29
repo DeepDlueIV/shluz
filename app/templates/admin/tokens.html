@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ключи доступа — Shluz</title>
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+    <main class="shell wide">
+        <nav class="breadcrumbs"><a href="/admin">← Главная</a></nav>
+        <header class="hero compact">
+            <div>
+                <p class="eyebrow">Доступ клиентов</p>
+                <h1>Ключи доступа</h1>
+                <p class="muted">Безопасные метаданные клиентских токенов. Полное значение и хэш в интерфейс не передаются.</p>
+            </div>
+            <span class="status">{{ rows | length }}</span>
+        </header>
+
+        {% if rows %}
+            <div class="table-wrap section-block">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Владелец</th>
+                            <th>Название</th>
+                            <th>Префикс</th>
+                            <th>Права</th>
+                            <th>Статус</th>
+                            <th>Срок действия</th>
+                            <th>Последнее использование</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for row in rows %}
+                        <tr>
+                            <td>{{ row.account_name }}</td>
+                            <td>{{ row.name }}</td>
+                            <td><code>{{ row.prefix }}</code></td>
+                            <td>{% for scope in row.scopes %}<span class="metric">{{ scope }}</span>{% endfor %}</td>
+                            <td>{{ row.status }}</td>
+                            <td>{{ row.expires_at or "Без срока" }}</td>
+                            <td>{{ row.last_used_at or "Ещё не использовался" }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <section class="empty-state">
+                <h2>Клиентских токенов пока нет</h2>
+                <p>Позднее здесь можно будет выпускать отдельные ключи для Harness, сайта, Telegram и интеграций.</p>
+                <p class="muted">Секрет будет показан только один раз при создании, а в базе сохранится лишь криптографический хэш.</p>
+            </section>
+        {% endif %}
+    </main>
+</body>
+</html>

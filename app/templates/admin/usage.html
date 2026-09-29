@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Расход — Shluz</title>
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+    <main class="shell wide">
+        <nav class="breadcrumbs"><a href="/admin">← Главная</a></nav>
+        <header class="hero compact">
+            <div>
+                <p class="eyebrow">Финансовый контроль</p>
+                <h1>Расход и токены</h1>
+                <p class="muted">Последние запросы, каналы, провайдеры, токены, закупочная стоимость и ошибки.</p>
+            </div>
+            <span class="status">учёт включён</span>
+        </header>
+
+        <section class="grid" aria-label="Сводка расхода">
+            <article class="card"><span class="label">Запросов</span><strong>{{ request_count }}</strong></article>
+            <article class="card"><span class="label">Ошибок</span><strong>{{ failed_count }}</strong></article>
+            <article class="card"><span class="label">Токенов</span><strong>{{ total_tokens }}</strong></article>
+            <article class="card"><span class="label">Себестоимость USD</span><strong>{{ total_cost }}</strong></article>
+        </section>
+
+        {% if events %}
+            <div class="table-wrap section-block">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Время</th>
+                            <th>Канал</th>
+                            <th>Провайдер и модель</th>
+                            <th>Статус</th>
+                            <th>Вход</th>
+                            <th>Выход</th>
+                            <th>Стоимость USD</th>
+                            <th>Списано кредитов</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for event in events %}
+                        <tr>
+                            <td>{{ event.created_at }}</td>
+                            <td>{{ event.channel }}</td>
+                            <td><strong>{{ event.provider }}</strong><small>{{ event.model }}</small></td>
+                            <td>
+                                <span class="metric">{{ event.status }}</span>
+                                {% if event.error_code %}<small>{{ event.error_code }}</small>{% endif %}
+                            </td>
+                            <td>{{ event.prompt_tokens }}</td>
+                            <td>{{ event.completion_tokens }}</td>
+                            <td>{{ event.cost_usd }}</td>
+                            <td>{{ event.billed_credits }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <section class="empty-state">
+                <h2>Запросов пока нет</h2>
+                <p>После первого обращения к модели здесь появятся токены, себестоимость, канал и итоговый статус.</p>
+                <p class="muted">Shluz создаёт запись до платного вызова, поэтому незамеченный расход не должен проходить мимо учёта.</p>
+            </section>
+        {% endif %}
+    </main>
+</body>
+</html>

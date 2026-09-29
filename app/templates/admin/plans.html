@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Тарифы — Shluz</title>
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+    <main class="shell wide">
+        <nav class="breadcrumbs"><a href="/admin">← Главная</a></nav>
+        <header class="hero compact">
+            <div>
+                <p class="eyebrow">Коммерческие условия</p>
+                <h1>Тарифные планы</h1>
+                <p class="muted">Цена, включённый объём, права, ограничения и число активных подписок.</p>
+            </div>
+            <span class="status">{{ rows | length }}</span>
+        </header>
+
+        {% if rows %}
+            <div class="table-wrap section-block">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Тариф</th>
+                            <th>Цена в месяц</th>
+                            <th>Кредиты</th>
+                            <th>Права</th>
+                            <th>Ограничения</th>
+                            <th>Подписок</th>
+                            <th>Статус</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for row in rows %}
+                        <tr>
+                            <td>
+                                <strong>{{ row.plan.name }}</strong>
+                                <small>{{ row.plan.code }}</small>
+                            </td>
+                            <td>{{ row.monthly_price }} {{ row.plan.currency }}</td>
+                            <td>{{ row.plan.included_credits }}</td>
+                            <td>
+                                {% if row.plan.entitlements %}
+                                    {% for key, value in row.plan.entitlements.items() %}
+                                        <span class="metric">{{ key }}: {% if value is iterable and value is not string and value is not mapping %}{{ value | join(', ') }}{% else %}{{ value }}{% endif %}</span>
+                                    {% endfor %}
+                                {% else %}—{% endif %}
+                            </td>
+                            <td>
+                                {% if row.plan.usage_limits %}
+                                    {% for key, value in row.plan.usage_limits.items() %}<span class="metric">{{ key }}: {{ value }}</span>{% endfor %}
+                                {% else %}—{% endif %}
+                            </td>
+                            <td>{{ row.subscriptions }}</td>
+                            <td>{{ "активен" if row.plan.is_active else "отключён" }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <section class="empty-state">
+                <h2>Тарифов пока нет</h2>
+                <p>Здесь появятся ваши коммерческие планы: цена, доступные функции, квоты и ограничения.</p>
+                <p class="muted">До публичного запуска мы отдельно утвердим формулу внутренних кредитов и маржи.</p>
+            </section>
+        {% endif %}
+    </main>
+</body>
+</html>

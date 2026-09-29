@@ -29,6 +29,26 @@ class Account(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
 
 
+class AccountBalance(TimestampMixin, Base):
+    __tablename__ = "account_balances"
+
+    account_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    available_credits: Mapped[Decimal] = mapped_column(
+        Numeric(20, 6),
+        default=Decimal("0"),
+        nullable=False,
+    )
+    reserved_credits: Mapped[Decimal] = mapped_column(
+        Numeric(20, 6),
+        default=Decimal("0"),
+        nullable=False,
+    )
+
+
 class Identity(TimestampMixin, Base):
     __tablename__ = "identities"
     __table_args__ = (
@@ -61,6 +81,8 @@ class Plan(TimestampMixin, Base):
         default=Decimal("0"),
         nullable=False,
     )
+    entitlements: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    usage_limits: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
 
 
