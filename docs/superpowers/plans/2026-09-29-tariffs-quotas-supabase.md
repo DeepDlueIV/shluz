@@ -37,17 +37,19 @@
 - Modify: `app/config.py`
 - Modify: `app/db/models.py`
 - Create: `migrations/versions/20260929_03_tariff_enforcement.py`
+- Create: `migrations/versions/20260929_04_remove_duplicate_indexes.py`
 - Test: `tests/db/test_tariff_schema.py`
 
 **Interfaces:**
 - Produces new `Plan` pricing/limit fields and `UsageEvent` reservation/billing fields.
 
-- [ ] Write failing schema tests for plan price, cost limit, markup, request reserve, billed USD, plan snapshot, and reservation expiry.
-- [ ] Run the focused test and confirm failure.
-- [ ] Add model fields and configurable credit unit/reservation TTL.
-- [ ] Add the Alembic migration.
-- [ ] Run schema tests and migration verification.
-- [ ] Commit.
+- [x] Write failing schema tests for plan price, cost limit, markup, request reserve, billed USD, plan snapshot, and reservation expiry.
+- [x] Run the focused test and confirm failure.
+- [x] Add model fields and configurable credit unit/reservation TTL.
+- [x] Add the Alembic migrations.
+- [x] Remove indexes duplicated by unique constraints after the Supabase advisor identified them.
+- [x] Run schema tests and migration verification.
+- [x] Commit.
 
 ### Task 2: Reservation and settlement service
 
@@ -60,13 +62,13 @@
 - Produces `SubscriptionRequiredError`, `RequestLimitExceededError`, `CreditLimitExceededError`, and `SpendLimitExceededError`.
 - Produces `authorize_request()`, `record_success()`, and `record_failure()`.
 
-- [ ] Write failing tests for active subscriptions, each limit, expired reservations, billing calculation, and provider failure release.
-- [ ] Run focused tests and confirm failure.
-- [ ] Implement active plan lookup and UTC month boundaries.
-- [ ] Implement pending reservations with account locking and expiry.
-- [ ] Implement exact settlement, credits, billed USD, and failure release.
-- [ ] Run focused tests.
-- [ ] Commit.
+- [x] Write failing tests for active subscriptions, each limit, expired reservations, billing calculation, and provider failure release.
+- [x] Run focused tests and confirm failure.
+- [x] Implement active plan lookup and UTC month boundaries.
+- [x] Implement pending reservations with account locking and expiry.
+- [x] Implement exact settlement, credits, billed USD, and failure release.
+- [x] Run focused tests.
+- [x] Commit.
 
 ### Task 3: Enforce limits in the chat API
 
@@ -78,12 +80,12 @@
 - Consumes the usage service from Task 2.
 - Produces OpenAI-like 402/429 billing errors.
 
-- [ ] Write failing endpoint tests for no plan, exhausted requests, exhausted credits, exhausted spend, success attribution, and provider failure cleanup.
-- [ ] Run focused tests and confirm failure.
-- [ ] Authorize before the provider call and settle after it.
-- [ ] Map billing exceptions to safe public error codes.
-- [ ] Run focused and regression tests.
-- [ ] Commit.
+- [x] Write failing endpoint tests for no plan, exhausted requests, exhausted credits, exhausted spend, success attribution, and provider failure cleanup.
+- [x] Run focused tests and confirm failure.
+- [x] Authorize before the provider call and settle after it.
+- [x] Map billing exceptions to safe public error codes.
+- [x] Run focused and regression tests.
+- [x] Commit.
 
 ### Task 4: Visual plan and subscription management
 
@@ -100,13 +102,13 @@
 - Produces visual plan creation/update and user plan assignment.
 - Produces current-month cost, billed amount, margin, limits, and remaining allowance.
 
-- [ ] Write failing tests for plan creation/update, validation, assignment/removal, dashboard totals, and secret safety.
-- [ ] Run focused tests and confirm failure.
-- [ ] Add safe numeric form parsing and CSRF-protected routes.
-- [ ] Extend reports with current-month allowance and margin data.
-- [ ] Add visual forms and tables.
-- [ ] Run focused and regression tests.
-- [ ] Commit.
+- [x] Write failing tests for plan creation/update, validation, assignment/removal, dashboard totals, and secret safety.
+- [x] Run focused tests and confirm failure.
+- [x] Add safe numeric form parsing and CSRF-protected routes.
+- [x] Extend reports with current-month allowance and margin data.
+- [x] Add visual forms and tables.
+- [x] Run focused and regression tests.
+- [x] Commit.
 
 ### Task 5: Documentation and automated verification
 
@@ -116,22 +118,31 @@
 - Modify: `docs/operations.md`
 - Modify: `docs/superpowers/plans/2026-09-29-tariffs-quotas-supabase.md`
 
-- [ ] Document tariff semantics, soft overrun caveat, Supabase connection, and admin workflow.
-- [ ] Run Ruff.
-- [ ] Run Alembic against a clean SQLite database.
-- [ ] Run the full pytest suite.
-- [ ] Confirm Docker build and runtime smoke test pass in GitHub Actions.
-- [ ] Mark all completed plan items.
-- [ ] Open and merge a pull request only after all checks pass.
+- [x] Document tariff semantics, soft overrun caveat, Supabase connection, and admin workflow.
+- [x] Run Ruff.
+- [x] Run Alembic against a clean SQLite database through `20260929_04`.
+- [x] Run the full pytest suite.
+- [x] Confirm Docker build and runtime smoke test pass in GitHub Actions.
+- [x] Mark all completed plan items.
+- [ ] Merge the pull request only after the final branch check passes.
 
 ### Task 6: Apply the verified schema to Supabase
 
 **External system:** confirmed project `jyipgxceyvzjziqajatn`.
 
-- [ ] Confirm the public schema is empty before changes.
-- [ ] Apply base schema, personal-token schema, and tariff-enforcement schema through Supabase migrations.
-- [ ] Create/synchronize `alembic_version` with `20260929_03`.
-- [ ] Enable RLS and revoke `anon`/`authenticated` access on Shluz tables.
-- [ ] Verify tables, constraints, and migration state.
-- [ ] Run Supabase security and performance advisors.
-- [ ] Do not store the database password or connection string in GitHub.
+- [x] Confirm the public schema is empty before changes.
+- [x] Apply base schema, personal-token schema, tariff-enforcement schema, and duplicate-index cleanup through Supabase migrations.
+- [x] Create/synchronize `alembic_version` with `20260929_04`.
+- [x] Enable RLS and revoke `anon`/`authenticated` access on Shluz application tables.
+- [x] Verify tables, constraints, indexes, and migration state.
+- [x] Run Supabase security and performance advisors.
+- [x] Do not store the database password or connection string in GitHub.
+
+## Verification Evidence
+
+- GitHub Actions run `36572016257`: Ruff, Alembic, full pytest suite, Docker build, container start, health check, mock chat request, and cleanup completed successfully.
+- Supabase migration history contains five applied Shluz migrations.
+- `public.alembic_version` contains `20260929_04`.
+- Duplicate unique-index advisory was removed after migration `20260929_04`.
+- Unused-index notices are expected on the empty new database and must be reassessed after real traffic.
+- RLS without public policies is intentional for the six server-only application tables.
