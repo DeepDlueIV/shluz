@@ -1,3 +1,4 @@
+from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
@@ -21,6 +22,9 @@ class Settings(BaseSettings):
     venice_base_url: str = "https://api.venice.ai/api/v1"
     venice_timeout_seconds: float = 30.0
     venice_analytics_lookback: str = "7d"
+
+    credit_unit_usd: Decimal = Decimal("0.001")
+    reservation_ttl_seconds: int = 900
 
     model_config = SettingsConfigDict(
         env_prefix="SHLUZ_",
