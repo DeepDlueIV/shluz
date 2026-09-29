@@ -99,7 +99,7 @@ def venice_dashboard(
             warnings.append("Каталог моделей Venice временно недоступен")
 
         try:
-            get_snapshot = getattr(provider, "get_account_snapshot")
+            get_snapshot = provider.get_account_snapshot
             snapshot = get_snapshot(lookback=settings.venice_analytics_lookback)
         except (AttributeError, ProviderError):
             warnings.append("Состояние аккаунта Venice временно недоступно")
