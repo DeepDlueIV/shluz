@@ -6,7 +6,7 @@ from sqlalchemy import inspect
 
 from app.config import Settings
 from app.db.database import Database
-from app.db.models import Account, Plan, UsageEvent
+from app.db.models import Account, ApiToken, Plan, UsageEvent
 
 
 def _database(tmp_path) -> Database:
@@ -23,6 +23,16 @@ def test_billing_settings_have_safe_defaults():
 
     assert settings.credit_unit_usd == Decimal("0.001")
     assert settings.reservation_ttl_seconds == 900
+
+
+def test_unique_columns_do_not_request_duplicate_indexes():
+    plan_code = Plan.__table__.c.code
+    token_hash = ApiToken.__table__.c.token_hash
+
+    assert plan_code.unique is True
+    assert plan_code.index is not True
+    assert token_hash.unique is True
+    assert token_hash.index is not True
 
 
 def test_plan_persists_pricing_and_limit_fields(tmp_path):
