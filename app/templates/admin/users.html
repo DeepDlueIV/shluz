@@ -1,197 +1,29 @@
-<!doctype html>
-<html lang="ru">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Пользователи — Shluz</title>
-    <link rel="stylesheet" href="/static/admin.css">
-</head>
-<body>
-    <main class="shell wide">
-        <nav class="breadcrumbs"><a href="/admin">← Главная</a></nav>
-        <header class="hero compact">
-            <div>
-                <p class="eyebrow">Управление доступом</p>
-                <h1>Пользователи</h1>
-                <p class="muted">Роли, тарифы, остатки, токены, каналы, себестоимость и маржа.</p>
-            </div>
-            <span class="status">{{ accounts | length }}</span>
-        </header>
-
-        <section class="form-card section-block">
-            <div>
-                <p class="eyebrow">Новый аккаунт</p>
-                <h2>Добавить пользователя</h2>
-                <p class="muted">На этом этапе аккаунт создаётся администратором. Самостоятельная регистрация появится позже.</p>
-            </div>
-            <form method="post" action="/admin/users" class="admin-form">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <label>
-                    Отображаемое имя
-                    <input name="display_name" maxlength="200" required placeholder="Например, Анна или Telegram demo">
-                </label>
-                <label>
-                    Роль
-                    <select name="role">
-                        <option value="user">Пользователь</option>
-                        <option value="admin">Администратор</option>
-                    </select>
-                </label>
-                <label>
-                    Статус
-                    <select name="status">
-                        <option value="active">Активен</option>
-                        <option value="disabled">Заблокирован</option>
-                    </select>
-                </label>
-                <button type="submit">Создать пользователя</button>
-            </form>
-        </section>
-
-        {% if accounts %}
-            <div class="table-wrap section-block">
-                <table class="users-table">
-                    <thead>
-                        <tr>
-                            <th>Пользователь</th>
-                            <th>Роль, статус и вход</th>
-                            <th>Тариф и ограничения</th>
-                            <th>Доступы</th>
-                            <th>Расход в этом месяце</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    {% for account in accounts %}
-                        {% set tokens = tokens_by_account.get(account.id, ()) %}
-                        <tr>
-                            <td>
-                                <strong>{{ account.display_name }}</strong>
-                                <small>{{ account.id }}</small>
-                                {% if account.blocked_reason %}
-                                    <span class="pill blocked">{{ account.blocked_reason }}</span>
-                                {% else %}
-                                    <span class="pill ready">Доступ разрешён</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                <span class="metric">{{ account.role }}</span>
-                                <span class="metric">{{ account.status }}</span>
-                                {% if account.identities %}
-                                    {% for identity in account.identities %}
-                                        <small>{{ identity.provider }}: {{ identity.username or identity.email or identity.subject }}</small>
-                                    {% endfor %}
-                                {% else %}<small>Способ входа ещё не привязан</small>{% endif %}
-                            </td>
-                            <td class="plan-cell">
-                                {% if account.plan_name %}
-                                    <strong>{{ account.plan_name }}</strong>
-                                    <small>{{ account.plan_code }}</small>
-                                {% else %}<strong>Без тарифа</strong>{% endif %}
-
-                                {% if account.id != "bootstrap" %}
-                                    <form method="post" action="/admin/users/{{ account.id }}/plan" class="inline-form">
-                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                        <select name="plan_id" aria-label="Тариф пользователя">
-                                            <option value="">Без тарифа</option>
-                                            {% for plan in plans %}
-                                                <option value="{{ plan.id }}" {% if account.plan_id == plan.id %}selected{% endif %}>{{ plan.name }} ({{ plan.code }})</option>
-                                            {% endfor %}
-                                        </select>
-                                        <button type="submit">Назначить</button>
-                                    </form>
-                                {% endif %}
-
-                                <small>
-                                    Запросы: {{ "{:,}".format(account.month_request_count) }} /
-                                    {% if account.monthly_request_limit is not none and account.monthly_request_limit > 0 %}
-                                        {{ "{:,}".format(account.monthly_request_limit) }}
-                                    {% else %}∞{% endif %}
-                                </small>
-                                <small>
-                                    Кредиты: {{ "{:,}".format(account.month_internal_credits) }} /
-                                    {% if account.monthly_credit_limit is not none and account.monthly_credit_limit > 0 %}
-                                        {{ "{:,}".format(account.monthly_credit_limit) }}
-                                    {% else %}∞{% endif %}
-                                </small>
-                                {% if account.remaining_requests is not none %}
-                                    <small>Осталось запросов: {{ "{:,}".format(account.remaining_requests) }}</small>
-                                {% endif %}
-                                {% if account.remaining_credits is not none %}
-                                    <small>Осталось кредитов: {{ "{:,}".format(account.remaining_credits) }}</small>
-                                {% endif %}
-                                {% if account.remaining_cost_usd is not none %}
-                                    <small>Остаток себестоимости: {{ account.remaining_cost_usd }} USD</small>
-                                {% endif %}
-                            </td>
-                            <td class="access-cell">
-                                {% if tokens %}
-                                    <div class="token-list">
-                                    {% for token in tokens %}
-                                        <div class="token-row">
-                                            <div>
-                                                <strong>{{ token.name }}</strong>
-                                                <small><code>{{ token.prefix }}…</code> · {{ token.source }}</small>
-                                                <small>{{ "Отозван" if token.revoked else "Активен" }}</small>
-                                                {% if token.last_used_at %}<small>Последний запрос: {{ token.last_used_at }}</small>{% endif %}
-                                            </div>
-                                            {% if not token.revoked %}
-                                                <form method="post" action="/admin/tokens/{{ token.id }}/revoke">
-                                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                                    <button type="submit" class="danger-button">Отозвать</button>
-                                                </form>
-                                            {% endif %}
-                                        </div>
-                                    {% endfor %}
-                                    </div>
-                                {% else %}
-                                    <span class="muted">Нет личных токенов</span>
-                                {% endif %}
-
-                                {% if account.id != "bootstrap" and account.status == "active" %}
-                                    <details class="token-issuer">
-                                        <summary>Выдать доступ</summary>
-                                        <form method="post" action="/admin/users/{{ account.id }}/tokens" class="compact-form">
-                                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                            <label>
-                                                Название
-                                                <input name="name" maxlength="200" required placeholder="Основной Harness">
-                                            </label>
-                                            <label>
-                                                Канал
-                                                <select name="source">
-                                                    <option value="harness">Harness</option>
-                                                    <option value="site">Сайт</option>
-                                                    <option value="telegram">Telegram</option>
-                                                    <option value="api">Другое API</option>
-                                                </select>
-                                            </label>
-                                            <button type="submit">Создать токен</button>
-                                        </form>
-                                    </details>
-                                {% endif %}
-                            </td>
-                            <td>
-                                <strong>{{ account.month_cost_usd }} USD себестоимость</strong>
-                                <small>{{ account.month_billed_usd }} USD расчётная выручка</small>
-                                <small>{{ account.month_margin_usd }} USD маржа</small>
-                                <small>{{ "{:,}".format(account.prompt_tokens + account.completion_tokens) }} токенов за всё время</small>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% else %}
-            <section class="empty-state">
-                <h2>Пользователей пока нет</h2>
-                <p>Создайте первый аккаунт формой выше.</p>
-            </section>
-        {% endif %}
-
-        <section class="notice">
-            <strong>Секретный токен показывается только один раз.</strong>
-            <p>После выдачи его нужно передать пользователю безопасным способом. В дальнейшем панель показывает только короткий префикс, статус, тариф и расход.</p>
-        </section>
-    </main>
-</body>
-</html>
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Пользователи — Shluz</title><link rel="stylesheet" href="/static/admin.css"></head><body><main class="shell wide">
+{% include 'admin/nav.html' %}
+<header class="hero compact"><div><p class="eyebrow">Управление доступом</p><h1>Пользователи</h1><p class="muted">Тарифы, остатки, доступы и история расходов.</p></div><span class="status">{{ accounts | length }}</span></header>
+<div class="links"><a href="/admin/users">Пользователи</a><a href="/admin/users?archive=1">Архив</a><a href="/admin/test">Проверить личный токен</a></div>
+{% if not show_archived %}<section class="form-card section-block"><div><p class="eyebrow">Новый аккаунт</p><h2>Добавить пользователя</h2><p class="muted">Сейчас — вручную для тестирования. Позднее регистрация и подтверждённая оплата будут автоматически назначать права.</p></div>
+<form method="post" action="/admin/users" class="admin-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label>Отображаемое имя<input name="display_name" maxlength="200" required placeholder="Тестовый пользователь"></label><label>Роль<select name="role"><option value="user">Пользователь</option><option value="admin">Администратор</option></select></label><label>Статус<select name="status"><option value="active">Активен</option><option value="disabled">Заблокирован</option></select></label><button type="submit">Создать пользователя</button></form></section>{% endif %}
+{% if accounts %}<div class="table-wrap section-block"><table class="users-table"><thead><tr><th>Пользователь</th><th>Роль, статус и вход</th><th>Тариф и ограничения</th><th>Доступы</th><th>Расход в этом месяце</th></tr></thead><tbody>
+{% for account in accounts %}{% set tokens = tokens_by_account.get(account.id, ()) %}
+<tr><td><strong>{{ account.display_name }}</strong><small>{{ account.id }}</small>
+{% if account.blocked_reason %}<span class="pill blocked">{{ account.blocked_reason }}</span>{% else %}<span class="pill ready">Доступ разрешён</span>{% endif %}
+{% if account.id != 'bootstrap' and account.role == 'user' %}<details class="archive-control"><summary>{{ 'Восстановить' if show_archived else 'В архив' }}</summary>
+<form method="post" action="/admin/users/{{ account.id }}/{{ 'restore' if show_archived else 'archive' }}" class="compact-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<p>{% if show_archived %}После восстановления назначьте тариф и выдайте новый токен. Старые доступы не возобновятся.{% else %}Доступ будет закрыт, личные токены отозваны, подписки остановлены. История расходов сохранится.{% endif %}</p><label class="checkbox-label"><input type="checkbox" name="confirm" value="yes" required> Подтверждаю действие</label><button type="submit" class="danger-button">{{ 'Восстановить' if show_archived else 'В архив' }}</button></form></details>{% endif %}
+</td><td><span class="metric">{{ account.role }}</span><span class="metric">{{ account.status }}</span>
+{% for identity in account.identities %}<small>{{ identity.provider }}: {{ identity.username or identity.email or identity.subject }}</small>{% else %}<small>Способ входа ещё не привязан</small>{% endfor %}</td>
+<td class="plan-cell">{% if account.plan_name %}<strong>{{ account.plan_name }}</strong><small>{{ account.plan_code }}</small>{% else %}<strong>Без тарифа</strong>{% endif %}
+{% if account.id != 'bootstrap' and not show_archived %}<form method="post" action="/admin/users/{{ account.id }}/plan" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><select name="plan_id" aria-label="Тариф пользователя"><option value="">Без тарифа</option>{% for plan in plans %}<option value="{{ plan.id }}" {% if account.plan_id == plan.id %}selected{% endif %}>{{ plan.name }} ({{ plan.code }})</option>{% endfor %}</select><button type="submit">Назначить</button></form>{% endif %}
+<small>Запросы: {{ '{:,}'.format(account.month_request_count) }} / {{ '{:,}'.format(account.monthly_request_limit) if account.monthly_request_limit is not none and account.monthly_request_limit > 0 else '∞' }}</small>
+<small>Кредиты: {{ '{:,}'.format(account.month_internal_credits) }} / {{ '{:,}'.format(account.monthly_credit_limit) if account.monthly_credit_limit is not none and account.monthly_credit_limit > 0 else '∞' }}</small>
+{% if account.remaining_requests is not none %}<small>Осталось запросов: {{ '{:,}'.format(account.remaining_requests) }}</small>{% endif %}
+{% if account.remaining_credits is not none %}<small>Осталось кредитов: {{ '{:,}'.format(account.remaining_credits) }}</small>{% endif %}
+{% if account.remaining_cost_usd is not none %}<small>Остаток себестоимости: {{ account.remaining_cost_usd }} USD</small>{% endif %}
+</td><td class="access-cell"><div class="token-list">{% for token in tokens %}<div class="token-row"><div><strong>{{ token.name }}</strong><small><code>{{ token.prefix }}…</code> · {{ token.source }}</small><small>{{ 'Отозван' if token.revoked else 'Активен' }}</small>{% if token.last_used_at %}<small>Последний запрос: {{ token.last_used_at }}</small>{% endif %}</div>
+{% if not token.revoked %}<form method="post" action="/admin/tokens/{{ token.id }}/revoke"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit" class="danger-button">Отозвать</button></form>{% endif %}</div>{% else %}<span class="muted">Нет личных токенов</span>{% endfor %}</div>
+{% if account.id != 'bootstrap' and account.status == 'active' %}<details class="token-issuer"><summary>Выдать доступ</summary><form method="post" action="/admin/users/{{ account.id }}/tokens" class="compact-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label>Название<input name="name" maxlength="200" required placeholder="Локальная проверка"></label><label>Канал<select name="source"><option value="harness">Harness</option><option value="site">Сайт</option><option value="telegram">Telegram</option><option value="api">Другое API</option></select></label><button type="submit">Создать токен</button></form></details>{% endif %}</td>
+<td><strong>{{ account.month_cost_usd }} USD себестоимость</strong><small>{{ account.month_billed_usd }} USD расчётная выручка</small><small>{{ account.month_margin_usd }} USD маржа</small><small>{{ '{:,}'.format(account.prompt_tokens + account.completion_tokens) }} токенов за всё время</small></td></tr>
+{% endfor %}</tbody></table></div>{% else %}<section class="empty-state"><h2>{{ 'Архив пуст' if show_archived else 'Пользователей пока нет' }}</h2><p>Записи не удаляются безвозвратно. Архив можно открыть кнопкой выше.</p></section>{% endif %}
+<section class="notice"><strong>Личный токен — ключ доступа этого пользователя.</strong><p>Он показывается один раз при выдаче. Для проверки скопируйте его в раздел «Проверка запроса». Это не пароль администратора и не ключ Venice.</p></section>
+</main></body></html>

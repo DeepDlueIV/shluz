@@ -1,127 +1,36 @@
 <!doctype html>
 <html lang="ru">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Тарифы — Shluz</title>
-    <link rel="stylesheet" href="/static/admin.css">
-</head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Тарифы — Shluz</title><link rel="stylesheet" href="/static/admin.css"></head>
 <body>
-    <main class="shell wide">
-        <nav class="breadcrumbs"><a href="/admin">← Главная</a></nav>
-        <header class="hero compact">
-            <div>
-                <p class="eyebrow">Коммерческие правила</p>
-                <h1>Тарифы</h1>
-                <p class="muted">Цена, наценка, лимиты запросов, внутренних кредитов и себестоимости.</p>
-            </div>
-            <span class="status">{{ plans | length }}</span>
-        </header>
-
-        <section class="form-card section-block">
-            <div>
-                <p class="eyebrow">Новый тариф</p>
-                <h2>Создать тариф</h2>
-                <p class="muted">Пустой или нулевой лимит означает отсутствие ограничения.</p>
-            </div>
-            <form method="post" action="/admin/plans" class="plan-form">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <label>Код<input name="code" maxlength="64" required placeholder="pro"></label>
-                <label>Название<input name="name" maxlength="200" required placeholder="Pro"></label>
-                <label>Цена в месяц, USD<input name="monthly_price_usd" type="number" min="0" step="0.01" value="0"></label>
-                <label>Лимит себестоимости, USD<input name="monthly_cost_limit_usd" type="number" min="0" step="0.00000001" placeholder="Без лимита"></label>
-                <label>Кредитов в месяц<input name="monthly_credit_limit" type="number" min="0" step="1" placeholder="Без лимита"></label>
-                <label>Запросов в месяц<input name="monthly_request_limit" type="number" min="0" step="1" placeholder="Без лимита"></label>
-                <label>Резерв кредитов на запрос<input name="request_credit_reserve" type="number" min="0" step="1" value="0"></label>
-                <label>Наценка, %<input name="markup_percent" type="number" min="0" step="0.01" value="0"></label>
-                <label class="checkbox-label"><input name="active" type="checkbox" checked> Тариф активен</label>
-                <button type="submit">Создать тариф</button>
-            </form>
-        </section>
-
-        {% if plans %}
-            <div class="table-wrap section-block">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Тариф</th>
-                            <th>Статус и цена</th>
-                            <th>Лимиты в месяц</th>
-                            <th>Резерв и наценка</th>
-                            <th>Подписчиков</th>
-                            <th>Управление</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    {% for plan in plans %}
-                        <tr>
-                            <td>
-                                <strong>{{ plan.name }}</strong>
-                                <small>{{ plan.code }}</small>
-                            </td>
-                            <td>
-                                <span class="metric">{{ "Активен" if plan.active else "Отключён" }}</span>
-                                <small>{{ plan.monthly_price_usd }} USD / месяц</small>
-                            </td>
-                            <td>
-                                <small>
-                                    Запросы:
-                                    {% if plan.monthly_request_limit is not none and plan.monthly_request_limit > 0 %}
-                                        {{ "{:,}".format(plan.monthly_request_limit) }}
-                                    {% else %}без лимита{% endif %}
-                                </small>
-                                <small>
-                                    Кредиты:
-                                    {% if plan.monthly_credit_limit is not none and plan.monthly_credit_limit > 0 %}
-                                        {{ "{:,}".format(plan.monthly_credit_limit) }}
-                                    {% else %}без лимита{% endif %}
-                                </small>
-                                <small>
-                                    Себестоимость:
-                                    {% if plan.monthly_cost_limit_usd is not none and plan.monthly_cost_limit_usd > 0 %}
-                                        {{ plan.monthly_cost_limit_usd }} USD
-                                    {% else %}без лимита{% endif %}
-                                </small>
-                            </td>
-                            <td>
-                                <small>{{ "{:,}".format(plan.request_credit_reserve) }} кредитов / запрос</small>
-                                <small>{{ plan.markup_percent }}% наценки</small>
-                            </td>
-                            <td>{{ "{:,}".format(plan.subscriber_count) }}</td>
-                            <td class="management-cell">
-                                <details>
-                                    <summary>Изменить</summary>
-                                    <form method="post" action="/admin/plans/{{ plan.id }}" class="compact-form plan-edit-form">
-                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                        <label>Код<input name="code" maxlength="64" required value="{{ plan.code }}"></label>
-                                        <label>Название<input name="name" maxlength="200" required value="{{ plan.name }}"></label>
-                                        <label>Цена, USD<input name="monthly_price_usd" type="number" min="0" step="0.01" value="{{ plan.monthly_price_usd }}"></label>
-                                        <label>Лимит себестоимости<input name="monthly_cost_limit_usd" type="number" min="0" step="0.00000001" value="{{ plan.monthly_cost_limit_usd if plan.monthly_cost_limit_usd is not none else '' }}"></label>
-                                        <label>Кредиты<input name="monthly_credit_limit" type="number" min="0" step="1" value="{{ plan.monthly_credit_limit if plan.monthly_credit_limit is not none else '' }}"></label>
-                                        <label>Запросы<input name="monthly_request_limit" type="number" min="0" step="1" value="{{ plan.monthly_request_limit if plan.monthly_request_limit is not none else '' }}"></label>
-                                        <label>Резерв<input name="request_credit_reserve" type="number" min="0" step="1" value="{{ plan.request_credit_reserve }}"></label>
-                                        <label>Наценка, %<input name="markup_percent" type="number" min="0" step="0.01" value="{{ plan.markup_percent }}"></label>
-                                        <label class="checkbox-label"><input name="active" type="checkbox" {% if plan.active %}checked{% endif %}> Тариф активен</label>
-                                        <button type="submit">Сохранить</button>
-                                    </form>
-                                </details>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% else %}
-            <section class="empty-state">
-                <h2>Тарифов пока нет</h2>
-                <p>Создайте первый тариф формой выше. До назначения тарифа личные запросы пользователя будут заблокированы.</p>
-            </section>
-        {% endif %}
-
-        <section class="notice">
-            <strong>Цена пока справочная.</strong>
-            <p>Shluz уже рассчитывает себестоимость, внутренние кредиты, расчётную выручку и маржу. Подтверждённые платежи появятся после подключения платёжной системы.</p>
-        </section>
-    </main>
-</body>
-</html>
+{% from 'admin/plan_fields.html' import plan_fields %}
+{% set submitted = form_values | default({}) %}
+{% set editing = editing_plan_id | default('') %}
+<main class="shell wide">
+{% include 'admin/nav.html' %}
+<header class="hero compact"><div><p class="eyebrow">Коммерческие правила</p><h1>Тарифы</h1><p class="muted">Цены, наценка и ограничения. Название можно писать на русском, код — латиницей.</p></div><span class="status">{{ plans | length }}</span></header>
+<div class="links"><a href="/admin/plans">Активные</a><a href="/admin/plans?archive=1">Неактивные / архив</a></div>
+{% if form_error %}<div class="alert" role="alert"><strong>Не удалось сохранить тариф</strong><p>{{ form_error }}</p><small>Введённые значения сохранены в форме. Исправьте поле и повторите.</small></div>{% endif %}
+<section class="form-card section-block">
+<div><p class="eyebrow">Новый тариф</p><h2>Создать тариф</h2><p class="muted">Пустой или нулевой лимит означает отсутствие ограничения. Для проверки задайте 2 запроса в месяц.</p></div>
+<form method="post" action="/admin/plans" class="plan-form">
+{{ plan_fields(submitted if not editing else {}, csrf_token) }}
+<button type="submit">Создать тариф</button></form>
+</section>
+{% if plans %}<div class="table-wrap section-block"><table><thead><tr><th>Тариф</th><th>Статус и цена</th><th>Лимиты в месяц</th><th>Резерв и наценка</th><th>Подписчиков</th><th>Управление</th></tr></thead><tbody>
+{% for plan in plans %}
+<tr><td><strong>{{ plan.name }}</strong><small>{{ plan.code }}</small></td>
+<td><span class="metric">{{ 'Активен' if plan.active else 'Отключён' }}</span><small>{{ plan.monthly_price_usd }} USD / месяц</small></td>
+<td>{% for label, value in [('Запросы', plan.monthly_request_limit), ('Кредиты', plan.monthly_credit_limit), ('Себестоимость USD', plan.monthly_cost_limit_usd)] %}<small>{{ label }}: {{ '{:,}'.format(value) if value is not none and value > 0 else 'без лимита' }}</small>{% endfor %}</td>
+<td><small>{{ plan.request_credit_reserve }} кредитов / запрос</small><small>{{ plan.markup_percent }}% наценки</small></td><td>{{ plan.subscriber_count }}</td>
+<td class="management-cell"><details {% if editing == plan.id %}open{% endif %}><summary>Изменить</summary>
+<form method="post" action="/admin/plans/{{ plan.id }}" class="compact-form plan-edit-form">
+{% set current = {'code': plan.code, 'name': plan.name, 'monthly_price_usd': plan.monthly_price_usd, 'monthly_cost_limit_usd': plan.monthly_cost_limit_usd, 'monthly_credit_limit': plan.monthly_credit_limit, 'monthly_request_limit': plan.monthly_request_limit, 'request_credit_reserve': plan.request_credit_reserve, 'markup_percent': plan.markup_percent, 'active': plan.active} %}
+{{ plan_fields(submitted if editing == plan.id else current, csrf_token) }}<button type="submit">Сохранить</button></form></details>
+<details class="archive-control"><summary>{{ 'В архив' if plan.active else 'Восстановить' }}</summary>
+<form method="post" action="/admin/plans/{{ plan.id }}/{{ 'archive' if plan.active else 'restore' }}" class="compact-form">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}"><p>История расходов сохранится. Тариф с действующими подписками сначала нужно заменить пользователям.</p>
+<label class="checkbox-label"><input type="checkbox" name="confirm" value="yes" required> Подтверждаю действие</label><button type="submit" class="danger-button">{{ 'В архив' if plan.active else 'Восстановить' }}</button></form></details>
+</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<section class="empty-state"><h2>{{ 'Архив пуст' if show_archived else 'Тарифов пока нет' }}</h2><p>Создайте тариф формой выше. Для доступа назначьте его пользователю.</p></section>{% endif %}
+<section class="notice"><strong>Архив вместо безвозвратного удаления.</strong><p>История тарифов и расходов не стирается. Цена подписки пока справочная: платёжная система и автоматическая выдача прав будут отдельным этапом.</p></section>
+</main></body></html>

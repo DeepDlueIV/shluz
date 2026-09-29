@@ -1,83 +1,17 @@
-<!doctype html>
-<html lang="ru">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Shluz — управление</title>
-    <link rel="stylesheet" href="/static/admin.css">
-</head>
-<body>
-    <main class="shell">
-        <header class="hero">
-            <div>
-                <p class="eyebrow">Центральный API-шлюз</p>
-                <h1>Shluz</h1>
-                <p class="muted">Понятная панель управления. Секретные ключи здесь не отображаются.</p>
-            </div>
-            <span class="status">Работает</span>
-        </header>
-
-        <section class="grid" aria-label="Состояние системы">
-            <article class="card">
-                <span class="label">Окружение</span>
-                <strong>{{ environment }}</strong>
-            </article>
-            <article class="card">
-                <span class="label">Пользователей</span>
-                <strong>{{ account_count }}</strong>
-            </article>
-            <article class="card">
-                <span class="label">Запросов учтено</span>
-                <strong>{{ "{:,}".format(usage_request_count) }}</strong>
-            </article>
-            <article class="card">
-                <span class="label">Себестоимость USD</span>
-                <strong>{{ usage_cost_usd }}</strong>
-            </article>
-            <article class="card">
-                <span class="label">Моделей</span>
-                <strong>{{ model_count }}</strong>
-                {% if model_warning %}<small>{{ model_warning }}</small>{% endif %}
-            </article>
-            <article class="card">
-                <span class="label">Провайдеры</span>
-                <strong>{{ provider_names | join(', ') }}</strong>
-            </article>
-        </section>
-
-        <h2>Управление</h2>
-        <p class="muted">Пользователи и тарифы уже доступны для просмотра. Следующий этап — безопасное редактирование, регистрация и платежи.</p>
-        <section class="feature-grid" aria-label="Разделы управления">
-            <a class="feature-card" href="/admin/users">
-                <span class="pill ready">Доступно</span>
-                <h3>Пользователи</h3>
-                <p>Аккаунты, роли, способы входа, подписки и персональный расход.</p>
-            </a>
-            <a class="feature-card" href="/admin/plans">
-                <span class="pill ready">Доступно</span>
-                <h3>Тарифы</h3>
-                <p>Лимиты запросов и внутренних кредитов, статус и число подписчиков.</p>
-            </a>
-            <a class="feature-card" href="/admin/usage">
-                <span class="pill ready">Доступно</span>
-                <h3>Расход</h3>
-                <p>Токены, себестоимость, модели, каналы и последние запросы.</p>
-            </a>
-            <a class="feature-card" href="/admin/providers/venice">
-                <span class="pill ready">Доступно</span>
-                <h3>Venice</h3>
-                <p>Баланс, ключ, модели, цены, ограничения и общий расход провайдера.</p>
-            </a>
-        </section>
-
-        <section class="links" aria-label="Быстрые ссылки">
-            <a href="/docs">Интерактивная документация API</a>
-            <a href="/health">Проверка состояния сервера</a>
-        </section>
-
-        <footer>
-            Версия {{ version }}. Тексты запросов не сохраняются в журнале расходов.
-        </footer>
-    </main>
-</body>
-</html>
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Shluz — управление</title><link rel="stylesheet" href="/static/admin.css"></head><body><main class="shell">
+{% include 'admin/nav.html' %}<header class="hero"><div><p class="eyebrow">Центральный API-шлюз</p><h1>Shluz</h1><p class="muted">Панель владельца. Секретные ключи здесь не отображаются.</p></div><span class="status">Работает</span></header>
+<section class="grid" aria-label="Состояние системы">
+<article class="card"><span class="label">Окружение</span><strong>{{ environment }}</strong></article>
+<article class="card"><span class="label">Пользователей</span><strong>{{ account_count }}</strong></article>
+<article class="card"><span class="label">Запросов учтено</span><strong>{{ '{:,}'.format(usage_request_count) }}</strong></article>
+<article class="card"><span class="label">Себестоимость USD</span><strong>{{ usage_cost_usd }}</strong></article>
+<article class="card"><span class="label">Моделей</span><strong>{{ model_count }}</strong>{% if model_warning %}<small>{{ model_warning }}</small>{% endif %}</article>
+<article class="card"><span class="label">Провайдеры</span><strong>{{ provider_names | join(', ') }}</strong></article>
+</section><h2>Управление</h2><p class="muted">Пользователи и тарифы доступны для изменения. Все административные изменения фиксируются в журнале.</p><section class="feature-grid" aria-label="Разделы управления">
+<a class="feature-card" href="/admin/users"><h3>Пользователи</h3><p>Аккаунты, тарифы, личные доступы и архив.</p></a>
+<a class="feature-card" href="/admin/plans"><h3>Тарифы</h3><p>Создание, редактирование, ограничения и архив.</p></a>
+<a class="feature-card" href="/admin/usage"><h3>Расход</h3><p>Токены, себестоимость, маржа и результаты запросов.</p></a>
+<a class="feature-card" href="/admin/providers/venice"><h3>Venice</h3><p>Баланс, модели, цены и лимиты после подключения серверного ключа.</p></a>
+<a class="feature-card" href="/admin/logs"><h3>Журнал действий</h3><p>Кто и когда изменил тариф, пользователя или доступ.</p></a>
+<a class="feature-card" href="/admin/test"><h3>Проверка запроса</h3><p>Вставьте личный токен, напишите «Привет» и проверьте лимит.</p></a>
+</section><section class="links"><a href="/docs">Интерактивная документация API</a><a href="/health">Проверка состояния сервера</a></section><footer>Версия {{ version }}. Тексты запросов не сохраняются в журнале расходов. Приём платежей пока не подключён.</footer></main></body></html>
