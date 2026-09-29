@@ -1,0 +1,16 @@
+{% macro plan_fields(values, csrf_token) -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label>Код тарифа<input name="code" maxlength="64" required pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,63}" title="Латинские буквы, цифры, дефис или подчёркивание. Например: test" value="{{ values.get('code', '') }}" placeholder="test"><small>Латиница, без пробелов. Начните с буквы или цифры.</small></label>
+<label>Название<input name="name" maxlength="200" required value="{{ values.get('name', '') }}" placeholder="Тестовый"><small>Можно на русском.</small></label>
+{% for key, label, step, default in [
+('monthly_price_usd', 'Цена в месяц, USD', '0.01', '0'),
+('monthly_cost_limit_usd', 'Лимит себестоимости, USD', '0.00000001', ''),
+('monthly_credit_limit', 'Кредитов в месяц', '1', ''),
+('monthly_request_limit', 'Запросов в месяц', '1', ''),
+('request_credit_reserve', 'Резерв кредитов на запрос', '1', '0'),
+('markup_percent', 'Наценка, %', '0.01', '0')
+] %}
+<label>{{ label }}<input name="{{ key }}" type="number" min="0" step="{{ step }}" value="{{ values.get(key, default) if values.get(key, default) is not none else '' }}" placeholder="Без лимита"></label>
+{% endfor %}
+<label class="checkbox-label"><input name="active" type="checkbox" {% if values.get('active', true) %}checked{% endif %}> Тариф активен</label>
+{%- endmacro %}
