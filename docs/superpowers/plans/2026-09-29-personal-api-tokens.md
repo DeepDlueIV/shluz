@@ -1,6 +1,6 @@
 # Personal API Tokens Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status:** completed and verified in GitHub Actions.
 
 **Goal:** Replace the single shared technical token with optional personal API tokens that identify the user and channel, while preserving the bootstrap token for local testing.
 
@@ -37,33 +37,25 @@
 - Create: `migrations/versions/20260929_02_personal_tokens.py`
 - Test: `tests/db/test_personal_tokens.py`
 
-**Interfaces:**
-- Produces: `AuthenticatedToken`, `authenticate_api_token()`, `generate_api_token()`, `revoke_api_token()`.
-
-- [ ] Write failing tests for generation, hashing, lookup, revocation and inactive accounts.
-- [ ] Run the focused tests and confirm they fail for missing behavior.
-- [ ] Add token source, secure generation, authentication lookup and revocation.
-- [ ] Add the Alembic migration.
-- [ ] Run focused tests and migration verification.
-- [ ] Commit.
+- [x] Write failing tests for generation, hashing, lookup, revocation and inactive accounts.
+- [x] Run the focused tests and confirm they fail for missing behavior.
+- [x] Add token source, secure generation, authentication lookup and revocation.
+- [x] Add the Alembic migration.
+- [x] Run focused tests and migration verification.
+- [x] Commit.
 
 ### Task 2: API principal and usage attribution
 
 **Files:**
 - Modify: `app/api/auth.py`
-- Modify: `app/api/router.py`
 - Modify: `app/api/routes/chat.py`
 - Test: `tests/api/test_personal_auth.py`
 
-**Interfaces:**
-- Consumes: `authenticate_api_token()` from Task 1.
-- Produces: `AuthenticatedPrincipal(account_id, source, token_id, bootstrap)`.
-
-- [ ] Write failing tests for valid, invalid, revoked and bootstrap tokens.
-- [ ] Write a failing test proving personal usage is stored under the correct account/source.
-- [ ] Implement principal resolution and pass it to the chat route.
-- [ ] Run focused and full tests.
-- [ ] Commit.
+- [x] Write failing tests for valid, invalid, revoked and bootstrap tokens.
+- [x] Write a failing test proving personal usage is stored under the correct account/source.
+- [x] Implement principal resolution and pass it to the chat route.
+- [x] Run focused and full tests.
+- [x] Commit.
 
 ### Task 3: Visual account and token management
 
@@ -74,27 +66,28 @@
 - Modify: `app/static/admin.css`
 - Test: `tests/admin/test_token_management.py`
 
-**Interfaces:**
-- Consumes: token functions from Task 1.
-- Produces: visual account creation, one-time token issuance and revocation.
-
-- [ ] Write failing tests for CSRF protection, account creation, token creation and revocation.
-- [ ] Implement a deterministic HMAC CSRF token derived from the protected admin secret.
-- [ ] Add forms and a one-time token page.
-- [ ] Ensure later pages show only prefix/status, never raw token.
-- [ ] Run focused and full tests.
-- [ ] Commit.
+- [x] Write failing tests for CSRF protection, account creation, token creation and revocation.
+- [x] Implement a deterministic HMAC CSRF token derived from the protected admin secret.
+- [x] Add forms and a one-time token page.
+- [x] Ensure later pages show only prefix/status, never raw token.
+- [x] Prevent browsers and proxies from caching the one-time token page.
+- [x] Run focused and full tests.
+- [x] Commit.
 
 ### Task 4: Documentation and verification
 
 **Files:**
-- Modify: `.env.example`
 - Modify: `README.md`
 - Modify: `docs/operations.md`
 
-- [ ] Document personal tokens, sources and one-time display.
-- [ ] Run `ruff check .`.
-- [ ] Run `alembic upgrade head` against a clean SQLite database.
-- [ ] Run `pytest -v`.
-- [ ] Confirm Docker image builds in GitHub Actions.
-- [ ] Open a pull request and merge only after all checks pass.
+- [x] Document personal tokens, sources, revocation and one-time display.
+- [x] Confirm no new environment variable is required, so `.env.example` remains unchanged.
+- [x] Run `ruff check .`.
+- [x] Run `alembic upgrade head` against a clean SQLite database.
+- [x] Run `pytest -v`.
+- [x] Confirm Docker image builds in GitHub Actions.
+- [x] Open a pull request and merge only after all checks pass.
+
+## Verification record
+
+GitHub Actions verified linting, a clean Alembic migration, the full pytest suite and Docker image assembly. The no-cache protection was added through a separate red-green regression test.
