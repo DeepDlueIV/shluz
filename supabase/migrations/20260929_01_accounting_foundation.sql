@@ -161,24 +161,39 @@ alter table public.api_tokens enable row level security;
 alter table public.usage_events enable row level security;
 alter table public.audit_events enable row level security;
 
-revoke all on table public.accounts from anon, authenticated;
-revoke all on table public.account_balances from anon, authenticated;
-revoke all on table public.identities from anon, authenticated;
-revoke all on table public.plans from anon, authenticated;
-revoke all on table public.subscriptions from anon, authenticated;
-revoke all on table public.api_tokens from anon, authenticated;
-revoke all on table public.usage_events from anon, authenticated;
-revoke all on table public.audit_events from anon, authenticated;
+-- Supabase roles are granted/revoked only when they exist, so the same migration
+-- remains usable on an ordinary PostgreSQL server.
+do $$
+declare
+    client_role text;
+begin
+    foreach client_role in array array['anon', 'authenticated']
+    loop
+        if exists (select 1 from pg_roles where rolname = client_role) then
+            execute format(
+                'revoke all on table public.accounts, public.account_balances, '
+                'public.identities, public.plans, public.subscriptions, '
+                'public.api_tokens, public.usage_events, public.audit_events from %I',
+                client_role
+            );
+        end if;
+    end loop;
 
-grant usage on schema public to service_role;
-grant all on table public.accounts to service_role;
-grant all on table public.account_balances to service_role;
-grant all on table public.identities to service_role;
-grant all on table public.plans to service_role;
-grant all on table public.subscriptions to service_role;
-grant all on table public.api_tokens to service_role;
-grant all on table public.usage_events to service_role;
-grant all on table public.audit_events to service_role;
+    if exists (select 1 from pg_roles where rolname = 'service_role') then
+        grant usage on schema public to service_role;
+        grant all on table
+            public.accounts,
+            public.account_balances,
+            public.identities,
+            public.plans,
+            public.subscriptions,
+            public.api_tokens,
+            public.usage_events,
+            public.audit_events
+        to service_role;
+    end if;
+end;
+$$;
 
 comment on table public.api_tokens is
     'Stores only token prefixes and cryptographic hashes; never store a raw token.';
