@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
+from app.api.auth import AuthenticatedPrincipal, require_api_token
 from app.api.dependencies import get_provider_registry, get_usage_service
 from app.api.schemas import (
     AssistantMessageSchema,
@@ -61,6 +62,7 @@ def _error_response(
 )
 def chat_completions(
     payload: ChatCompletionRequestSchema,
+    principal: Annotated[AuthenticatedPrincipal, Depends(require_api_token)],
     registry: Annotated[ProviderRegistry, Depends(get_provider_registry)],
     usage_service: Annotated[UsageService, Depends(get_usage_service)],
 ) -> ChatCompletionResponseSchema | JSONResponse:
@@ -117,8 +119,8 @@ def chat_completions(
         )
 
     usage_service.record_success(
-        account_id="bootstrap",
-        source="bootstrap",
+        account_id=principal.account_id,
+        source=principal.source,
         provider=provider.name,
         model=payload.model,
         result=result,
