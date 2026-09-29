@@ -1,7 +1,6 @@
 import json
 import logging
 import re
-from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -220,8 +219,13 @@ def test_http_log_has_correlation_id_and_no_query_or_message(client, caplog):
     assert response.status_code == 200
     request_id = response.headers.get("x-request-id")
     assert request_id and request_id != "untrusted-id"
-    entries = [json.loads(record.message) for record in caplog.records if record.name == "shluz.access"]
-    assert any(entry["request_id"] == request_id and entry["status"] == 200 for entry in entries)
+    entries = [
+        json.loads(record.message) for record in caplog.records
+        if record.name == "shluz.access"
+    ]
+    assert any(
+        entry["request_id"] == request_id and entry["status"] == 200 for entry in entries
+    )
     assert "secret-query-123" not in caplog.text
     assert "secret-prompt-456" not in caplog.text
     assert "test-api-token" not in caplog.text
