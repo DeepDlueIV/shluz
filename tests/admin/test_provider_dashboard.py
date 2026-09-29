@@ -60,11 +60,28 @@ class DashboardVeniceProvider:
                 lookback=lookback,
                 total_usd=Decimal("4.25"),
                 total_diem=Decimal("0"),
-                total_requests=128,
+                total_units=21000,
                 prompt_tokens=15000,
                 completion_tokens=6000,
-                by_model=({"model": "venice-uncensored", "usd": 4.25},),
-                by_key=({"apiKey": "key-1", "usd": 4.25},),
+                by_model=(
+                    {
+                        "modelName": "Venice Uncensored",
+                        "modelType": "LLM",
+                        "unitType": "tokens",
+                        "totalUsd": 4.25,
+                        "totalDiem": 0,
+                        "totalUnits": 21000,
+                    },
+                ),
+                by_key=(
+                    {
+                        "apiKeyId": "key-1",
+                        "description": "Production Key",
+                        "totalUsd": 4.25,
+                        "totalDiem": 0,
+                        "totalUnits": 21000,
+                    },
+                ),
             ),
             warnings=(),
         )
@@ -95,7 +112,9 @@ def test_venice_dashboard_shows_balance_limits_models_and_usage(test_settings):
     assert "100" in response.text
     assert "2,000,000" in response.text
     assert "4.25" in response.text
-    assert "128" in response.text
+    assert "21,000" in response.text
+    assert "Production Key" in response.text
+    assert "key-1" in response.text
 
 
 def test_venice_dashboard_explains_when_provider_is_not_connected(client):
