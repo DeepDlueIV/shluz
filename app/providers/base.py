@@ -1,9 +1,22 @@
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Protocol
 
 
 class ProviderError(RuntimeError):
     """A provider failed in a controlled, user-safe way."""
+
+
+class ProviderAuthenticationError(ProviderError):
+    """Provider credentials are missing, expired, or invalid."""
+
+
+class ProviderInsufficientBalanceError(ProviderError):
+    """Provider account does not have enough balance for the request."""
+
+
+class ProviderRateLimitError(ProviderError):
+    """Provider rejected the request because a rate limit was reached."""
 
 
 class ModelNotFoundError(LookupError):
@@ -31,12 +44,21 @@ class ChatResult:
     content: str
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    request_id: str | None = None
+    cost_usd: Decimal = Decimal("0")
+    cost_diem: Decimal = Decimal("0")
 
 
 @dataclass(frozen=True, slots=True)
 class ModelInfo:
     id: str
     provider: str
+    type: str | None = None
+    name: str | None = None
+    privacy: str | None = None
+    input_price_usd: Decimal | None = None
+    output_price_usd: Decimal | None = None
+    unit_price_usd: Decimal | None = None
 
 
 class Provider(Protocol):
