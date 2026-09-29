@@ -18,7 +18,6 @@ from app.db.session import (
 )
 from app.factory import create_app
 
-
 ADMIN_AUTH = ("test-admin", "test-admin-password")
 TOKEN_HASH = "secret-token-hash-that-must-not-be-shown"
 
