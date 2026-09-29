@@ -26,9 +26,14 @@ async def _read_form(request: Request) -> dict[str, str]:
     except (UnicodeDecodeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail="Некорректная форма") from exc
     form = {key: values[-1] for key, values in parsed.items()}
+    if not form.get("csrf_token", "").isascii():
+        raise HTTPException(status_code=403, detail="Недействительный защитный токен формы")
     # Только безопасные поля для повторного показа формы; не пароли и не ключи.
     request.state.admin_form = {
-        key: value for key, value in form.items() if key in FIELD_LABELS or key == "active"
+        key: value for key, value in form.items() if key in FIELD_LABELS
+    }
+    request.state.admin_form["active"] = form.get("active", "").lower() in {
+        "on", "true", "1", "yes",
     }
     return form
 
