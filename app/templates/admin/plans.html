@@ -13,10 +13,31 @@
             <div>
                 <p class="eyebrow">Коммерческие правила</p>
                 <h1>Тарифы</h1>
-                <p class="muted">Лимиты запросов, внутренних кредитов и число активных подписчиков.</p>
+                <p class="muted">Цена, наценка, лимиты запросов, внутренних кредитов и себестоимости.</p>
             </div>
             <span class="status">{{ plans | length }}</span>
         </header>
+
+        <section class="form-card section-block">
+            <div>
+                <p class="eyebrow">Новый тариф</p>
+                <h2>Создать тариф</h2>
+                <p class="muted">Пустой или нулевой лимит означает отсутствие ограничения.</p>
+            </div>
+            <form method="post" action="/admin/plans" class="plan-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <label>Код<input name="code" maxlength="64" required placeholder="pro"></label>
+                <label>Название<input name="name" maxlength="200" required placeholder="Pro"></label>
+                <label>Цена в месяц, USD<input name="monthly_price_usd" type="number" min="0" step="0.01" value="0"></label>
+                <label>Лимит себестоимости, USD<input name="monthly_cost_limit_usd" type="number" min="0" step="0.00000001" placeholder="Без лимита"></label>
+                <label>Кредитов в месяц<input name="monthly_credit_limit" type="number" min="0" step="1" placeholder="Без лимита"></label>
+                <label>Запросов в месяц<input name="monthly_request_limit" type="number" min="0" step="1" placeholder="Без лимита"></label>
+                <label>Резерв кредитов на запрос<input name="request_credit_reserve" type="number" min="0" step="1" value="0"></label>
+                <label>Наценка, %<input name="markup_percent" type="number" min="0" step="0.01" value="0"></label>
+                <label class="checkbox-label"><input name="active" type="checkbox" checked> Тариф активен</label>
+                <button type="submit">Создать тариф</button>
+            </form>
+        </section>
 
         {% if plans %}
             <div class="table-wrap section-block">
@@ -24,10 +45,11 @@
                     <thead>
                         <tr>
                             <th>Тариф</th>
-                            <th>Статус</th>
-                            <th>Кредитов в месяц</th>
-                            <th>Запросов в месяц</th>
+                            <th>Статус и цена</th>
+                            <th>Лимиты в месяц</th>
+                            <th>Резерв и наценка</th>
                             <th>Подписчиков</th>
+                            <th>Управление</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -37,18 +59,53 @@
                                 <strong>{{ plan.name }}</strong>
                                 <small>{{ plan.code }}</small>
                             </td>
-                            <td>{{ "Активен" if plan.active else "Отключён" }}</td>
                             <td>
-                                {% if plan.monthly_credit_limit is not none %}
-                                    {{ "{:,}".format(plan.monthly_credit_limit) }}
-                                {% else %}Без лимита{% endif %}
+                                <span class="metric">{{ "Активен" if plan.active else "Отключён" }}</span>
+                                <small>{{ plan.monthly_price_usd }} USD / месяц</small>
                             </td>
                             <td>
-                                {% if plan.monthly_request_limit is not none %}
-                                    {{ "{:,}".format(plan.monthly_request_limit) }}
-                                {% else %}Без лимита{% endif %}
+                                <small>
+                                    Запросы:
+                                    {% if plan.monthly_request_limit is not none and plan.monthly_request_limit > 0 %}
+                                        {{ "{:,}".format(plan.monthly_request_limit) }}
+                                    {% else %}без лимита{% endif %}
+                                </small>
+                                <small>
+                                    Кредиты:
+                                    {% if plan.monthly_credit_limit is not none and plan.monthly_credit_limit > 0 %}
+                                        {{ "{:,}".format(plan.monthly_credit_limit) }}
+                                    {% else %}без лимита{% endif %}
+                                </small>
+                                <small>
+                                    Себестоимость:
+                                    {% if plan.monthly_cost_limit_usd is not none and plan.monthly_cost_limit_usd > 0 %}
+                                        {{ plan.monthly_cost_limit_usd }} USD
+                                    {% else %}без лимита{% endif %}
+                                </small>
+                            </td>
+                            <td>
+                                <small>{{ "{:,}".format(plan.request_credit_reserve) }} кредитов / запрос</small>
+                                <small>{{ plan.markup_percent }}% наценки</small>
                             </td>
                             <td>{{ "{:,}".format(plan.subscriber_count) }}</td>
+                            <td class="management-cell">
+                                <details>
+                                    <summary>Изменить</summary>
+                                    <form method="post" action="/admin/plans/{{ plan.id }}" class="compact-form plan-edit-form">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <label>Код<input name="code" maxlength="64" required value="{{ plan.code }}"></label>
+                                        <label>Название<input name="name" maxlength="200" required value="{{ plan.name }}"></label>
+                                        <label>Цена, USD<input name="monthly_price_usd" type="number" min="0" step="0.01" value="{{ plan.monthly_price_usd }}"></label>
+                                        <label>Лимит себестоимости<input name="monthly_cost_limit_usd" type="number" min="0" step="0.00000001" value="{{ plan.monthly_cost_limit_usd if plan.monthly_cost_limit_usd is not none else '' }}"></label>
+                                        <label>Кредиты<input name="monthly_credit_limit" type="number" min="0" step="1" value="{{ plan.monthly_credit_limit if plan.monthly_credit_limit is not none else '' }}"></label>
+                                        <label>Запросы<input name="monthly_request_limit" type="number" min="0" step="1" value="{{ plan.monthly_request_limit if plan.monthly_request_limit is not none else '' }}"></label>
+                                        <label>Резерв<input name="request_credit_reserve" type="number" min="0" step="1" value="{{ plan.request_credit_reserve }}"></label>
+                                        <label>Наценка, %<input name="markup_percent" type="number" min="0" step="0.01" value="{{ plan.markup_percent }}"></label>
+                                        <label class="checkbox-label"><input name="active" type="checkbox" {% if plan.active %}checked{% endif %}> Тариф активен</label>
+                                        <button type="submit">Сохранить</button>
+                                    </form>
+                                </details>
+                            </td>
                         </tr>
                     {% endfor %}
                     </tbody>
@@ -57,13 +114,13 @@
         {% else %}
             <section class="empty-state">
                 <h2>Тарифов пока нет</h2>
-                <p>Схема уже готова. Конкретные тарифы добавим после определения цен и лимитов.</p>
+                <p>Создайте первый тариф формой выше. До назначения тарифа личные запросы пользователя будут заблокированы.</p>
             </section>
         {% endif %}
 
         <section class="notice">
-            <strong>Пока это просмотр, а не редактор.</strong>
-            <p>Визуальное безопасное создание и изменение тарифов будет отдельным следующим шагом.</p>
+            <strong>Цена пока справочная.</strong>
+            <p>Shluz уже рассчитывает себестоимость, внутренние кредиты, расчётную выручку и маржу. Подтверждённые платежи появятся после подключения платёжной системы.</p>
         </section>
     </main>
 </body>
