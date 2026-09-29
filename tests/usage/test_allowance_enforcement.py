@@ -17,6 +17,8 @@ from app.usage.service import (
     UsageService,
 )
 
+_TEST_PERIOD_START = datetime(2026, 9, 1, tzinfo=UTC)
+
 
 def _service(tmp_path) -> tuple[Database, UsageService]:
     settings = Settings(
@@ -51,7 +53,13 @@ def _subscribed_account(
         )
         session.add_all([account, plan])
         session.flush()
-        session.add(Subscription(account_id=account.id, plan_id=plan.id))
+        session.add(
+            Subscription(
+                account_id=account.id,
+                plan_id=plan.id,
+                starts_at=_TEST_PERIOD_START,
+            )
+        )
         return account.id, plan.id
 
 
