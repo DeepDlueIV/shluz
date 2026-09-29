@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -13,6 +14,12 @@ class Settings(BaseSettings):
     bootstrap_api_token: SecretStr = SecretStr("dev-token")
     admin_username: str = "admin"
     admin_password: SecretStr = SecretStr("change-me")
+
+    active_provider: Literal["mock", "venice"] = "mock"
+    venice_api_key: SecretStr | None = None
+    venice_base_url: str = "https://api.venice.ai/api/v1"
+    venice_timeout_seconds: float = 30.0
+    venice_analytics_lookback: str = "7d"
 
     model_config = SettingsConfigDict(
         env_prefix="SHLUZ_",

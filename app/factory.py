@@ -8,6 +8,15 @@ from app.api.router import api_router
 from app.config import Settings, get_settings
 from app.providers.mock import MockProvider
 from app.providers.registry import ProviderRegistry
+from app.providers.venice import VeniceProvider
+
+
+def build_provider_registry(settings: Settings) -> ProviderRegistry:
+    """Create the configured provider registry without making network requests."""
+
+    if settings.active_provider == "venice":
+        return ProviderRegistry([VeniceProvider(settings)])
+    return ProviderRegistry([MockProvider()])
 
 
 def create_app(
@@ -17,7 +26,7 @@ def create_app(
     """Build and configure the FastAPI application."""
 
     resolved_settings = settings or get_settings()
-    resolved_registry = registry or ProviderRegistry([MockProvider()])
+    resolved_registry = registry or build_provider_registry(resolved_settings)
 
     app = FastAPI(title="Shluz", version=resolved_settings.service_version)
     app.state.settings = resolved_settings

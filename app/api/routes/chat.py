@@ -19,7 +19,10 @@ from app.providers.base import (
     ChatMessage,
     ChatRequest,
     ModelNotFoundError,
+    ProviderAuthenticationError,
     ProviderError,
+    ProviderInsufficientBalanceError,
+    ProviderRateLimitError,
 )
 from app.providers.registry import ProviderRegistry
 
@@ -48,7 +51,12 @@ def _error_response(
 @router.post(
     "/chat/completions",
     response_model=ChatCompletionResponseSchema,
-    responses={404: {"model": ErrorResponseSchema}, 502: {"model": ErrorResponseSchema}},
+    responses={
+        404: {"model": ErrorResponseSchema},
+        429: {"model": ErrorResponseSchema},
+        502: {"model": ErrorResponseSchema},
+        503: {"model": ErrorResponseSchema},
+    },
 )
 def chat_completions(
     payload: ChatCompletionRequestSchema,
@@ -73,6 +81,30 @@ def chat_completions(
             param="model",
             code="model_not_found",
         )
+    except ProviderAuthenticationError:
+        return _error_response(
+            status_code=502,
+            message="The model provider credentials are invalid",
+            error_type="provider_authentication_error",
+            param=None,
+            code="provider_authentication_error",
+        )
+    except ProviderInsufficientBalanceError:
+        return _error_response(
+            status_code=503,
+            message="The model provider balance is unavailable",
+            error_type="provider_balance_exhausted",
+            param=None,
+            code="provider_balance_exhausted",
+        )
+    except ProviderRateLimitError:
+        return _error_response(
+            status_code=429,
+            message="The model provider rate limit was reached",
+            error_type="provider_rate_limit",
+            param=None,
+            code="provider_rate_limit",
+        )
     except ProviderError:
         return _error_response(
             status_code=502,
@@ -83,7 +115,7 @@ def chat_completions(
         )
 
     return ChatCompletionResponseSchema(
-        id=f"chatcmpl-{uuid.uuid4().hex}",
+        id=result.request_id or f"chatcmpl-{uuid.uuid4().hex}",
         created=int(time.time()),
         model=payload.model,
         choices=[

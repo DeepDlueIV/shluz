@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Venice — Shluz</title>
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+    <main class="shell wide">
+        <nav class="breadcrumbs"><a href="/admin">← Главная</a></nav>
+        <header class="hero compact">
+            <div>
+                <p class="eyebrow">Провайдер нейросетей</p>
+                <h1>Venice</h1>
+                <p class="muted">Баланс, доступ, цены, ограничения и фактическое использование.</p>
+            </div>
+            {% if connected %}
+                <span class="status">Подключён</span>
+            {% else %}
+                <span class="status warning">Не подключён</span>
+            {% endif %}
+        </header>
+
+        {% if not connected %}
+            <section class="empty-state">
+                <h2>Venice не подключён</h2>
+                <p>Сейчас Shluz работает с бесплатным тестовым провайдером.</p>
+                <p>Для подключения укажите <code>SHLUZ_ACTIVE_PROVIDER=venice</code> и сохраните ключ в <code>SHLUZ_VENICE_API_KEY</code> на сервере.</p>
+                <p class="muted">Ключ не нужно отправлять в чат или добавлять в GitHub.</p>
+            </section>
+        {% else %}
+            <section class="grid" aria-label="Состояние Venice">
+                <article class="card">
+                    <span class="label">API-ключ</span>
+                    <strong>{{ "Ключ настроен" if key_configured else "Ключ скрыт" }}</strong>
+                    <small>Полное значение никогда не показывается.</small>
+                </article>
+                <article class="card">
+                    <span class="label">Можно расходовать</span>
+                    <strong>
+                        {% if snapshot and snapshot.balance %}
+                            {{ "Да" if snapshot.balance.can_consume else "Нет" }}
+                        {% else %}—{% endif %}
+                    </strong>
+                </article>
+                <article class="card">
+                    <span class="label">Баланс USD</span>
+                    <strong>{% if snapshot and snapshot.balance %}{{ snapshot.balance.usd }}{% else %}—{% endif %}</strong>
+                </article>
+                <article class="card">
+                    <span class="label">Баланс DIEM</span>
+                    <strong>{% if snapshot and snapshot.balance %}{{ snapshot.balance.diem }}{% else %}—{% endif %}</strong>
+                </article>
+                <article class="card">
+                    <span class="label">Тариф API</span>
+                    <strong>{% if snapshot and snapshot.api_tier %}{{ snapshot.api_tier }}{% else %}—{% endif %}</strong>
+                </article>
+                <article class="card">
+                    <span class="label">Срок ключа</span>
+                    <strong class="small-value">{% if snapshot and snapshot.key_expiration %}{{ snapshot.key_expiration }}{% else %}Не указан{% endif %}</strong>
+                </article>
+            </section>
+
+            {% for warning in warnings %}<p class="alert">{{ warning }}</p>{% endfor %}
+            {% if snapshot %}
+                {% for warning in snapshot.warnings %}<p class="alert">{{ warning }}</p>{% endfor %}
+            {% endif %}
+
+            <section class="section-block">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Расход</p>
+                        <h2>За период {{ lookback }}</h2>
+                    </div>
+                    <p class="muted">Это общий расход ключа Venice. Разделение по пользователям появится после подключения базы данных.</p>
+                </div>
+                {% if snapshot and snapshot.analytics %}
+                    <div class="grid">
+                        <article class="card"><span class="label">Потрачено USD</span><strong>{{ snapshot.analytics.total_usd }}</strong></article>
+                        <article class="card"><span class="label">Потрачено DIEM</span><strong>{{ snapshot.analytics.total_diem }}</strong></article>
+                        <article class="card"><span class="label">Всего единиц</span><strong>{{ "{:,}".format(snapshot.analytics.total_units) }}</strong></article>
+                        <article class="card"><span class="label">Входных токенов</span><strong>{{ "{:,}".format(snapshot.analytics.prompt_tokens) }}</strong></article>
+                        <article class="card"><span class="label">Выходных токенов</span><strong>{{ "{:,}".format(snapshot.analytics.completion_tokens) }}</strong></article>
+                    </div>
+
+                    {% if snapshot.analytics.by_model %}
+                        <h3>Расход по моделям</h3>
+                        <div class="table-wrap">
+                            <table>
+                                <thead><tr><th>Модель</th><th>Тип</th><th>Единица</th><th>Количество</th><th>USD</th><th>DIEM</th></tr></thead>
+                                <tbody>
+                                {% for item in snapshot.analytics.by_model %}
+                                    <tr>
+                                        <td>{{ item.get("modelName") or item.get("model") or "—" }}</td>
+                                        <td>{{ item.get("modelType") or "—" }}</td>
+                                        <td>{{ item.get("unitType") or "—" }}</td>
+                                        <td>{{ "{:,}".format(item.get("totalUnits") or 0) }}</td>
+                                        <td>{{ item.get("totalUsd") or 0 }}</td>
+                                        <td>{{ item.get("totalDiem") or 0 }}</td>
+                                    </tr>
+                                {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% endif %}
+
+                    {% if snapshot.analytics.by_key %}
+                        <h3>Расход по API-ключам</h3>
+                        <div class="table-wrap">
+                            <table>
+                                <thead><tr><th>Описание</th><th>ID ключа</th><th>Единиц</th><th>USD</th><th>DIEM</th></tr></thead>
+                                <tbody>
+                                {% for item in snapshot.analytics.by_key %}
+                                    <tr>
+                                        <td>{{ item.get("description") or "Без описания" }}</td>
+                                        <td>{{ item.get("apiKeyId") or "Web App" }}</td>
+                                        <td>{{ "{:,}".format(item.get("totalUnits") or 0) }}</td>
+                                        <td>{{ item.get("totalUsd") or 0 }}</td>
+                                        <td>{{ item.get("totalDiem") or 0 }}</td>
+                                    </tr>
+                                {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="muted">Показывается только технический ID ключа, а не его секретное значение.</p>
+                    {% endif %}
+                {% else %}
+                    <p class="empty-inline">Аналитика пока не получена.</p>
+                {% endif %}
+            </section>
+
+            <section class="section-block">
+                <div class="section-heading">
+                    <div><p class="eyebrow">Каталог</p><h2>Модели и цены</h2></div>
+                    <p class="muted">Цены показываются в долларах за единицу тарификации Venice.</p>
+                </div>
+                {% if models %}
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Модель</th><th>Тип</th><th>Приватность</th><th>Вход</th><th>Выход</th><th>За единицу</th></tr></thead>
+                            <tbody>
+                            {% for model in models %}
+                                <tr>
+                                    <td><strong>{{ model.name or model.id }}</strong><small>{{ model.id }}</small></td>
+                                    <td>{{ model.type or "—" }}</td>
+                                    <td>{{ model.privacy or "—" }}</td>
+                                    <td>{{ model.input_price_usd if model.input_price_usd is not none else "—" }}</td>
+                                    <td>{{ model.output_price_usd if model.output_price_usd is not none else "—" }}</td>
+                                    <td>{{ model.unit_price_usd if model.unit_price_usd is not none else "—" }}</td>
+                                </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}<p class="empty-inline">Каталог моделей недоступен.</p>{% endif %}
+            </section>
+
+            <section class="section-block">
+                <div class="section-heading">
+                    <div><p class="eyebrow">Ограничения</p><h2>Лимиты по моделям</h2></div>
+                    <p class="muted">RPM — запросов в минуту, TPM — токенов в минуту.</p>
+                </div>
+                {% if snapshot and snapshot.rate_limits %}
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Модель</th><th>Лимиты</th></tr></thead>
+                            <tbody>
+                            {% for item in snapshot.rate_limits %}
+                                <tr>
+                                    <td>{{ item.model_id }}</td>
+                                    <td>
+                                        {% for kind, amount in item.limits.items() %}
+                                            <span class="metric">{{ kind }}: {{ "{:,}".format(amount) }}</span>
+                                        {% endfor %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}<p class="empty-inline">Лимиты пока не получены.</p>{% endif %}
+            </section>
+
+            <section class="notice">
+                <strong>Пользователи, права и тарифы — следующий слой.</strong>
+                <p>После подключения Supabase здесь появится расход каждого пользователя, его тариф, квота, права, подписка, себестоимость и ваша маржа.</p>
+            </section>
+        {% endif %}
+    </main>
+</body>
+</html>

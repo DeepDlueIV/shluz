@@ -11,8 +11,8 @@
         <header class="hero">
             <div>
                 <p class="eyebrow">Центральный API-шлюз</p>
-                <h1>{{ service_name }}</h1>
-                <p class="muted">Простая панель состояния. Секреты здесь не отображаются.</p>
+                <h1>Shluz</h1>
+                <p class="muted">Понятная панель управления. Секретные ключи здесь не отображаются.</p>
             </div>
             <span class="status">Работает</span>
         </header>
@@ -29,10 +29,25 @@
             <article class="card">
                 <span class="label">Моделей</span>
                 <strong>{{ model_count }}</strong>
+                {% if model_warning %}<small>{{ model_warning }}</small>{% endif %}
             </article>
             <article class="card">
                 <span class="label">Провайдеры</span>
                 <strong>{{ provider_names | join(', ') }}</strong>
+            </article>
+        </section>
+
+        <h2>Управление</h2>
+        <section class="feature-grid" aria-label="Разделы управления">
+            <a class="feature-card" href="/admin/providers/venice">
+                <span class="pill ready">Доступно</span>
+                <h3>Venice и расходы</h3>
+                <p>Баланс, ключ, модели, цены, лимиты и расход токенов.</p>
+            </a>
+            <article class="feature-card disabled">
+                <span class="pill planned">Следующий этап</span>
+                <h3>Пользователи и тарифы</h3>
+                <p>Аккаунты, права, подписки, квоты, маржа и индивидуальный расход.</p>
             </article>
         </section>
 
@@ -42,7 +57,7 @@
         </section>
 
         <footer>
-            На следующих этапах здесь появятся пользователи, тарифы, расход и провайдеры.
+            Данные провайдера и будущие данные пользователей разделены, чтобы расходы считались корректно.
         </footer>
     </main>
 </body>
