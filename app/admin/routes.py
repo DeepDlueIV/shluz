@@ -237,7 +237,10 @@ async def issue_user_token(
     with database.session() as session:
         account = session.get(Account, account_id)
         if account is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Пользователь не найден",
+            )
         token = create_api_token(
             session,
             account_id=account.id,
@@ -273,7 +276,10 @@ async def revoke_user_token(
     _require_csrf(form.get("csrf_token", ""), settings)
     with database.session() as session:
         if not revoke_api_token(session, token_id):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Токен не найден")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Токен не найден",
+            )
     return RedirectResponse(url="/admin/users", status_code=status.HTTP_303_SEE_OTHER)
 
 
