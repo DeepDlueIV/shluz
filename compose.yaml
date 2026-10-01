@@ -9,5 +9,14 @@ services:
       - shluz_data:/app/data
     restart: unless-stopped
 
+  telegram_bot:
+    build: .
+    env_file:
+      - .env
+    command: python -m telegram_bot.bot
+    depends_on:
+      - shluz
+    restart: unless-stopped
+
 volumes:
   shluz_data:
