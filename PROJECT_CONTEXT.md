@@ -1,39 +1,80 @@
-# SHLUZ Project Context
+# Shluz · контекст проекта
 
-## Goal
-SaaS platform providing access to AI models through a controlled API gateway.
+Обновлено: 2026-10-01. Этот файл — точка входа для следующего разработчика.
+Фактические результаты проверок ищите в CI и `docs/telegram-acceptance.md`;
+наличие кода не означает, что владелец уже проверил его в своём окружении.
 
-## Current architecture
+## Цель и принятые решения
 
-Clients:
-- Telegram bot
-- Desktop client (planned)
-- Web demo (planned)
+SaaS-доступ к нейросетевым моделям через центральный API-шлюз и несколько интерфейсов.
+Владелец ориентируется на модели с менее строгими ограничениями; окончательный
+поставщик, конкретные модели, условия их коммерческого использования и hosting не выбраны.
+Cloud API и собственное оборудование остаются альтернативами. Telegram — первый
+клиент для закрытой проверки. Desktop/harness и публичное демо — последующие этапы.
 
-All clients communicate through Shluz API Gateway.
+Один репозиторий, один планируемый сервер, отдельные процессы/контейнеры:
+```text
+telegram_bot/ ──HTTP──┐
+web/ (план) ──HTTP───┼── app/ Shluz ── провайдер API / собственные модели
+ desktop/ (план) ────┘       │
+                         аккаунты, тарифы, лимиты, расход
+                            │
+                        /admin · база шлюза
+```
+База истории Telegram отдельна и недоступна gateway-коду. Бот не имеет ключей
+поставщиков, admin/bootstrap-секрета или прямого доступа к БД шлюза.
 
-## Components
+## Реализовано в коде
 
-### API Gateway
-Existing FastAPI service responsible for:
-- authentication;
-- providers routing;
-- tariffs and limits;
-- usage accounting.
+- `app/`: существующий FastAPI gateway, OpenAI-подобные models/chat endpoints,
+  mock и адаптер Venice; аккаунты, identities, личные токены, тарифы, подписки,
+  квоты/резервы/учёт расходов, административная панель.
+- Новые личные endpoints `/v1/me` и `/v1/me/telegram`: профиль и безопасная
+  привязка Telegram через доверенный бот с персональным токеном.
+- `telegram_bot/`: aiogram polling-клиент, закрытый JSON-список ID → отдельный
+  токен Telegram-канала, локальный профиль, persistent SQLite история/диалоги,
+  меню и inline-кнопки, модели, тариф/лимиты, стили, очистка/удаление/экспорт,
+  статусы ожидания, длинные ответы, ошибки/отмена и защита от повторов.
+- `compose.yaml`: gateway по умолчанию; бот подключается профилем `telegram`,
+  отдельными `.env.telegram`, файлом доступа и томом. Gateway-only запуск сохранён.
+- `web/`, `desktop/`: только README-заготовки, не работающие приложения.
 
-### Telegram Bot
-Current component:
-- telegram_bot/
-- gateway client scaffold.
+## Технологии и расположение
 
-Future:
-- user registration;
-- chat history;
-- subscriptions;
-- polished Telegram UX.
+Python >=3.12; FastAPI/SQLAlchemy/Alembic/httpx, aiogram >=3.31,<4.
+SQLite локально; существующий gateway допускает PostgreSQL. История бота использует
+отдельную SQLite, один процесс, схему user_version=1. Настройки и тестовые defaults:
+`.env.telegram.example`. Секреты и базы исключены из Git и Docker build context.
 
-## Open decisions
+Тесты шлюза: `tests/`; новые API: `tests/api/test_my_account.py`;
+бот: `tests/telegram/`. Запуск: `ruff check .`, `pytest -q`.
+CI проверяет также миграции, контейнер и HTTP интеграцию. Настоящий Telegram и
+платные модели не считаются проверенными без отдельного живого запуска с секретами.
 
-- AI providers are not finalized.
-- Telegram and Desktop may use different pricing models.
-- Payment integration is future work.
+## Важные ограничения, не скрывать
+
+Текущий gateway выбирает активный тариф и квоты **на аккаунт**, а не на канал.
+Telegram и desktop могут получить разные тарифы в будущем. Бот не копирует биллинг:
+получает `scope:account` через API и честно показывает общую квоту. Изменение этих
+правил — отдельная миграция/задача gateway, а не скрытое изменение текущих подписок.
+
+Регистрация закрытая: администратор заранее создаёт аккаунт/тариф/токен, бот связывает
+identity. Никакого автоматического бесплатного доступа или продажи подписок.
+Тексты истории хранятся без шифрования приложением; retention/удаление описаны в README.
+POST генерации автоматически не повторяется. Exactly-once, отмена расхода и отмена
+на стороне провайдера не гарантируются. Нет настоящего streaming; UI статуса отдельно.
+
+Старая ветка `feat/telegram-closed-beta` содержит другой незавершённый набросок в
+`apps/telegram-bot/`. Она не источник этой реализации и не должна слепо объединяться
+с `telegram_bot/`. Код текущего этапа расположен только в `telegram_bot/`.
+
+## Открытые решения и следующие задачи
+
+Проверка владельцем mock-пути и живого Telegram; выбор поставщика и модели с реальными
+latency/ценой/условиями; раздельные права по каналам; платежи и возвраты; публичная
+регистрация/антиабуз/приватность; web и desktop; резервное копирование и мониторинг.
+Не выбирать платёжную систему, юрисдикцию, лицензию форка или провайдера за владельца.
+
+[Запуск бота](telegram_bot/README.md) ·
+[Контракт](docs/telegram-gateway-contract.md) ·
+[Приёмка](docs/telegram-acceptance.md)

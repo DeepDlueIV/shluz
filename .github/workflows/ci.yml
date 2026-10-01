@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, implementation/telegram-beta-complete]
   pull_request:
     branches: [main]
 
@@ -35,6 +35,13 @@ jobs:
 
       - name: Test
         run: pytest -v
+
+      - name: Verify gateway-only Compose without Telegram secrets
+        run: |
+          cp .env.example .env
+          docker compose config --services | tee /tmp/services.txt
+          grep -qx shluz /tmp/services.txt
+          test "$(wc -l < /tmp/services.txt)" -eq 1
 
       - name: Build Docker image
         run: docker build -t shluz:ci .
@@ -76,6 +83,64 @@ jobs:
             --data '{"model":"mock-chat","messages":[{"role":"user","content":"docker smoke"}]}' \
             http://127.0.0.1:18000/v1/chat/completions \
             | python -c 'import json,sys; data=json.load(sys.stdin); assert data["choices"][0]["message"]["content"] == "Shluz mock reply: docker smoke"'
+
+      - name: Verify Telegram client inside Docker without live Telegram
+        run: |
+          docker exec -i shluz-ci python - <<'PYTHON'
+          import asyncio
+          import json
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
+          from app.config import Settings
+          from app.db.database import Database
+          from app.db.models import Account, Plan, Subscription
+          from app.db.repositories import create_api_token
+          from telegram_bot.gateway import GatewayClient
+
+          # Ephemeral CI-only token/account. Never use a real Telegram or provider key here.
+          token = "shluz_" + "c" * 43
+          database = Database(Settings())
+          with database.session() as session:
+              plan = Plan(code="ci-telegram", name="CI", monthly_request_limit=10)
+              account = Account(display_name="CI Telegram")
+              session.add_all([plan, account])
+              session.flush()
+              session.add(Subscription(account_id=account.id, plan_id=plan.id))
+              create_api_token(session, account_id=account.id, source="telegram",
+                               raw_token=token, name="CI only")
+          async def check():
+              gateway = GatewayClient("http://127.0.0.1:8000")
+              try:
+                  await gateway.bind(token, 123456789, "ci_test")
+                  before = await gateway.profile(token)
+                  assert before["allowance"]["requests"]["remaining"] == 10
+                  assert "mock-chat" in await gateway.models(token)
+                  answer = await gateway.chat(token, "mock-chat",
+                      [{"role": "user", "content": "telegram docker smoke"}], "ci-telegram")
+                  assert answer == "Shluz mock reply: telegram docker smoke"
+                  after = await gateway.profile(token)
+                  assert after["allowance"]["requests"]["remaining"] == 9
+              finally:
+                  await gateway.close()
+          asyncio.run(check())
+          path = Path("/app/data/ci-access.json")
+          path.write_text(json.dumps({"123456789": token}))
+          path.chmod(0o600)
+          env = {**os.environ, "TELEGRAM_ACCESS_FILE": str(path),
+                 "TELEGRAM_BOT_TOKEN": "123456789:" + "A" * 35}
+          subprocess.run([sys.executable, "-m", "telegram_bot", "--check"], env=env, check=True)
+          path.unlink()
+          print("Telegram container client/profile/identity/chat/config: PASS")
+          PYTHON
+
+      - name: Verify enabled Compose profile
+        run: |
+          cp .env.telegram.example .env.telegram
+          mkdir -p secrets
+          printf '{}' > secrets/telegram-access.json
+          docker compose --profile telegram config --quiet
 
       - name: Print Docker logs on failure
         if: failure()

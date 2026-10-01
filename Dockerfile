@@ -11,6 +11,7 @@ WORKDIR /app
 
 COPY pyproject.toml alembic.ini ./
 COPY app ./app
+COPY telegram_bot ./telegram_bot
 COPY migrations ./migrations
 
 RUN python -m pip install --upgrade pip \
