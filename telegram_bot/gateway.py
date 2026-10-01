@@ -84,7 +84,7 @@ class GatewayClient:
         if not response.is_success:
             error = data.get("error")
             code = error.get("code") if isinstance(error, dict) else None
-            if code not in ERROR_TEXT:
+            if not isinstance(code, str) or code not in ERROR_TEXT:
                 code = {
                     401: "unauthorized",
                     403: "wrong_channel",

@@ -169,7 +169,7 @@ def test_store_retention_and_bounded_dialog_count(tmp_path):
     from telegram_bot.storage import DialogLimit, Store
 
     store = Store(tmp_path / "bot.sqlite", max_dialogs=2)
-    store.ensure_user(1, "A")
+    old_dialog = store.ensure_user(1, "A")["active_dialog"]
     turn = store.begin_turn(1, 1, "old secret", "mock-chat")
     store.complete_turn(turn, "old answer")
     store.new_dialog(1)
@@ -177,8 +177,11 @@ def test_store_retention_and_bounded_dialog_count(tmp_path):
         store.new_dialog(1)
     with store.connection() as db:
         db.execute("UPDATE turns SET created_at=?", (time.time() - 40 * 86400,))
+    assert "old secret" in store.export_dialog(1, old_dialog)
     store.cleanup(retention_days=30)
-    assert "old secret" not in store.export_dialog(1)
+    assert "old secret" not in store.export_dialog(1, old_dialog)
+    with store.connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM turns").fetchone()[0] == 0
 
 
 def test_gateway_never_retries_ambiguous_post_and_keeps_tokens_separate():
@@ -215,6 +218,8 @@ def test_gateway_never_retries_ambiguous_post_and_keeps_tokens_separate():
         (429, {"error": {"code": "provider_rate_limit"}}, "provider_rate_limit"),
         (503, {"error": {"code": "provider_balance_exhausted"}}, "provider_unavailable"),
         (200, {"choices": []}, "invalid_response"),
+        (502, {"error": {"code": ["secret-upstream-value"]}}, "provider_unavailable"),
+        (429, {"error": {"code": {"unexpected": "secret"}}}, "rate_limit"),
     ],
 )
 def test_gateway_errors_are_structured_and_not_leaky(status, body, code):
