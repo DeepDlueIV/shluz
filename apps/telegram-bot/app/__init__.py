@@ -1,0 +1,1 @@
+"""Shluz Telegram bot application."""
