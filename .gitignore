@@ -11,3 +11,13 @@ dist/
 *.egg-info/
 data/
 migration-test.db
+
+# Telegram secrets and local history
+.env.*
+!.env.example
+!.env.telegram.example
+secrets/
+*.sqlite
+*.sqlite-*
+*.heartbeat.json
+*.lock

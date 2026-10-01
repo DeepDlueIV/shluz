@@ -11,12 +11,36 @@ services:
 
   telegram_bot:
     build: .
+    profiles: [telegram]
     env_file:
-      - .env
-    command: python -m telegram_bot.bot
+      - path: .env.telegram
+        required: false
+    environment:
+      TELEGRAM_GATEWAY_URL: http://shluz:8000
+      TELEGRAM_DATABASE_PATH: /app/data/telegram.sqlite
+      TELEGRAM_ACCESS_FILE: /run/secrets/telegram-access.json
+    command: [python, -m, telegram_bot]
     depends_on:
-      - shluz
+      shluz:
+        condition: service_healthy
+    volumes:
+      - telegram_data:/app/data
+      - type: bind
+        source: ${TELEGRAM_ACCESS_FILE_HOST:-./secrets/telegram-access.json}
+        target: /run/secrets/telegram-access.json
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: [CMD, python, -m, telegram_bot.healthcheck]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    init: true
+    stop_grace_period: 20s
     restart: unless-stopped
 
 volumes:
   shluz_data:
+  telegram_data:
