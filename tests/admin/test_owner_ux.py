@@ -88,6 +88,7 @@ def test_named_expense_links_and_escaping(client):
     archived = seed(client, 'Архив', 'archived')
     html = client.get('/admin/usage', auth=AUTH).text
     assert html.count('Алексей · тест') >= 4
+    assert 'Показано записей: 4.' in html
     for account_id in (one, two, unsafe):
         assert f'/admin/users#user-{account_id}' in html
     assert f'/admin/users?archive=1#user-{archived}' in html

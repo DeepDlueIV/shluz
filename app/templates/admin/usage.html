@@ -31,7 +31,7 @@
   <section><h2>Модели</h2><div class="table-wrap"><table class="compact-table"><thead><tr><th>Модель</th><th>Обращения</th><th>Себестоимость</th><th>Маржа {{ hint('margin') }}</th></tr></thead><tbody>{% for row in usage.by_model %}<tr><td>{{ row.label }}</td><td>{{ row.request_count | integer }}</td><td>{{ amount(row.cost_usd) }}</td><td>{{ amount(row.margin_usd) }}</td></tr>{% endfor %}</tbody></table></div></section>
   <section><h2>Каналы {{ hint('source') }}</h2><div class="table-wrap"><table class="compact-table"><thead><tr><th>Канал</th><th>Обращения</th><th>Себестоимость</th><th>Маржа {{ hint('margin') }}</th></tr></thead><tbody>{% for row in usage.by_source %}<tr><td>{{ row.label | label }}</td><td>{{ row.request_count | integer }}</td><td>{{ amount(row.cost_usd) }}</td><td>{{ amount(row.margin_usd) }}</td></tr>{% endfor %}</tbody></table></div></section>
 </div></details>
-<section class="section-block"><div class="section-heading"><div><h2>Последние запросы</h2><p class="muted">Последние {{ usage.recent_events | length }} записей. Переписки в этом журнале не сохраняются.</p></div>{{ hint('request_log') }}</div>
+<section class="section-block"><div class="section-heading"><div><h2>Последние запросы</h2><p class="muted">Показано записей: {{ usage.recent_events | length }}. Переписки в этом журнале не сохраняются.</p></div>{{ hint('request_log') }}</div>
 <div class="table-wrap"><table class="events-table"><thead><tr><th>Время {{ hint('dates') }}</th><th>Пользователь</th><th>Результат</th><th>Модель / канал</th><th>Стоимость {{ hint('cost') }}</th><th>Подробности</th></tr></thead><tbody>
 {% for event in usage.recent_events %}<tr>
   <td>{{ when(event.created_at) }}</td>
