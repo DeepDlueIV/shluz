@@ -18,6 +18,7 @@ class Delivery:
     def __init__(self, *, max_parts: int = 6, sleep=asyncio.sleep) -> None:
         self.max_parts = max_parts
         self.sleep = sleep
+        self.screen_ids: dict[int, int] = {}
 
     async def call(self, operation: Callable[[], Awaitable[Any]]) -> Any:
         for attempt in range(2):
@@ -38,6 +39,20 @@ class Delivery:
                 link_preview_options=NO_PREVIEW,
             )
         )
+
+    async def screen(self, message: Message, text: str, markup=None):
+        # Редактируем только известный экран меню, никогда пользовательский текст/ответ модели.
+        if (
+            message.from_user
+            and message.from_user.is_bot
+            and self.screen_ids.get(message.chat.id) == message.message_id
+        ):
+            sent = await self.edit(message, message, text, markup, plain_text=text)
+        else:
+            sent = await self.say(message, text, markup)
+        if isinstance(sent, Message):
+            self.screen_ids[message.chat.id] = sent.message_id
+        return sent
 
     async def edit(
         self,
@@ -67,10 +82,12 @@ class Delivery:
             # Удалённое сообщение ожидания или неожиданный parse error: новый обычный текст.
             return await self.say(origin, plain_text, markup, plain=True)
 
-    async def waiting(self, message: Message) -> Message:
+    async def waiting(self, message: Message, *, request_id: str | None = None) -> Message:
         with suppress(TelegramAPIError):
             await message.bot.send_chat_action(message.chat.id, "typing")
-        return await self.say(message, "⏳ Готовлю ответ…", ui.cancel_controls())
+        markup = ui.cancel_controls(request_id)
+        sent = await self.say(message, "⏳ Готовлю ответ…", markup)
+        return sent.model_copy(update={"reply_markup": markup})
 
     async def animate(self, message: Message, waiting: Message, stop: asyncio.Event) -> None:
         tick = 0
@@ -85,14 +102,22 @@ class Delivery:
                 tick += 1
                 if tick % 2 == 0:
                     status = "⌛ Ответ ещё готовится…" if tick % 4 else "⏳ Готовлю ответ…"
-                    await self.edit(message, waiting, status, ui.cancel_controls())
+                    await self.edit(message, waiting, status, waiting.reply_markup)
             except TelegramRetryAfter as exc:
                 with suppress(TimeoutError):
                     await asyncio.wait_for(stop.wait(), timeout=exc.retry_after + 1)
             except TelegramAPIError:
                 pass
 
-    async def answer(self, message: Message, waiting: Message, answer: str) -> None:
+    async def answer(
+        self,
+        message: Message,
+        waiting: Message,
+        answer: str,
+        *,
+        turn_id: str | None = None,
+    ) -> None:
+        controls = ui.answer_controls(turn_id)
         parts = split_text(answer)
         if len(parts) > self.max_parts:
             await self.edit(
@@ -102,12 +127,12 @@ class Delivery:
                 lambda: message.answer_document(
                     BufferedInputFile(answer.encode("utf-8"), filename="shluz-answer.txt"),
                     caption="Полный ответ без сокращений · UTF-8",
-                    reply_markup=ui.answer_controls(),
+                    reply_markup=controls,
                 )
             )
             return
         for index, part in enumerate(parts):
-            markup = ui.answer_controls() if index == len(parts) - 1 else None
+            markup = controls if index == len(parts) - 1 else None
             if index == 0:
                 await self.edit(message, waiting, render_answer(part), markup, plain_text=part)
             else:
@@ -123,5 +148,14 @@ class Delivery:
                 BufferedInputFile(text.encode("utf-8"), filename="shluz-dialog.txt"),
                 caption="История текущего диалога · UTF-8",
                 reply_markup=ui.back(),
+            )
+        )
+
+    async def answer_file(self, message: Message, text: str, turn_id: str) -> None:
+        await self.call(
+            lambda: message.answer_document(
+                BufferedInputFile(text.encode("utf-8"), filename=f"shluz-answer-{turn_id[:8]}.txt"),
+                caption="Сохранённый ответ · повторного обращения к модели нет",
+                reply_markup=ui.answer_controls(turn_id),
             )
         )

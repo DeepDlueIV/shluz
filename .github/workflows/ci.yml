@@ -135,6 +135,23 @@ jobs:
           print("Telegram container client/profile/identity/chat/config: PASS")
           PYTHON
 
+      - name: Verify isolated owner acceptance setup and HTTP check
+        run: |
+          python scripts/gateway_owner_check.py --prepare
+          docker compose --env-file .env.owner -f compose.owner.yaml config --quiet
+          python - <<'PYTHON'
+          import importlib.util
+          spec = importlib.util.spec_from_file_location("owner_check", "scripts/gateway_owner_check.py")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          # The ephemeral CI account was created in the preceding container check.
+          checks = module.check_gateway("http://127.0.0.1:18000", "shluz_" + "c" * 43,
+                                        send_mock=True)
+          assert all(item["ok"] for item in checks), checks
+          print("Owner acceptance HTTP checks: PASS")
+          PYTHON
+          rm .env.owner
+
       - name: Verify enabled Compose profile
         run: |
           cp .env.telegram.example .env.telegram

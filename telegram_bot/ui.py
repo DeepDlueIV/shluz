@@ -1,7 +1,7 @@
 """Русскоязычные экраны и кнопки Telegram, без выдуманных платежей или балансов."""
 
 import html
-from datetime import datetime
+from datetime import UTC, datetime
 from hashlib import sha256
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -27,23 +27,46 @@ def menu() -> InlineKeyboardMarkup:
         [
             [("✨ Новый чат", "new"), ("💬 Продолжить", "continue")],
             [("🤖 Модели", "models:0"), ("🗂 Диалоги", "history:0")],
-            [("📊 Мой тариф", "plan"), ("💳 Лимиты", "limits")],
-            [("⚙️ Настройки", "settings"), ("❓ Помощь", "help")],
+            [("📊 Аккаунт и лимиты", "plan"), ("⚙️ Настройки", "settings")],
+            [("❓ Помощь", "help"), ("🛟 Поддержка", "support")],
         ]
     )
 
 
-def answer_controls() -> InlineKeyboardMarkup:
+def answer_controls(turn_id: str | None = None) -> InlineKeyboardMarkup:
+    rows = []
+    if turn_id:
+        rows.extend(
+            [
+                [
+                    ("🔄 Другой вариант", f"retry:{turn_id}"),
+                    ("📄 Ответ файлом", f"answer:{turn_id}"),
+                ],
+                [("👍 Полезно", f"up:{turn_id}"), ("👎 Не подошло", f"down:{turn_id}")],
+            ]
+        )
+    return keyboard(
+        rows
+        + [
+            [("✨ Новый чат", "new"), ("🤖 Модель", "models:0")],
+            [("🗂 Диалоги", "history:0"), ("☰ Меню", "menu")],
+        ]
+    )
+
+
+def privacy_controls() -> InlineKeyboardMarkup:
     return keyboard(
         [
-            [("✨ Новый чат", "new"), ("🤖 Модель", "models:0")],
-            [("📄 Экспорт", "export"), ("☰ Меню", "menu")],
+            [("📄 Экспорт диалога", "export"), ("🧹 Очистить текущий", "clear")],
+            [("🗑 Удалить все мои диалоги", "forget")],
+            [("☰ Главное меню", "menu")],
         ]
     )
 
 
-def cancel_controls() -> InlineKeyboardMarkup:
-    return keyboard([[("⏹ Остановить ожидание", "cancel")]])
+def cancel_controls(request_id: str | None = None) -> InlineKeyboardMarkup:
+    action = f"cancel:{request_id}" if request_id else "cancel"
+    return keyboard([[("⏹ Остановить ожидание", action)]])
 
 
 def back() -> InlineKeyboardMarkup:
@@ -57,6 +80,7 @@ def settings_controls(style: str) -> InlineKeyboardMarkup:
             for key, label in STYLE_LABELS.items()
         ]
         + [
+            [("✏️ Название диалога", "rename"), ("📄 Экспорт", "export")],
             [("🧹 Очистить диалог", "clear"), ("🗑 Удалить диалог", "delete")],
             [("🔐 О данных", "privacy"), ("☰ Меню", "menu")],
         ]
@@ -109,6 +133,9 @@ def profile_text(remote: dict, local: dict) -> str:
     if plan is None:
         return "\n".join(lines + ["📋 Тариф пока не назначен. Свяжитесь с администратором."])
     lines.append(f"<b>📊 {html.escape(plan['name'])}</b>")
+    if plan.get("ends_at"):
+        expires = datetime.fromisoformat(plan["ends_at"]).astimezone(UTC)
+        lines.append(f"Тариф действует до: {expires:%d.%m.%Y %H:%M} UTC.")
     for key, label in (("requests", "Запросы"), ("credits", "Кредиты")):
         value = remote["allowance"][key]
         limit = value["limit"]
@@ -125,6 +152,8 @@ def profile_text(remote: dict, local: dict) -> str:
         if limit:
             filled = min(10, int(10 * (value["used"] + value["pending"]) / limit))
             lines.append("▰" * filled + "▱" * (10 - filled))
+            if value["remaining"] <= limit * 0.2:
+                lines.append(f"⚠️ Осталось мало квоты: {label.lower()} — {value['remaining']}.")
     reset = datetime.fromisoformat(remote["allowance"]["resets_at"])
     lines.extend(
         [

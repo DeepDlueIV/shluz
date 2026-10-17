@@ -1,6 +1,6 @@
 # Shluz · контекст проекта
 
-Обновлено: 2026-10-01. Этот файл — точка входа для следующего разработчика.
+Обновлено: 2026-10-17. Этот файл — точка входа для следующего разработчика.
 Фактические результаты проверок ищите в CI и `docs/telegram-acceptance.md`;
 наличие кода не означает, что владелец уже проверил его в своём окружении.
 
@@ -35,6 +35,13 @@ web/ (план) ──HTTP───┼── app/ Shluz ── провайде�
   токен Telegram-канала, локальный профиль, persistent SQLite история/диалоги,
   меню и inline-кнопки, модели, тариф/лимиты, стили, очистка/удаление/экспорт,
   статусы ожидания, длинные ответы, ошибки/отмена и защита от повторов.
+- Owner review: привязанные к запросу кнопки отмены/файла/оценки; `/last`,
+  подтверждаемый платный `/retry` с версиями ответа, `/rename`, `/forget`,
+  поддержка и read-only агрегаты `python -m telegram_bot.report`.
+  Навигация редактирует меню, не ответы. Исправлены остаточные заголовки после
+  retention, немедленный лимит истории, общая длительность HTTP и размер JSON.
+- `compose.owner.yaml`, `scripts/gateway_owner_check.py`: отдельная локальная
+  приёмка gateway на mock, порт 18000, собственные env/том и скрытый ввод ключа.
 - `compose.yaml`: gateway по умолчанию; бот подключается профилем `telegram`,
   отдельными `.env.telegram`, файлом доступа и томом. Gateway-only запуск сохранён.
 - `web/`, `desktop/`: только README-заготовки, не работающие приложения.
@@ -43,7 +50,7 @@ web/ (план) ──HTTP───┼── app/ Shluz ── провайде�
 
 Python >=3.12; FastAPI/SQLAlchemy/Alembic/httpx, aiogram >=3.31,<4.
 SQLite локально; существующий gateway допускает PostgreSQL. История бота использует
-отдельную SQLite, один процесс, схему user_version=1. Настройки и тестовые defaults:
+отдельную SQLite, один процесс, схему user_version=2 с миграцией v1 → v2. Настройки и тестовые defaults:
 `.env.telegram.example`. Секреты и базы исключены из Git и Docker build context.
 
 Тесты шлюза: `tests/`; новые API: `tests/api/test_my_account.py`;
@@ -78,3 +85,5 @@ latency/ценой/условиями; раздельные права по ка
 [Запуск бота](telegram_bot/README.md) ·
 [Контракт](docs/telegram-gateway-contract.md) ·
 [Приёмка](docs/telegram-acceptance.md)
+
+[Owner review бота](docs/telegram-owner-review.md) · [Проверка шлюза](docs/gateway-owner-check.md)

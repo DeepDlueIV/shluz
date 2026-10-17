@@ -4,6 +4,7 @@ import asyncio
 import html
 import logging
 import time
+import uuid
 from contextlib import suppress
 
 from aiogram import BaseMiddleware, Dispatcher, Router
@@ -14,6 +15,7 @@ from pydantic import SecretStr
 from telegram_bot import ui
 from telegram_bot.config import AccessRegistry, BotSettings
 from telegram_bot.delivery import Delivery
+from telegram_bot.features import Confirmations, handle_action
 from telegram_bot.gateway import ERROR_TEXT, GatewayClient, GatewayError
 from telegram_bot.presentation import prepare_messages
 from telegram_bot.storage import DialogLimit, Store
@@ -94,8 +96,10 @@ class Controller:
         self.settings, self.access, self.store, self.gateway = settings, access, store, gateway
         self.delivery = Delivery(max_parts=settings.max_text_parts, sleep=sleep)
         self.jobs: dict[int, asyncio.Task] = {}
+        self.job_ids: dict[int, str] = {}
         self.last_request: dict[int, float] = {}
         self.shutting_down = False
+        self.confirmations = Confirmations()
 
     async def linked_profile(self, message: Message, token: str, *, user=None) -> dict:
         sender = user or message.from_user
@@ -119,12 +123,13 @@ class Controller:
         )
         if profile["model"] == "mock-chat":
             text += "\n\n🧩 mock-chat — тестовый ответ, не настоящая нейросеть."
-        await self.delivery.say(message, text, ui.menu())
+        await self.delivery.screen(message, text, ui.menu())
 
     async def on_message(
         self, message: Message, gateway_token: SecretStr, telegram_update_id: int
     ) -> None:
         user_id = message.from_user.id
+        self.confirmations.clear(user_id)
         text = message.text
         if text is None or not text.strip():
             await self.delivery.say(
@@ -136,7 +141,16 @@ class Controller:
             return
         if text.startswith("/"):
             command = text.split()[0].split("@")[0][1:].lower()
-            await self.action(message, user_id, gateway_token.get_secret_value(), command)
+            parts = text.split(maxsplit=1)
+            value = parts[1].strip() if len(parts) > 1 else ""
+            await self.action(
+                message,
+                user_id,
+                gateway_token.get_secret_value(),
+                command,
+                value,
+                update_id=telegram_update_id,
+            )
             return
         if len(text) > self.settings.max_input_chars:
             await self.delivery.say(
@@ -150,8 +164,18 @@ class Controller:
     async def on_callback(
         self, callback: CallbackQuery, gateway_token: SecretStr, telegram_update_id: int
     ) -> None:
-        await callback.answer()
         action, _, value = (callback.data or "").partition(":")
+        if action not in {"retry_yes", "forget_yes", "clear_yes", "delete_yes"}:
+            self.confirmations.clear(callback.from_user.id)
+        if action in {"up", "down"}:
+            saved = self.store.rate_answer(
+                callback.from_user.id, value, 1 if action == "up" else -1
+            )
+            await callback.answer(
+                "Спасибо, оценка сохранена." if saved else "Ответ уже недоступен."
+            )
+            return
+        await callback.answer()
         await self.action(
             callback.message,
             callback.from_user.id,
@@ -159,10 +183,19 @@ class Controller:
             action,
             value,
             user=callback.from_user,
+            update_id=telegram_update_id,
         )
 
     async def action(
-        self, message: Message, user_id: int, token: str, action: str, value: str = "", *, user=None
+        self,
+        message: Message,
+        user_id: int,
+        token: str,
+        action: str,
+        value: str = "",
+        *,
+        user=None,
+        update_id: int | None = None,
     ) -> None:
         local = self.store.profile(user_id)
         busy_actions = {
@@ -174,15 +207,32 @@ class Controller:
             "dialog",
             "model",
             "style",
+            "start",
+            "rename",
+            "retry",
+            "retry_yes",
+            "forget",
+            "forget_yes",
         }
         if action in busy_actions and user_id in self.jobs:
-            await self.delivery.say(
+            await self.delivery.screen(
                 message,
                 "⏳ Ответ уже готовится. Дождитесь его или нажмите /cancel.",
-                ui.cancel_controls(),
+                ui.cancel_controls(self.job_ids.get(user_id)),
             )
             return
-        if action in {"start", "menu", "continue"}:
+        if await handle_action(
+            self,
+            message,
+            user_id,
+            token,
+            action,
+            value,
+            user=user,
+            update_id=update_id,
+        ):
+            return
+        if action in {"start", "menu"}:
             if action == "start":
                 await self.linked_profile(message, token, user=user)
                 if local["model"] is None:
@@ -196,17 +246,17 @@ class Controller:
             await self.show_menu(message, user_id)
         elif action == "new":
             self.store.new_dialog(user_id)
-            await self.delivery.say(
+            await self.delivery.screen(
                 message, "✨ Новый диалог открыт. О чём поговорим?", ui.answer_controls()
             )
-        elif action in {"plan", "balance", "limits", "profile"}:
+        elif action in {"plan", "balance", "limits", "profile", "stats"}:
             remote = await self.linked_profile(message, token, user=user)
-            await self.delivery.say(message, ui.profile_text(remote, local), ui.back())
+            await self.delivery.screen(message, ui.profile_text(remote, local), ui.back())
         elif action == "models":
             models = await self.gateway.models(token)
             offset = int(value) if value.isdigit() else 0
             offset = min(max(0, offset), max(0, len(models) - 1))
-            await self.delivery.say(
+            await self.delivery.screen(
                 message,
                 "<b>🤖 Выберите модель</b>\n"
                 "Список приходит из Shluz. Смена модели сохраняет контекст.",
@@ -216,41 +266,43 @@ class Controller:
             models = await self.gateway.models(token)
             matches = [model for model in models if ui.model_key(model) == value]
             if len(matches) != 1:
-                await self.delivery.say(
+                await self.delivery.screen(
                     message, "🤖 Список изменился. Откройте /models ещё раз.", ui.back()
                 )
                 return
             self.store.set_model(user_id, matches[0])
-            await self.delivery.say(
+            await self.delivery.screen(
                 message,
                 f"✅ Выбрана модель <code>{html.escape(matches[0])}</code>.",
                 ui.answer_controls(),
             )
         elif action == "settings":
-            await self.delivery.say(
+            await self.delivery.screen(
                 message,
                 "<b>⚙️ Настройки</b>\nВыберите стиль ответа. Содержимое диалога не изменяется.",
                 ui.settings_controls(local["style"]),
             )
         elif action == "style":
             if value not in ui.STYLE_LABELS:
-                await self.delivery.say(message, "Кнопка устарела. Откройте /settings.", ui.back())
+                await self.delivery.screen(
+                    message, "Кнопка устарела. Откройте /settings.", ui.back()
+                )
                 return
             self.store.set_style(user_id, value)
-            await self.delivery.say(
+            await self.delivery.screen(
                 message, f"✅ Стиль ответа: {ui.STYLE_LABELS[value]}.", ui.settings_controls(value)
             )
         elif action == "history":
             offset = min(int(value), self.settings.max_dialogs) if value.isdigit() else 0
             dialogs = self.store.dialogs(user_id, offset=offset, limit=9)
-            await self.delivery.say(
+            await self.delivery.screen(
                 message,
                 "<b>🗂 Ваши диалоги</b>\nВыберите диалог для продолжения.",
                 ui.history_controls(dialogs, local["active_dialog"], offset),
             )
         elif action == "dialog":
             if not self.store.activate_dialog(user_id, value):
-                await self.delivery.say(
+                await self.delivery.screen(
                     message, "Этот диалог недоступен. Откройте /history.", ui.back()
                 )
                 return
@@ -260,50 +312,64 @@ class Controller:
                 excerpt = history[-1]["content"][:700]
                 text += "\n\n<b>Начало последнего ответа:</b>\n" + html.escape(excerpt)
                 text += "\n\nПолная история доступна через /export."
-            await self.delivery.say(message, text, ui.answer_controls())
+            await self.delivery.screen(message, text, ui.answer_controls())
         elif action in {"clear", "delete"}:
+            nonce = self.confirmations.issue(user_id, action, local["active_dialog"])
             verb = (
                 "Очистить историю текущего диалога"
                 if action == "clear"
                 else "Удалить текущий диалог"
             )
-            await self.delivery.say(
+            await self.delivery.screen(
                 message,
                 f"<b>🗑 {verb}?</b>\n"
                 "Это удалит историю на сервере бота. Сообщения в Telegram "
                 "и журнал расходов шлюза останутся.",
                 ui.keyboard(
                     [
-                        [("Да, удалить", f"{action}_yes:{local['active_dialog']}")],
+                        [("Да, удалить", f"{action}_yes:{nonce}")],
                         [("Отмена", "menu")],
                     ]
                 ),
             )
         elif action in {"clear_yes", "delete_yes"}:
+            target = self.confirmations.take(user_id, action.removesuffix("_yes"), value)
+            if target is None:
+                await self.delivery.screen(
+                    message, "Подтверждение устарело. Откройте /settings ещё раз.", ui.back()
+                )
+                return
             change = self.store.clear_dialog if action == "clear_yes" else self.store.delete_dialog
-            if change(user_id, value):
-                await self.delivery.say(
+            if change(user_id, target):
+                await self.delivery.screen(
                     message, "✅ История выбранного диалога удалена.", ui.answer_controls()
                 )
             else:
-                await self.delivery.say(message, "Диалог уже удалён или недоступен.", ui.back())
+                await self.delivery.screen(message, "Диалог уже удалён или недоступен.", ui.back())
         elif action == "export":
             if not self.store.history(user_id):
-                await self.delivery.say(
+                await self.delivery.screen(
                     message, "📄 В текущем диалоге пока нет завершённых ответов.", ui.back()
                 )
                 return
             await self.delivery.export(message, self.store.export_dialog(user_id))
         elif action == "cancel":
+            if user is not None and (not value or self.job_ids.get(user_id) != value):
+                await self.delivery.screen(
+                    message,
+                    "Эта кнопка относится к завершённому запросу. Текущий не остановлен.",
+                    ui.back(),
+                )
+                return
             job = self.jobs.get(user_id)
             if job:
                 job.cancel()
             else:
-                await self.delivery.say(
+                await self.delivery.screen(
                     message, "Сейчас нет запроса, которого нужно ждать.", ui.back()
                 )
         elif action == "privacy":
-            await self.delivery.say(
+            await self.delivery.screen(
                 message,
                 "<b>🔐 О ваших данных</b>\n\n"
                 "Бот хранит текст диалогов на сервере для продолжения разговора. "
@@ -311,19 +377,26 @@ class Controller:
                 f"до {self.settings.max_saved_turns} обменов в каждом диалоге. "
                 "История не имеет сквозного шифрования. Она передаётся через Shluz выбранному "
                 "поставщику модели. Не отправляйте пароли и другие секреты.\n\n"
-                "/clear очищает текущий диалог, /delete удаляет его. Сообщения в Telegram "
+                "/clear очищает текущий диалог, /delete удаляет его, "
+                "/forget удаляет все диалоги бота. "
+                "Оценки 👍/👎 привязаны к ответу и удаляются вместе с ним. Сообщения в Telegram "
                 "удаляйте средствами Telegram; резервные копии сервера управляются отдельно. "
                 "Удаление истории не отменяет уже учтённый расход.",
-                ui.back(),
+                ui.privacy_controls(),
             )
         elif action == "help":
-            await self.delivery.say(
+            await self.delivery.screen(
                 message,
                 "<b>❓ Как пользоваться Shluz</b>\n\n"
                 "Пишите обычным текстом. Контекст сохраняется в текущем диалоге.\n"
                 "/new — новый диалог\n/models — выбор модели\n/history — ваши диалоги\n"
                 "/plan — тариф и лимиты\n/settings — стиль ответа и очистка\n"
-                "/export — полный текст диалога\n/cancel — остановить ожидание\n"
+                "/export — полный текст диалога и прошлые варианты\n/cancel — остановить ожидание\n"
+                "/last — показать сохранённый ответ без нового запроса\n"
+                "/retry — другой вариант с подтверждением расхода\n"
+                "/rename Название — переименовать диалог\n"
+                "/stats — расход и квоты аккаунта\n/forget — удалить все диалоги бота\n"
+                "/support — помощь с технической проблемой\n"
                 "/privacy — хранение данных\n/menu — главное меню\n\n"
                 "Если запрос уже ушёл модели, отмена ожидания не гарантирует отмену расхода. "
                 "Платежи в этой версии не принимаются.\n\n"
@@ -331,17 +404,29 @@ class Controller:
                 ui.back(),
             )
         else:
-            await self.delivery.say(
+            await self.delivery.screen(
                 message, "Неизвестная команда или устаревшая кнопка. Откройте /menu.", ui.back()
             )
 
-    async def generate(self, message: Message, secret: SecretStr, update_id: int) -> None:
-        user_id = message.from_user.id
+    async def generate(
+        self,
+        message: Message,
+        secret: SecretStr,
+        update_id: int,
+        *,
+        user=None,
+        text: str | None = None,
+        retry_of: str | None = None,
+        model_override: str | None = None,
+    ) -> None:
+        sender = user or message.from_user
+        user_id = sender.id
+        text = message.text if text is None else text
         if user_id in self.jobs:
             await self.delivery.say(
                 message,
                 "⏳ Ответ уже готовится. Дождитесь его или нажмите /cancel.",
-                ui.cancel_controls(),
+                ui.cancel_controls(self.job_ids.get(user_id)),
             )
             return
         if len(self.jobs) >= self.settings.max_parallel_requests:
@@ -356,6 +441,7 @@ class Controller:
             return
         task = asyncio.current_task()
         self.jobs[user_id] = task
+        self.job_ids[user_id] = uuid.uuid4().hex
         waiting, spinner, turn_id = None, None, None
         stop = asyncio.Event()
 
@@ -368,12 +454,12 @@ class Controller:
 
         try:
             token = secret.get_secret_value()
-            remote = await self.linked_profile(message, token)
+            remote = await self.linked_profile(message, token, user=sender)
             if remote["plan"] is None:
                 raise GatewayError("subscription_required")
             models = await self.gateway.models(token)
             local = self.store.profile(user_id)
-            model = local["model"]
+            model = model_override or local["model"]
             if model is None:
                 model = (
                     self.settings.default_model
@@ -383,17 +469,28 @@ class Controller:
                 self.store.set_model(user_id, model)
             if model not in models:
                 raise GatewayError("model_not_found")
+            history = self.store.history(user_id)
+            if retry_of:
+                if self.store.retry_source(user_id, retry_of) is None:
+                    raise GatewayError("retry_unavailable")
+                history = history[:-2]
             messages, trimmed = prepare_messages(
-                self.store.history(user_id),
-                message.text,
+                history,
+                text,
                 style=local["style"],
                 budget=self.settings.context_char_limit,
             )
             latest = self.access.token_for(user_id)
             if latest is None or latest.get_secret_value() != token:
                 raise GatewayError("unauthorized")
-            waiting = await self.delivery.waiting(message)
-            turn_id = self.store.begin_turn(user_id, update_id, message.text, model)
+            waiting = await self.delivery.waiting(message, request_id=self.job_ids[user_id])
+            turn_id = self.store.begin_turn(
+                user_id,
+                update_id,
+                text,
+                model,
+                replaces_turn_id=retry_of,
+            )
             if turn_id is None:
                 await self.delivery.edit(
                     message, waiting, "Этот запрос уже обработан. Проверьте /history."
@@ -404,7 +501,7 @@ class Controller:
             answer = await self.gateway.chat(token, model, messages, turn_id)
             self.store.complete_turn(turn_id, answer)
             await stop_animation()
-            await self.delivery.answer(message, waiting, answer)
+            await self.delivery.answer(message, waiting, answer, turn_id=turn_id)
             if trimmed:
                 await self.delivery.say(
                     message,
@@ -470,6 +567,7 @@ class Controller:
             await stop_animation()
             if self.jobs.get(user_id) is task:
                 self.jobs.pop(user_id, None)
+                self.job_ids.pop(user_id, None)
 
     async def close(self) -> None:
         self.shutting_down = True

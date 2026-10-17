@@ -1,5 +1,8 @@
 """Единственный путь к моделям — HTTP-контракт Shluz; платные POST не повторяются."""
 
+import asyncio
+import json as jsonlib
+
 import httpx
 
 
@@ -11,12 +14,15 @@ class GatewayError(Exception):
 
 
 ERROR_TEXT = {
+    "retry_unavailable": "Повтор устарел. Откройте /retry для последнего завершённого ответа.",
     "unauthorized": "🔒 Доступ отозван или ключ недействителен. Обратитесь к администратору.",
     "wrong_channel": "🔒 Для этого бота нужен персональный ключ канала Telegram.",
     "identity_conflict": "🔒 Привязка аккаунта не совпадает. Обратитесь к администратору.",
     "subscription_required": "📋 Активный тариф не назначен. Обратитесь к администратору.",
-    "credit_limit_exceeded": "💳 Кредиты закончились. Откройте «Мой тариф» для проверки лимита.",
-    "request_limit_exceeded": "📊 Лимит запросов исчерпан. Откройте «Мой тариф».",
+    "credit_limit_exceeded": (
+        "💳 Кредиты закончились. Откройте «Аккаунт и лимиты» для проверки лимита."
+    ),
+    "request_limit_exceeded": "📊 Лимит запросов исчерпан. Откройте «Аккаунт и лимиты».",
     "spend_limit_exceeded": "📊 Достигнут лимит доступа. Обратитесь к администратору.",
     "model_not_found": "🤖 Эта модель недоступна. Выберите другую в разделе «Модели».",
     "provider_rate_limit": "⏳ Модель перегружена. Попробуйте позже; автоповтора не будет.",
@@ -48,6 +54,7 @@ class GatewayClient:
         self.http = http or httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=10))
         self._owned = http is None
         self.max_response_chars = max_response_chars
+        self.timeout = timeout
 
     async def close(self) -> None:
         if self._owned:
@@ -66,17 +73,26 @@ class GatewayClient:
         headers = {"Authorization": f"Bearer {token}"}
         if request_id:
             headers["X-Request-ID"] = request_id
+        body = bytearray()
+        # JSON может экранировать символ как пару \uXXXX; ограничиваем и байты, и итоговый текст.
+        byte_limit = self.max_response_chars * 12 + 65536
         try:
-            response = await self.http.request(
-                method,
-                self.base_url + path,
-                headers=headers,
-                json=json,
-            )
-        except httpx.RequestError as exc:
+            async with asyncio.timeout(self.timeout):
+                async with self.http.stream(
+                    method,
+                    self.base_url + path,
+                    headers=headers,
+                    json=json,
+                    follow_redirects=False,
+                ) as response:
+                    async for chunk in response.aiter_bytes(chunk_size=16384):
+                        if len(body) + len(chunk) > byte_limit:
+                            raise GatewayError("response_too_large")
+                        body.extend(chunk)
+        except (TimeoutError, httpx.RequestError) as exc:
             raise GatewayError("outcome_unknown" if chargeable else "unavailable") from exc
         try:
-            data = response.json()
+            data = jsonlib.loads(body)
         except (ValueError, UnicodeError):
             data = {}
         if not isinstance(data, dict):

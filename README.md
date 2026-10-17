@@ -191,3 +191,8 @@ docker compose --profile telegram up -d --build
 только шлюз. Бот не использует общий bootstrap-токен: каждому тестировщику выдаётся
 персональный токен канала Telegram. Текущие квоты общие для аккаунта; отдельные
 тарифы по каналам ещё не реализованы. В `mock` настоящая модель не вызывается.
+
+## Приёмка владельцем
+
+[Безопасная проверка шлюза на mock](docs/gateway-owner-check.md) ·
+[Owner review Telegram-бота](docs/telegram-owner-review.md)
