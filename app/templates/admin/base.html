@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>{% block title %}Управление{% endblock %} — Shluz</title>
+  <link rel="stylesheet" href="/static/admin.css?v=owner-ux-1">
+  <script src="/static/admin.js?v=owner-ux-1" defer></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Перейти к содержимому</a>
+  <header class="app-header">{% include 'admin/nav.html' %}</header>
+  <main class="shell wide" id="main-content">
+    {% block content %}{% endblock %}
+    <footer class="app-footer">
+      <span>Shluz · панель владельца</span>
+      <span>Время: <span data-timezone>UTC</span>. <button type="button" class="help-trigger" aria-label="Справка: время" data-tooltip="{{ help_text('dates') }}" title="{{ help_text('dates') }}">?</button></span>
+      <span>Подсказки открываются наведением или нажатием на <span class="help-example">?</span></span>
+    </footer>
+  </main>
+</body>
+</html>

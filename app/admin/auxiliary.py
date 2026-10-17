@@ -10,6 +10,7 @@ from app.admin.routes import _database, _require_admin, _require_csrf, _settings
 from app.config import Settings
 from app.db.audit import ACTION_LABELS, AdminEvent
 from app.db.database import Database
+from app.db.models import Account, ApiToken, Plan
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -59,10 +60,20 @@ def admin_logs(
         query = query.where(AdminEvent.action == action)
     with database.session() as session:
         entries = list(session.scalars(query.offset((page - 1) * 50).limit(51)))
+        target_names = {}
+        for kind, model, name_column in [
+            ("account", Account, Account.display_name),
+            ("plan", Plan, Plan.name), ("token", ApiToken, ApiToken.name),
+        ]:
+            ids = [entry.target_id for entry in entries[:50] if entry.target_type == kind]
+            target_names[kind] = dict(session.execute(
+                select(model.id, name_column).where(model.id.in_(ids))
+            ).all())
     return templates.TemplateResponse(
         request=request, name="admin/logs.html", context={
             "entries": entries[:50], "has_next": len(entries) > 50,
             "page": page, "action": action, "labels": ACTION_LABELS,
+            "target_names": target_names,
         }, headers={"Cache-Control": "no-store"},
     )
 

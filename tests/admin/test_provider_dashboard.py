@@ -102,17 +102,17 @@ def test_venice_dashboard_shows_balance_limits_models_and_usage(test_settings):
 
     assert response.status_code == 200
     assert "Venice" in response.text
-    assert "25.5" in response.text
+    assert "25,50" in response.text
     assert "3" in response.text
-    assert "paid" in response.text
+    assert "Платный" in response.text
     assert "2027-01-01" in response.text
     assert "Venice Uncensored" in response.text
-    assert "0.5" in response.text
-    assert "1.5" in response.text
+    assert "0,50" in response.text
+    assert "1,50" in response.text
     assert "100" in response.text
-    assert "2,000,000" in response.text
-    assert "4.25" in response.text
-    assert "21,000" in response.text
+    assert "2\u00a0000\u00a0000" in response.text
+    assert "4,25" in response.text
+    assert "21\u00a0000" in response.text
     assert "Production Key" in response.text
     assert "key-1" in response.text
 

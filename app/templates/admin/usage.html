@@ -1,137 +1,57 @@
-<!doctype html>
-<html lang="ru">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Расход — Shluz</title>
-    <link rel="stylesheet" href="/static/admin.css">
-</head>
-<body>
-    <main class="shell wide">
-        <nav class="breadcrumbs"><a href="/admin">← Главная</a></nav>
-        <header class="hero compact">
-            <div>
-                <p class="eyebrow">Финансовый контроль</p>
-                <h1>Расход</h1>
-                <p class="muted">Запросы, токены, себестоимость, расчётная выручка и валовая маржа.</p>
-            </div>
-            <span class="status">{{ "{:,}".format(usage.request_count) }} событий</span>
-        </header>
-
-        <section class="grid" aria-label="Итоги расхода">
-            <article class="card"><span class="label">Себестоимость USD</span><strong>{{ usage.cost_usd }}</strong></article>
-            <article class="card"><span class="label">Расчётная выручка</span><strong>{{ usage.billed_usd }}</strong></article>
-            <article class="card"><span class="label">Валовая маржа</span><strong>{{ usage.margin_usd }}</strong></article>
-            <article class="card"><span class="label">Внутренние кредиты</span><strong>{{ "{:,}".format(usage.internal_credits) }}</strong></article>
-            <article class="card"><span class="label">Списано DIEM</span><strong>{{ usage.cost_diem }}</strong></article>
-            <article class="card"><span class="label">Входных токенов</span><strong>{{ "{:,}".format(usage.prompt_tokens) }}</strong></article>
-            <article class="card"><span class="label">Выходных токенов</span><strong>{{ "{:,}".format(usage.completion_tokens) }}</strong></article>
-            <article class="card">
-                <span class="label">Состояния</span>
-                <strong class="small-value">{{ usage.success_count }} успешно · {{ usage.pending_count }} ожидают · {{ usage.failed_count }} ошибок</strong>
-            </article>
-        </section>
-
-        {% if usage.request_count == 0 %}
-            <section class="empty-state">
-                <h2>Расходов пока нет</h2>
-                <p>После первого запроса здесь появятся токены, себестоимость, модель, канал и расчётная маржа.</p>
-            </section>
-        {% else %}
-            <section class="section-block">
-                <div class="section-heading">
-                    <div><p class="eyebrow">Разбивка</p><h2>По пользователям</h2></div>
-                    <p class="muted">Технические тесты относятся к аккаунту bootstrap, пользовательские запросы — к личному аккаунту.</p>
-                </div>
-                <div class="table-wrap">
-                    <table>
-                        <thead><tr><th>Пользователь</th><th>События</th><th>Токены</th><th>Себестоимость</th><th>Выручка</th><th>Маржа</th><th>Кредиты</th></tr></thead>
-                        <tbody>
-                        {% for row in usage.by_account %}
-                            <tr>
-                                <td><strong>{{ row.label }}</strong><small>{{ row.key }}</small></td>
-                                <td>{{ "{:,}".format(row.request_count) }}</td>
-                                <td>{{ "{:,}".format(row.prompt_tokens + row.completion_tokens) }}</td>
-                                <td>{{ row.cost_usd }} USD</td>
-                                <td>{{ row.billed_usd }} USD</td>
-                                <td>{{ row.margin_usd }} USD</td>
-                                <td>{{ "{:,}".format(row.internal_credits) }}</td>
-                            </tr>
-                        {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            <section class="split-grid section-block">
-                <article>
-                    <div class="section-heading"><div><p class="eyebrow">Разбивка</p><h2>По моделям</h2></div></div>
-                    <div class="table-wrap">
-                        <table class="compact-table">
-                            <thead><tr><th>Модель</th><th>События</th><th>Себестоимость</th><th>Маржа</th></tr></thead>
-                            <tbody>
-                            {% for row in usage.by_model %}
-                                <tr><td>{{ row.label }}</td><td>{{ row.request_count }}</td><td>{{ row.cost_usd }}</td><td>{{ row.margin_usd }}</td></tr>
-                            {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </article>
-                <article>
-                    <div class="section-heading"><div><p class="eyebrow">Разбивка</p><h2>По каналам</h2></div></div>
-                    <div class="table-wrap">
-                        <table class="compact-table">
-                            <thead><tr><th>Канал</th><th>События</th><th>Себестоимость</th><th>Маржа</th></tr></thead>
-                            <tbody>
-                            {% for row in usage.by_source %}
-                                <tr><td>{{ row.label }}</td><td>{{ row.request_count }}</td><td>{{ row.cost_usd }}</td><td>{{ row.margin_usd }}</td></tr>
-                            {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </article>
-            </section>
-
-            <section class="section-block">
-                <div class="section-heading">
-                    <div><p class="eyebrow">Журнал</p><h2>Последние запросы</h2></div>
-                    <p class="muted">Содержимое сообщений и ответы модели не сохраняются.</p>
-                </div>
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                            <tr><th>Время</th><th>Статус</th><th>Пользователь</th><th>Канал</th><th>Поставщик / модель</th><th>Токены</th><th>Финансы</th><th>ID поставщика</th></tr>
-                        </thead>
-                        <tbody>
-                        {% for event in usage.recent_events %}
-                            <tr>
-                                <td>{{ event.created_at }}</td>
-                                <td>
-                                    <span class="metric">{{ event.status }}</span>
-                                    {% if event.error_code %}<small>{{ event.error_code }}</small>{% endif %}
-                                </td>
-                                <td>{{ event.account_id }}</td>
-                                <td>{{ event.source }}</td>
-                                <td><strong>{{ event.provider }}</strong><small>{{ event.model }}</small></td>
-                                <td>{{ "{:,}".format(event.prompt_tokens) }} + {{ "{:,}".format(event.completion_tokens) }}</td>
-                                <td>
-                                    {{ event.cost_usd }} USD себестоимость
-                                    <small>{{ event.billed_usd }} USD выручка · {{ event.internal_credits }} кредитов</small>
-                                    <small>{{ event.cost_diem }} DIEM</small>
-                                </td>
-                                <td>{{ event.provider_request_id or "—" }}</td>
-                            </tr>
-                        {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-        {% endif %}
-
-        <section class="notice">
-            <strong>Расчётная выручка — не подтверждённый платёж.</strong>
-            <p>Она показывает, сколько Shluz относит на пользователя по настройкам тарифа. Фактические оплаты будут учитываться отдельно после подключения платёжной системы.</p>
-        </section>
-    </main>
-</body>
-</html>
+{% extends 'admin/base.html' %}
+{% from 'admin/components.html' import hint, amount, when, identifier, badge %}
+{% block title %}Расходы{% endblock %}
+{% block content %}
+<header class="hero compact"><div><p class="eyebrow">Использование сервиса</p><h1>Расходы</h1><p class="muted">Кто обращается к моделям и сколько это стоит сервису.</p></div><span class="count-label">За всё время</span></header>
+<section class="grid overview-grid" aria-label="Итоги расхода">
+  <article class="card"><span class="label">Расходы на модели {{ hint('cost') }}</span><strong>{{ amount(usage.cost_usd) }}</strong><small>Себестоимость, без наценки</small></article>
+  <article class="card"><span class="label">Успешные ответы {{ hint('request_log') }}</span><strong>{{ usage.success_count | integer }}</strong><small>Завершены и учтены</small></article>
+  <article class="card"><span class="label">В работе {{ hint('requests') }}</span><strong>{{ usage.pending_count | integer }}</strong><small>Ещё не завершены</small></article>
+  <article class="card"><span class="label">Ошибки модели {{ hint('request_log') }}</span><strong>{{ usage.failed_count | integer }}</strong><small>Отказы по квоте сюда не входят</small></article>
+</section>
+<details class="details-panel"><summary>Финансовый расчёт и токены <span class="summary-note">не реальные платежи</span></summary><div class="details-body">
+  <dl class="facts">
+    <div><dt>Расчётная выручка {{ hint('revenue') }}</dt><dd>{{ amount(usage.billed_usd) }}</dd></div>
+    <div><dt>Расчётная маржа {{ hint('margin') }}</dt><dd>{{ amount(usage.margin_usd) }}</dd></div>
+    <div><dt>Внутренние кредиты {{ hint('credits') }}</dt><dd>{{ usage.internal_credits | integer }}</dd></div>
+    <div><dt>Токены на входе {{ hint('model_tokens') }}</dt><dd>{{ usage.prompt_tokens | integer }}</dd></div>
+    <div><dt>Токены на выходе {{ hint('model_tokens') }}</dt><dd>{{ usage.completion_tokens | integer }}</dd></div>
+    <div><dt>Расход DIEM {{ hint('diem') }}</dt><dd>{{ amount(usage.cost_diem, 'DIEM') }}</dd></div>
+  </dl><p class="footnote">Точные суммы доступны при наведении на число. Малые ненулевые расходы не округляются до нуля. У mock-модели стоимость и токены равны нулю.</p>
+</div></details>
+{% if not usage.request_count %}<section class="empty-state"><h2>Расходов пока нет</h2><p>После первого обращения к модели здесь появятся пользователь и результат выполнения.</p><a href="/admin/users">Открыть пользователей</a></section>
+{% else %}
+<section class="section-block">
+  <div class="section-heading"><div><h2>По пользователям</h2><p class="muted">Нажмите на имя, чтобы открыть аккаунт.</p></div>{{ hint('request_log') }}</div>
+  <div class="table-wrap"><table><thead><tr><th>Пользователь</th><th>Обращения {{ hint('request_log') }}</th><th>Расходы на модели {{ hint('cost') }}</th><th>Подробности</th></tr></thead><tbody>
+  {% for row in usage.by_account %}<tr><td><a class="user-link" href="{{ account_urls.get(row.key, '/admin/users') }}">{{ row.label }}</a></td><td>{{ row.request_count | integer }}</td><td>{{ amount(row.cost_usd) }}</td><td><details class="technical"><summary>Расчёт и служебные данные</summary><dl class="facts compact-facts"><div><dt>Вход / выход {{ hint('model_tokens') }}</dt><dd>{{ row.prompt_tokens | integer }} / {{ row.completion_tokens | integer }}</dd></div><div><dt>Расчётная выручка {{ hint('revenue') }}</dt><dd>{{ amount(row.billed_usd) }}</dd></div><div><dt>Маржа {{ hint('margin') }}</dt><dd>{{ amount(row.margin_usd) }}</dd></div><div><dt>Кредиты {{ hint('credits') }}</dt><dd>{{ row.internal_credits | integer }}</dd></div><div><dt>ID {{ hint('id') }}</dt><dd><code class="identifier">{{ row.key }}</code></dd></div></dl></details></td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+<details class="details-panel section-block"><summary>По моделям и каналам</summary><div class="details-body split-grid">
+  <section><h2>Модели</h2><div class="table-wrap"><table class="compact-table"><thead><tr><th>Модель</th><th>Обращения</th><th>Себестоимость</th><th>Маржа {{ hint('margin') }}</th></tr></thead><tbody>{% for row in usage.by_model %}<tr><td>{{ row.label }}</td><td>{{ row.request_count | integer }}</td><td>{{ amount(row.cost_usd) }}</td><td>{{ amount(row.margin_usd) }}</td></tr>{% endfor %}</tbody></table></div></section>
+  <section><h2>Каналы {{ hint('source') }}</h2><div class="table-wrap"><table class="compact-table"><thead><tr><th>Канал</th><th>Обращения</th><th>Себестоимость</th><th>Маржа {{ hint('margin') }}</th></tr></thead><tbody>{% for row in usage.by_source %}<tr><td>{{ row.label | label }}</td><td>{{ row.request_count | integer }}</td><td>{{ amount(row.cost_usd) }}</td><td>{{ amount(row.margin_usd) }}</td></tr>{% endfor %}</tbody></table></div></section>
+</div></details>
+<section class="section-block"><div class="section-heading"><div><h2>Последние запросы</h2><p class="muted">Последние {{ usage.recent_events | length }} записей. Переписки в этом журнале не сохраняются.</p></div>{{ hint('request_log') }}</div>
+<div class="table-wrap"><table class="events-table"><thead><tr><th>Время {{ hint('dates') }}</th><th>Пользователь</th><th>Результат</th><th>Модель / канал</th><th>Стоимость {{ hint('cost') }}</th><th>Подробности</th></tr></thead><tbody>
+{% for event in usage.recent_events %}<tr>
+  <td>{{ when(event.created_at) }}</td>
+  <td><a class="user-link" href="{{ account_urls.get(event.account_id, '/admin/users') }}">{{ account_names.get(event.account_id, 'Неизвестный пользователь') }}</a></td>
+  <td>{{ badge(event.status) }}{% if event.error_code %}<small>{{ event.error_code | label }}</small>{% endif %}</td>
+  <td><strong>{{ event.provider | label }}</strong><small>{{ event.model }}</small><small>{{ event.source | label }}</small></td>
+  <td>{{ amount(event.cost_usd) }}</td>
+  <td><details class="technical"><summary>Детали запроса</summary><dl class="facts compact-facts">
+    <div><dt>Токены: вход {{ hint('model_tokens') }}</dt><dd>{{ event.prompt_tokens | integer }}</dd></div>
+    <div><dt>Токены: выход</dt><dd>{{ event.completion_tokens | integer }}</dd></div>
+    <div><dt>Расчётная выручка {{ hint('revenue') }}</dt><dd>{{ amount(event.billed_usd) }}</dd></div>
+    <div><dt>Кредиты {{ hint('credits') }}</dt><dd>{{ event.internal_credits | integer }}</dd></div>
+    <div><dt>Расход DIEM {{ hint('diem') }}</dt><dd>{{ amount(event.cost_diem, 'DIEM') }}</dd></div>
+    <div><dt>ID пользователя {{ hint('id') }}</dt><dd><code class="identifier">{{ event.account_id }}</code></dd></div>
+    <div><dt>ID запроса {{ hint('id') }}</dt><dd><code class="identifier">{{ event.id }}</code></dd></div>
+    <div><dt>ID поставщика</dt><dd><code class="identifier">{{ event.provider_request_id or 'Не передан' }}</code></dd></div>
+    {% if event.error_code %}<div><dt>Технический код ошибки</dt><dd><code>{{ event.error_code }}</code></dd></div>{% endif %}
+  </dl></details></td>
+</tr>{% endfor %}
+</tbody></table></div></section>
+{% endif %}
+<p class="footnote">Расчётная выручка — не подтверждённый платёж. Фактические оплаты будут учитываться отдельно после подключения платёжной системы. {{ hint('revenue') }}</p>
+{% endblock %}

@@ -184,8 +184,8 @@ def test_admin_pages_show_current_allowance_revenue_and_margin(client):
     assert users_page.status_code == 200
     assert "Маржинальный пользователь" in users_page.text
     assert "75" in users_page.text
-    assert "0.01000000" in users_page.text
+    assert "0,01" in users_page.text
     assert usage_page.status_code == 200
     assert "Расчётная выручка" in usage_page.text
-    assert "0.03000000" in usage_page.text
-    assert "0.01000000" in usage_page.text
+    assert "0,03" in usage_page.text
+    assert "0,01" in usage_page.text

@@ -1,5 +1,6 @@
 import hmac
 import secrets
+from dataclasses import replace
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -14,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.admin.forms import _choice, _plan_values, _read_form, _required_text
 from app.admin.lifecycle import ensure_plan_unused
+from app.admin.presentation import database_info, install_presentation, label
 from app.config import Settings
 from app.db.audit import plan_snapshot, record_admin_event
 from app.db.database import Database
@@ -26,6 +28,7 @@ from app.providers.registry import ProviderRegistry
 router = APIRouter(prefix="/admin", tags=["admin"])
 security = HTTPBasic()
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
+install_presentation(templates.env)
 _ALLOWED_ROLES = {"user", "admin"}
 _ALLOWED_STATUSES = {"active", "disabled"}
 _ALLOWED_SOURCES = {"harness", "site", "telegram", "api"}
@@ -116,8 +119,11 @@ def admin_dashboard(
         request=request, name="admin/index.html", context={
             "environment": settings.environment, "version": settings.service_version,
             "model_count": model_count, "provider_names": registry.provider_names(),
-            "model_warning": model_warning, "account_count": len(accounts),
+            "model_warning": model_warning,
+            "account_count": sum(account.id != "bootstrap" for account in accounts),
             "usage_request_count": usage.request_count, "usage_cost_usd": usage.cost_usd,
+            "database_info": database_info(settings.database_url.get_secret_value()),
+            "credit_unit_usd": settings.credit_unit_usd,
         },
     )
 
@@ -225,8 +231,10 @@ async def issue_user_token(
 ) -> HTMLResponse:
     form = await _read_form(request)
     _require_csrf(form.get("csrf_token", ""), settings)
-    name = _required_text(form, "name", max_length=200)
     source = _choice(form, "source", _ALLOWED_SOURCES)
+    if not form.get("name", "").strip():
+        form["name"] = f"{label(source)} · {datetime.now(UTC):%d.%m.%Y %H:%M:%S} UTC"
+    name = _required_text(form, "name", max_length=200)
     raw_token = generate_api_token()
     with database.session() as session:
         account = session.scalar(
@@ -364,8 +372,22 @@ def usage_dashboard(
 ) -> HTMLResponse:
     with database.session() as session:
         usage = get_usage_summary(session)
+        account_rows = session.execute(
+            select(Account.id, Account.display_name, Account.status)
+        ).all()
+        account_names = {row.id: row.display_name for row in account_rows}
+        account_names["bootstrap"] = "Служебный доступ"
+        account_urls = {
+            row.id: f"/admin/users{'?archive=1' if row.status == 'archived' else ''}#user-{row.id}"
+            for row in account_rows
+        }
+        usage = replace(usage, by_account=tuple(
+            replace(row, label=account_names.get(row.key, "Неизвестный пользователь"))
+            for row in usage.by_account
+        ))
     return templates.TemplateResponse(
-        request=request, name="admin/usage.html", context={"usage": usage},
+        request=request, name="admin/usage.html",
+        context={"usage": usage, "account_names": account_names, "account_urls": account_urls},
     )
 
 

@@ -1,17 +1,31 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Shluz — управление</title><link rel="stylesheet" href="/static/admin.css"></head><body><main class="shell">
-{% include 'admin/nav.html' %}<header class="hero"><div><p class="eyebrow">Центральный API-шлюз</p><h1>Shluz</h1><p class="muted">Панель владельца. Секретные ключи здесь не отображаются.</p></div><span class="status">Работает</span></header>
-<section class="grid" aria-label="Состояние системы">
-<article class="card"><span class="label">Окружение</span><strong>{{ environment }}</strong></article>
-<article class="card"><span class="label">Пользователей</span><strong>{{ account_count }}</strong></article>
-<article class="card"><span class="label">Запросов учтено</span><strong>{{ '{:,}'.format(usage_request_count) }}</strong></article>
-<article class="card"><span class="label">Себестоимость USD</span><strong>{{ usage_cost_usd }}</strong></article>
-<article class="card"><span class="label">Моделей</span><strong>{{ model_count }}</strong>{% if model_warning %}<small>{{ model_warning }}</small>{% endif %}</article>
-<article class="card"><span class="label">Провайдеры</span><strong>{{ provider_names | join(', ') }}</strong></article>
-</section><h2>Управление</h2><p class="muted">Пользователи и тарифы доступны для изменения. Все административные изменения фиксируются в журнале.</p><section class="feature-grid" aria-label="Разделы управления">
-<a class="feature-card" href="/admin/users"><h3>Пользователи</h3><p>Аккаунты, тарифы, личные доступы и архив.</p></a>
-<a class="feature-card" href="/admin/plans"><h3>Тарифы</h3><p>Создание, редактирование, ограничения и архив.</p></a>
-<a class="feature-card" href="/admin/usage"><h3>Расход</h3><p>Токены, себестоимость, маржа и результаты запросов.</p></a>
-<a class="feature-card" href="/admin/providers/venice"><h3>Venice</h3><p>Баланс, модели, цены и лимиты после подключения серверного ключа.</p></a>
-<a class="feature-card" href="/admin/logs"><h3>Журнал действий</h3><p>Кто и когда изменил тариф, пользователя или доступ.</p></a>
-<a class="feature-card" href="/admin/test"><h3>Проверка запроса</h3><p>Вставьте личный токен, напишите «Привет» и проверьте лимит.</p></a>
-</section><section class="links"><a href="/docs">Интерактивная документация API</a><a href="/health">Проверка состояния сервера</a></section><footer>Версия {{ version }}. Тексты запросов не сохраняются в журнале расходов. Приём платежей пока не подключён.</footer></main></body></html>
+{% extends 'admin/base.html' %}
+{% from 'admin/components.html' import hint, amount %}
+{% block title %}Обзор{% endblock %}
+{% block content %}
+<header class="hero compact">
+  <div><p class="eyebrow">Панель владельца</p><h1>Всё под контролем</h1><p class="muted">Пользователи и тарифы, расходы на модели и состояние сервиса.</p></div>
+  <span class="status">Шлюз работает</span>
+</header>
+<section class="grid overview-grid" aria-label="Состояние системы">
+  <article class="card"><span class="label">Пользователей</span><strong>{{ account_count | integer }}</strong><small>Без служебного аккаунта</small></article>
+  <article class="card"><span class="label">Обращений к моделям {{ hint('request_log') }}</span><strong>{{ usage_request_count | integer }}</strong><small>За всё время</small></article>
+  <article class="card"><span class="label">Расходы на модели {{ hint('cost') }}</span><strong>{{ amount(usage_cost_usd) }}</strong><small>За всё время · без наценки</small></article>
+  <article class="card"><span class="label">База данных {{ hint('database') }}</span><strong>{{ database_info.name }}</strong><small>{{ database_info.description }}</small></article>
+</section>
+{% if 'mock' in provider_names %}
+<section class="notice compact-notice"><span class="pill planned">Тестовый режим</span><p>Используется <strong>mock</strong>: бесплатный искусственный ответ. Проверки не расходуют деньги у поставщика.</p>{{ hint('provider') }}</section>
+{% endif %}
+<section class="feature-grid section-block" aria-label="Разделы управления">
+  <a class="feature-card" href="/admin/users"><span class="feature-icon" aria-hidden="true">↗</span><h2>Пользователи</h2><p>Кому открыт доступ и сколько осталось запросов.</p></a>
+  <a class="feature-card" href="/admin/plans"><span class="feature-icon" aria-hidden="true">≡</span><h2>Тарифы</h2><p>Цена подписки, лимит запросов и бюджет на модели.</p></a>
+  <a class="feature-card" href="/admin/usage"><span class="feature-icon" aria-hidden="true">↗</span><h2>Расходы</h2><p>Кто использует сервис и во сколько это обходится.</p></a>
+</section>
+<details class="details-panel section-block">
+  <summary>Технические настройки и инструменты</summary>
+  <div class="details-body">
+    <dl class="facts"><div><dt>Окружение</dt><dd>{{ environment | label }}</dd></div><div><dt>Версия</dt><dd>{{ version }}</dd></div><div><dt>Поставщики {{ hint('provider') }}</dt><dd>{% for name in provider_names %}{{ name | label }}{% if not loop.last %}, {% endif %}{% endfor %}</dd></div><div><dt>Доступно моделей</dt><dd>{{ model_count }}{% if model_warning %}<small>{{ model_warning }}</small>{% endif %}</dd></div><div><dt>Один внутренний кредит {{ hint('credits') }}</dt><dd>{{ amount(credit_unit_usd) }}</dd></div></dl>
+    <div class="links"><a href="/admin/providers/venice">Состояние Venice</a><a href="/admin/logs">Журнал действий</a><a href="/admin/test">Проверка запроса</a><a href="/docs">Документация API</a><a href="/health">Проверка сервера</a></div>
+  </div>
+</details>
+<p class="footnote">Приём платежей пока не подключён. Расчётная выручка не означает поступление денег.</p>
+{% endblock %}

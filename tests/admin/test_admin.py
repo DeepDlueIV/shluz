@@ -19,7 +19,7 @@ def test_admin_dashboard_is_human_readable_and_hides_secrets(client, test_settin
 
     assert response.status_code == 200
     assert "Shluz" in response.text
-    assert test_settings.environment in response.text
+    assert "Разработка" in response.text
     assert test_settings.service_version in response.text
     assert "mock" in response.text
     assert "1" in response.text

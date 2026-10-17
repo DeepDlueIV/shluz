@@ -24,10 +24,10 @@ def test_users_page_shows_bootstrap_account_and_hides_api_secrets(
 
     assert response.status_code == 200
     assert "Пользователи" in response.text
-    assert "Bootstrap access" in response.text
+    assert "Служебный доступ" in response.text
     assert "bootstrap" in response.text
-    assert "service" in response.text
-    assert "active" in response.text
+    assert "Служебный" in response.text
+    assert "Активен" in response.text
     assert test_settings.bootstrap_api_token.get_secret_value() not in response.text
     assert test_settings.admin_password.get_secret_value() not in response.text
 
@@ -61,7 +61,7 @@ def test_plans_page_has_empty_state_and_can_show_plan(client):
     assert response.status_code == 200
     assert "Стартовый" in response.text
     assert "starter" in response.text
-    assert "1,000" in response.text
+    assert "1\u00a0000" in response.text
     assert "250" in response.text
     assert "Активен" in response.text
 
@@ -91,18 +91,20 @@ def test_usage_page_shows_totals_and_recent_events(client):
 
     assert response.status_code == 200
     assert "Расход" in response.text
-    assert "0.125" in response.text
+    assert "0,13" in response.text
+    assert "0,12500000" in response.text
     assert "2" in response.text
-    assert "1,500" in response.text
+    assert "1\u00a0500" in response.text
     assert "450" in response.text
     assert "venice-uncensored" in response.text
-    assert "harness" in response.text
+    assert "Десктоп / API-клиент" in response.text
     assert "bootstrap" in response.text
     assert "usage-dashboard-request" in response.text
 
     with database.session() as session:
         event = session.scalar(select(UsageEvent))
     assert event is not None
+    assert event.cost_usd == Decimal("0.125")
 
 
 def test_usage_page_explains_empty_state(client):

@@ -158,6 +158,9 @@ jobs:
           mkdir -p secrets
           printf '{}' > secrets/telegram-access.json
           docker compose --profile telegram config --quiet
+          python scripts/gateway_owner_check.py --prepare
+          docker compose --env-file .env.owner -f compose.owner.yaml -f compose.owner.telegram.yaml config --quiet
+          rm .env.owner
 
       - name: Print Docker logs on failure
         if: failure()
@@ -166,3 +169,37 @@ jobs:
       - name: Stop Docker container
         if: always()
         run: docker rm --force shluz-ci || true
+
+  admin-ui:
+    name: Admin UX in Chromium
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: python -m pip install -e ".[dev,ui]"
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Verify UI against isolated HTTP gateway
+        env:
+          SHLUZ_UI_SCREENSHOTS: artifacts/admin-ui
+        run: pytest ui_tests -v
+      - name: Save screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-ui-screenshots
+          path: artifacts/admin-ui
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Package tracked source
+        run: git archive --format=zip --prefix=shluz/ HEAD -o shluz-owner-ux.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shluz-owner-ux-source
+          path: shluz-owner-ux.zip
+          retention-days: 7
