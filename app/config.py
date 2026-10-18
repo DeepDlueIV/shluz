@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,7 +22,12 @@ class Settings(BaseSettings):
     telegram_pending_limit: int = Field(default=500, ge=1, le=10000)
 
     active_provider: Literal["mock", "venice"] = "mock"
-    venice_api_key: SecretStr | None = None
+    venice_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "SHLUZ_VENICE_API_KEY", "VENICE_API_KEY", "venice_api_key"
+        ),
+    )
     venice_base_url: str = "https://api.venice.ai/api/v1"
     venice_timeout_seconds: float = 30.0
     venice_analytics_lookback: str = "7d"
