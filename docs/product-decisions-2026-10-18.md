@@ -165,3 +165,20 @@ endpoint; файл удалён, секрет не публиковался в G
 - https://core.telegram.org/bots/payments-stars
 - https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases
 - https://github.com/mattpocock/skills/blob/main/skills/productivity/grilling/SKILL.md
+
+
+## Реализация текущего этапа: запускатель → демо → модели
+
+Добавлены launcher/Shluz.cmd с автоматическим импортом прежней локальной установки,
+резервным копированием и проверенными Release-архивами вместо ручного выбора ветки;
+3 lifetime demo-запроса (настраиваются), авто-Start, политика моделей по тарифу/каналу,
+личный отчёт токенов/USD и кнопка тарифов/оплаты без настоящего процессинга.
+Уточнение распределения: один DemoGrant на аккаунт, общий между каналами — переключение
+клиента не даёт новый пакет. Независимый email-аккаунт пока независим; объединение позже.
+
+Практическое упрощение поставки: готовый docker-save gzip хранится в GitHub Release,
+а не GHCR. Нет локальной сборки, Git или отдельного входа в registry; checksum и ID
+образа закреплены. Канал preview постоянный, trusted publishing отделён от любых PR.
+Подробные границы: launcher/README.md и docs/client-api-demo.md.
+Сайт/desktop/настоящие платежи/streaming и эксплуатация PostgreSQL этим не реализованы.
+Локальные контейнеры владельца здесь не обновлялись, реальных API-вызовов Venice не было.

@@ -12,6 +12,7 @@ from app.api.auth import AuthenticatedPrincipal, require_api_token
 from app.api.dependencies import get_database
 from app.db.database import Database
 from app.db.models import Account, Identity, Plan, Subscription, UsageEvent
+from app.product.service import demo_allowance
 
 router = APIRouter()
 Principal = Annotated[AuthenticatedPrincipal, Depends(require_api_token)]
@@ -63,7 +64,11 @@ def my_account(principal: Principal, database: Db, response: Response) -> dict:
             .order_by(Subscription.starts_at.desc(), Subscription.created_at.desc())
         ).first()
         subscription, plan = row if row else (None, None)
-        common = (UsageEvent.account_id == account.id, UsageEvent.created_at >= month_start)
+        common = (
+            UsageEvent.account_id == account.id,
+            UsageEvent.created_at >= month_start,
+            UsageEvent.quota_kind != "demo",
+        )
         success = UsageEvent.status == "success"
         pending = and_(UsageEvent.status == "pending", UsageEvent.reservation_expires_at > now)
 
@@ -94,6 +99,7 @@ def my_account(principal: Principal, database: Db, response: Response) -> dict:
         ends_at = subscription.ends_at if subscription else None
         if ends_at is not None and ends_at.tzinfo is None:
             ends_at = ends_at.replace(tzinfo=UTC)
+        demo = demo_allowance(session, account.id) if plan is None else None
         return {
             "account": {
                 "id": account.id,
@@ -103,17 +109,31 @@ def my_account(principal: Principal, database: Db, response: Response) -> dict:
             "channel": principal.source,
             "plan": {
                 "id": plan.id,
+                "kind": "standard",
                 "code": plan.code,
                 "name": plan.name,
                 "scope": "account",
                 "ends_at": ends_at.isoformat() if ends_at else None,
             }
             if plan
-            else None,
+            else (
+                {
+                    "id": "demo",
+                    "code": "demo",
+                    "name": "Демо · пробные запросы",
+                    "kind": "demo",
+                    "scope": "account",
+                    "ends_at": None,
+                }
+                if demo
+                else None
+            ),
             "allowance": {
                 "scope": "account",
-                "resets_at": next_month.isoformat(),
-                "requests": _allowance(
+                "resets_at": None if demo else next_month.isoformat(),
+                "requests": demo
+                if demo
+                else _allowance(
                     plan.monthly_request_limit if plan else None,
                     count(success),
                     count(pending),

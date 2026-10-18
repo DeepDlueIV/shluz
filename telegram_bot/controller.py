@@ -50,7 +50,11 @@ class ClosedAccessMiddleware(BaseMiddleware):
                     invite = candidate
             try:
                 admission = await self.controller.gateway.onboard(
-                    sender.id, sender.full_name, sender.username, invite=invite, legacy_token=token,
+                    sender.id,
+                    sender.full_name,
+                    sender.username,
+                    invite=invite,
+                    legacy_token=token,
                 )
             except GatewayError as exc:
                 if callback:
@@ -65,14 +69,25 @@ class ClosedAccessMiddleware(BaseMiddleware):
                 pending = admission["state"] == "pending"
                 await self.controller.delivery.screen(
                     message,
-                    ("📨 <b>Заявка отправлена</b>\n\n"
-                     "Сейчас идёт закрытое тестирование. Администратор увидит вашу заявку "
-                     "в панели. После одобрения нажмите «Проверить доступ» или напишите мне.\n\n"
-                     "Никаких ключей, ID или файлов отправлять не нужно.")
-                    if pending else ERROR_TEXT["onboarding_blocked"],
-                    InlineKeyboardMarkup(inline_keyboard=[[
-                        InlineKeyboardButton(text="Проверить доступ", callback_data="access_check"),
-                    ]]) if pending else None,
+                    (
+                        "📨 <b>Заявка отправлена</b>\n\n"
+                        "Сейчас идёт закрытое тестирование. Администратор увидит вашу заявку "
+                        "в панели. После одобрения нажмите «Проверить доступ» или напишите мне.\n\n"
+                        "Никаких ключей, ID или файлов отправлять не нужно."
+                    )
+                    if pending
+                    else ERROR_TEXT["onboarding_blocked"],
+                    InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="Проверить доступ", callback_data="access_check"
+                                ),
+                            ]
+                        ]
+                    )
+                    if pending
+                    else None,
                 )
                 return None
             token = SecretStr(admission["token"])
@@ -147,15 +162,18 @@ class Controller:
             self.store.bind_account(sender.id, remote["account"]["id"])
         return remote
 
-    async def show_menu(self, message: Message, user_id: int) -> None:
+    async def show_menu(self, message: Message, user_id: int, remote: dict | None = None) -> None:
         profile = self.store.profile(user_id)
         model = html.escape(profile["model"] or "будет выбрана при первом сообщении")
         text = (
-            "<b>🧪 Shluz · закрытая бета</b>\n\n"
+            "<b>🧪 Shluz · тестовая версия</b>\n\n"
             "Напишите сообщение — отвечу в контексте текущего диалога.\n"
             f"Модель: <code>{model}</code>\n\n"
             "«Новый чат» начинает отдельный диалог. Предыдущие остаются в «Диалогах»."
         )
+        if remote and remote.get("plan") and remote["plan"].get("kind") == "demo":
+            quota = remote["allowance"]["requests"]
+            text += f"\n\n🎁 Демо: осталось {quota['remaining']} из {quota['limit']} запросов."
         if profile["model"] == "mock-chat":
             text += "\n\n🧩 mock-chat — тестовый ответ, не настоящая нейросеть."
         await self.delivery.screen(message, text, ui.menu())
@@ -268,17 +286,17 @@ class Controller:
         ):
             return
         if action in {"start", "menu", "access_check"}:
-            if action in {"start", "access_check"}:
-                await self.linked_profile(message, token, user=user)
-                if local["model"] is None:
-                    models = await self.gateway.models(token)
-                    selected = (
-                        self.settings.default_model
-                        if self.settings.default_model in models
-                        else models[0]
-                    )
+            remote = await self.linked_profile(message, token, user=user)
+            if action in {"start", "access_check"} and local["model"] is None:
+                models = await self.gateway.models(token)
+                selected = (
+                    self.settings.default_model
+                    if self.settings.default_model in models
+                    else (models[0] if models else None)
+                )
+                if selected:
                     self.store.set_model(user_id, selected)
-            await self.show_menu(message, user_id)
+            await self.show_menu(message, user_id, remote)
         elif action == "new":
             self.store.new_dialog(user_id)
             await self.delivery.screen(
@@ -286,7 +304,21 @@ class Controller:
             )
         elif action in {"plan", "balance", "limits", "profile", "stats"}:
             remote = await self.linked_profile(message, token, user=user)
-            await self.delivery.screen(message, ui.profile_text(remote, local), ui.back())
+            usage = await self.gateway.usage(token)
+            summary = usage.get("summary", {})
+            charged = summary.get("charged_usd")
+            money_text = html.escape(str(charged)) + " USD" if charged is not None else "уточняется"
+            expenses = (
+                f"\n\n<b>Расход за текущий месяц (UTC)</b>\n"
+                f"Входные токены: {summary.get('prompt_tokens', 0)}\n"
+                f"Выходные токены: {summary.get('completion_tokens', 0)}\n"
+                f"Списано: {money_text}"
+            )
+            await self.delivery.screen(
+                message,
+                ui.profile_text(remote, local) + expenses,
+                ui.keyboard([[("💳 Тарифы и оплата", "tariffs")], [("☰ Меню", "menu")]]),
+            )
         elif action == "models":
             models = await self.gateway.models(token)
             offset = int(value) if value.isdigit() else 0
@@ -294,7 +326,11 @@ class Controller:
             await self.delivery.screen(
                 message,
                 "<b>🤖 Выберите модель</b>\n"
-                "Список приходит из Shluz. Смена модели сохраняет контекст.",
+                + (
+                    ("Только модели вашего тарифа и Telegram. Смена модели сохраняет контекст.")
+                    if models
+                    else "Для этого канала пока нет разрешённых моделей. Меню и история доступны."
+                ),
                 ui.models_controls(models, local["model"], offset),
             )
         elif action == "model":
@@ -493,6 +529,8 @@ class Controller:
             if remote["plan"] is None:
                 raise GatewayError("subscription_required")
             models = await self.gateway.models(token)
+            if not models:
+                raise GatewayError("model_not_allowed")
             local = self.store.profile(user_id)
             model = model_override or local["model"]
             if model is None:
@@ -539,6 +577,14 @@ class Controller:
             self.store.complete_turn(turn_id, answer)
             await stop_animation()
             await self.delivery.answer(message, waiting, answer, turn_id=turn_id)
+            if remote["plan"].get("kind") == "demo":
+                updated = await self.gateway.profile(token)
+                left = updated["allowance"]["requests"]["remaining"]
+                await self.delivery.say(
+                    message,
+                    f"🎁 Демо: осталось {left} запросов.",
+                    ui.keyboard([[("💳 Тарифы и оплата", "tariffs")]]) if left == 0 else None,
+                )
             if trimmed:
                 await self.delivery.say(
                     message,

@@ -2,7 +2,7 @@
   <a class="brand" href="/admin" aria-label="Shluz — обзор"><span class="brand-mark" aria-hidden="true">S</span> Shluz</a>
   <nav class="app-nav" aria-label="Разделы Shluz">
     {% set current = request.url.path.rstrip('/') %}
-    {% for path, name in [('/admin', 'Обзор'), ('/admin/users', 'Пользователи'), ('/admin/plans', 'Тарифы'), ('/admin/telegram', 'Telegram'), ('/admin/usage', 'Расходы'), ('/admin/logs', 'Журнал'), ('/admin/test', 'Проверка запроса'), ('/admin/providers/venice', 'Поставщик')] %}
+    {% for path, name in [('/admin', 'Обзор'), ('/admin/users', 'Пользователи'), ('/admin/plans', 'Тарифы'), ('/admin/access', 'Демо и модели'), ('/admin/telegram', 'Telegram'), ('/admin/usage', 'Расходы'), ('/admin/logs', 'Журнал'), ('/admin/test', 'Проверка запроса'), ('/admin/providers/venice', 'Поставщик')] %}
     {% set selected = current == path or (path != '/admin' and current.startswith(path + '/')) or (path == '/admin/users' and current.startswith('/admin/tokens/')) %}
     <a href="{{ path }}" {% if selected %}aria-current="page"{% endif %}>{{ name }}</a>
     {% endfor %}

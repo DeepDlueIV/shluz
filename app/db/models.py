@@ -141,6 +141,8 @@ class UsageEvent(Base):
         ForeignKey("accounts.id", ondelete="RESTRICT"),
         index=True,
     )
+    quota_kind: Mapped[str] = mapped_column(String(16), default="monthly", server_default="monthly")
+    cost_known: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     plan_id: Mapped[str | None] = mapped_column(
         ForeignKey("plans.id", ondelete="SET NULL"),
         nullable=True,
@@ -190,6 +192,7 @@ class UsageEvent(Base):
 
 class TelegramAdmission(Base):
     """Разрешение на канал, а не отдельный финансовый аккаунт."""
+
     __tablename__ = "telegram_admissions"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_new_id)
@@ -197,7 +200,9 @@ class TelegramAdmission(Base):
     display_name: Mapped[str] = mapped_column(String(200))
     username: Mapped[str | None] = mapped_column(String(200), nullable=True)
     account_id: Mapped[str | None] = mapped_column(
-        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True, index=True,
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
     )
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     # Отсутствие/удаление старого ключа должно закрывать доступ, а не снимать проверку.
@@ -214,7 +219,8 @@ class TelegramInvite(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="RESTRICT"))
     account_id: Mapped[str | None] = mapped_column(
-        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True,
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
+        nullable=True,
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     redeemed_telegram_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -228,3 +234,36 @@ class TelegramIntegration(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default="default")
     username: Mapped[str] = mapped_column(String(64))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+
+
+class ProductPolicy(Base):
+    """Настройки демо и допуска. Не содержат ключей поставщика."""
+
+    __tablename__ = "product_policy"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default="default")
+    mode: Mapped[str] = mapped_column(String(16), default="demo")
+    demo_requests: Mapped[int] = mapped_column(Integer, default=3)
+    demo_models_json: Mapped[str] = mapped_column(String(22000), default='["mock-chat"]')
+    demo_max_input_chars: Mapped[int] = mapped_column(Integer, default=24000)
+    demo_max_output_tokens: Mapped[int] = mapped_column(Integer, default=512)
+    demo_daily_requests: Mapped[int] = mapped_column(Integer, default=100)
+    requests_per_minute: Mapped[int] = mapped_column(Integer, default=30)
+
+
+class DemoGrant(Base):
+    """Один пожизненный пакет на аккаунт; месяц и новый канал его не обновляют."""
+
+    __tablename__ = "demo_grants"
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), primary_key=True
+    )
+    requests_used: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+
+
+class ModelPolicy(Base):
+    """Пересечение channel:* и plan:*; отсутствие plan:* наследует канал."""
+
+    __tablename__ = "model_policies"
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    models_json: Mapped[str] = mapped_column(String(22000), default="[]")

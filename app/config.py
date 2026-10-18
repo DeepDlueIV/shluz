@@ -12,6 +12,7 @@ class Settings(BaseSettings):
 
     service_name: str = "shluz"
     service_version: str = "0.1.0"
+    build_sha: str = Field(default="", pattern=r"^(?:[a-f0-9]{40})?$")
     environment: str = "development"
     bootstrap_api_token: SecretStr = SecretStr("dev-token")
     admin_username: str = "admin"

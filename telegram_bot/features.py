@@ -50,7 +50,42 @@ async def handle_action(
 ) -> bool:
     store, delivery = controller.store, controller.delivery
     local = store.profile(user_id)
-    if action in {"last", "continue"}:
+    if action == "tariffs":
+        catalog = await controller.gateway.plans(token)
+        rows = catalog.get("data", [])[:20]
+        lines = ["<b>💳 Тарифы и оплата</b>", ""]
+        buttons = []
+        for plan in rows:
+            count = plan.get("monthly_request_limit")
+            model_list = plan.get("models", [])
+            models = ", ".join(m[:100] for m in model_list[:3]) or "модели пока не настроены"
+            if len(model_list) > 3:
+                models += f" и ещё {len(model_list) - 3}"
+            entry = (
+                f"<b>{html.escape(plan['name'][:100])}</b> · "
+                f"{html.escape(plan['monthly_price_usd'])} USD/месяц\n"
+                f"Запросов: {count if count is not None else 'лимит не задан'}\n"
+                f"Модели Telegram: {html.escape(models)}"
+            )
+            if len("\n\n".join(lines)) + len(entry) > 3200:
+                lines.append("Показаны первые тарифы. Остальные уточните у поддержки.")
+                break
+            lines.append(entry)
+            buttons.append([("Оплатить · " + plan["name"][:25], "pay")])
+        if not rows:
+            lines.append("Тарифы готовятся. Стоимость и модели появятся здесь после настройки.")
+            buttons.append([("Оплатить", "pay")])
+        lines.append("\nОплата пока не подключена. Деньги не списываются.")
+        buttons.append([("☰ Меню", "menu")])
+        # Не позволяем очень длинному каталогу превысить лимит сообщения Telegram.
+        await delivery.screen(message, "\n\n".join(lines), ui.keyboard(buttons))
+    elif action == "pay":
+        await delivery.screen(
+            message,
+            "💳 Оплата ещё не подключена. Деньги не списаны, тариф не изменён.",
+            ui.keyboard([[("← Тарифы", "tariffs")], [("☰ Меню", "menu")]]),
+        )
+    elif action in {"last", "continue"}:
         turn = store.latest_turn(user_id)
         if not turn:
             await delivery.screen(

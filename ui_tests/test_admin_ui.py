@@ -227,3 +227,20 @@ def test_telegram_onboarding_approve_and_invite_without_per_user_files(page, pre
     expect(page.get_by_role('heading', name='Telegram', exact=True)).to_be_visible()
     page.set_viewport_size({'width': 390, 'height': 844})
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+
+
+def test_demo_policy_screen_and_safe_model_form(page, preview):
+    page.goto(preview[0].url + '/admin/access')
+    expect(page.get_by_role('heading', name='Демо и модели', exact=True)).to_be_visible()
+    expect(page.locator('#demo_requests')).to_have_value('3')
+    page.locator('#demo_requests').fill('5')
+    page.get_by_role('button', name='Сохранить демо', exact=True).click()
+    expect(page.locator('#demo_requests')).to_have_value('5')
+    page.locator('#demo_requests').fill('3')
+    page.get_by_role('button', name='Сохранить демо', exact=True).click()
+    expect(page.locator('#demo_requests')).to_have_value('3')
+    page.locator('.help-trigger').first.hover()
+    expect(page.get_by_role('tooltip')).to_contain_text('Разовый пакет')
+    page.keyboard.press('Escape')
+    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+    capture(page, 'demo-model-permissions')

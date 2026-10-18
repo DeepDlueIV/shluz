@@ -12,6 +12,8 @@ class ChatCompletionRequestSchema(BaseModel):
     model: str = Field(min_length=1)
     messages: list[ChatMessageSchema] = Field(min_length=1)
     stream: bool = False
+    max_completion_tokens: int | None = Field(default=None, gt=0, le=100000)
+    max_tokens: int | None = Field(default=None, gt=0, le=100000)
 
     model_config = ConfigDict(extra="allow")
 

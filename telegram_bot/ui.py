@@ -28,6 +28,7 @@ def menu() -> InlineKeyboardMarkup:
             [("✨ Новый чат", "new"), ("💬 Продолжить", "continue")],
             [("🤖 Модели", "models:0"), ("🗂 Диалоги", "history:0")],
             [("📊 Аккаунт и лимиты", "plan"), ("⚙️ Настройки", "settings")],
+            [("💳 Тарифы и оплата", "tariffs")],
             [("❓ Помощь", "help"), ("🛟 Поддержка", "support")],
         ]
     )
@@ -136,7 +137,12 @@ def profile_text(remote: dict, local: dict) -> str:
     if plan.get("ends_at"):
         expires = datetime.fromisoformat(plan["ends_at"]).astimezone(UTC)
         lines.append(f"Тариф действует до: {expires:%d.%m.%Y %H:%M} UTC.")
-    for key, label in (("requests", "Запросы"), ("credits", "Кредиты")):
+    rows = (
+        (("requests", "Пробные запросы"),)
+        if plan.get("kind") == "demo"
+        else (("requests", "Запросы"), ("credits", "Кредиты"))
+    )
+    for key, label in rows:
         value = remote["allowance"][key]
         limit = value["limit"]
         lines.append(
@@ -154,14 +160,19 @@ def profile_text(remote: dict, local: dict) -> str:
             lines.append("▰" * filled + "▱" * (10 - filled))
             if value["remaining"] <= limit * 0.2:
                 lines.append(f"⚠️ Осталось мало квоты: {label.lower()} — {value['remaining']}.")
-    reset = datetime.fromisoformat(remote["allowance"]["resets_at"])
-    lines.extend(
-        [
-            "",
-            f"Обновление квот: {reset:%d.%m.%Y %H:%M} UTC.",
-            "Кредиты — единицы доступа, не денежный баланс.",
-        ]
-    )
+    reset_at = remote["allowance"].get("resets_at")
+    if reset_at:
+        reset = datetime.fromisoformat(reset_at)
+        lines.extend(
+            [
+                "",
+                f"Обновление квот: {reset:%d.%m.%Y %H:%M} UTC.",
+                "Кредиты — единицы доступа, не денежный баланс.",
+            ]
+        )
+    else:
+        lines.extend(["", "Демо выдаётся один раз. Новый чат или месяц не пополняет пакет."])
+
     if remote["allowance"]["scope"] == "account":
         lines.append("Сейчас эти квоты общие для каналов вашего аккаунта.")
     return "\n".join(lines)

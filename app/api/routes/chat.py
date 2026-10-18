@@ -16,6 +16,7 @@ from app.api.schemas import (
     ErrorResponseSchema,
     UsageSchema,
 )
+from app.product.service import PolicyError
 from app.providers.base import (
     ChatMessage,
     ChatRequest,
@@ -90,7 +91,20 @@ def chat_completions(
             source=principal.source,
             provider=provider.name,
             model=payload.model,
+            input_chars=sum(len(m.content) for m in payload.messages),
+            requested_output_tokens=payload.max_completion_tokens or payload.max_tokens,
         )
+    except PolicyError as exc:
+        response = _error_response(
+            status_code=exc.status,
+            message=exc.message,
+            error_type="access_policy_error",
+            param="model" if exc.status == 403 else None,
+            code=exc.code,
+        )
+        if exc.code == "request_rate_limited":
+            response.headers["Retry-After"] = "60"
+        return response
     except SubscriptionRequiredError:
         return _error_response(
             status_code=402,
@@ -128,6 +142,7 @@ def chat_completions(
         result = provider.chat_completion(
             ChatRequest(
                 model=payload.model,
+                max_completion_tokens=reservation.max_output_tokens,
                 messages=[
                     ChatMessage(role=message.role, content=message.content)
                     for message in payload.messages

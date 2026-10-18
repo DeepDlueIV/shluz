@@ -45,6 +45,10 @@ def auto_client(tmp_path):
         telegram_connector_file=key,
     )
     app = create_app(settings)
+    # Этот набор продолжает проверять поддерживаемый режим закрытой беты.
+    from app.db.models import ProductPolicy
+    with app.state.database.session() as session:
+        session.add(ProductPolicy(id="default", mode="closed"))
     try:
         with TestClient(app) as client:
             client.connector_path = key

@@ -203,3 +203,50 @@ jobs:
           name: shluz-owner-ux-source
           path: shluz-owner-ux.zip
           retention-days: 7
+
+  postgres:
+    name: PostgreSQL and onboarding
+    uses: ./.github/workflows/telegram-onboarding.yml
+
+  launcher-windows:
+    name: Launcher on Windows
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest pyyaml
+      - run: python -m pytest tests/launcher -q --noconftest
+
+  preview:
+    name: Checked preview and safe upgrade
+    needs: [test, admin-ui, postgres, launcher-windows]
+    if: >-
+      github.event_name == 'push' && github.repository == 'DeepDlueIV/shluz' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/implementation/telegram-beta-complete')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: publish-shluz-preview
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build pinned preview image
+        run: docker build --label org.opencontainers.image.revision=${{ github.sha }} -t shluz-preview:${{ github.sha }} .
+      - name: Verify actual Docker upgrade, old data and backup restoration
+        run: python scripts/launcher_smoke.py "${{ github.sha }}" "shluz-preview:${{ github.sha }}"
+      - name: Package checked image and source
+        run: python scripts/package_preview.py "${{ github.sha }}" "shluz-preview:${{ github.sha }}" dist/preview
+      - name: Publish trusted preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/publish_preview.py

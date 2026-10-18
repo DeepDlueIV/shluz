@@ -245,3 +245,30 @@ def test_provider_maps_remote_errors_to_safe_types(status_code, exception_type):
         _provider(handler).chat_completion(
             ChatRequest(model="model", messages=[ChatMessage(role="user", content="Тест")])
         )
+
+
+def test_server_output_budget_is_forwarded_and_missing_cost_is_unknown():
+    def handler(request):
+        import json
+
+        assert json.loads(request.content)["max_completion_tokens"] == 32
+        return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
+
+    result = _provider(handler).chat_completion(
+        ChatRequest("venice-uncensored", [ChatMessage("user", "Hi")], max_completion_tokens=32)
+    )
+    assert result.cost_known is False
+
+
+@pytest.mark.parametrize("usd", [True, "NaN", "Infinity", "oops", -1])
+def test_untrusted_missing_or_invalid_cost_is_not_shown_as_exact_zero(usd):
+    provider = _provider(
+        lambda r: httpx.Response(
+            200, json={"choices": [{"message": {"content": "hi"}}], "cost": {"usd": usd}}
+        )
+    )
+    result = provider.chat_completion(
+        ChatRequest(model="test", messages=[ChatMessage(role="user", content="hello")])
+    )
+    assert result.cost_known is False
+    assert result.cost_usd == 0

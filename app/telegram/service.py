@@ -226,6 +226,12 @@ def connect(database, payload, *, pending_limit=500):
                 target_id=row.account_id,
                 details={"invite_id": invitation.id},
             )
+        else:
+            from app.product.service import grant_demo, policy
+
+            if policy(session).mode == "demo":
+                _grant(session, row)
+                grant_demo(session, row.account_id)
         return row
 
 

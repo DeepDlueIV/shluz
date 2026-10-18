@@ -6,8 +6,9 @@ from sqlalchemy import and_, func, or_, select
 
 from app.config import Settings
 from app.db.database import Database
-from app.db.models import Account, Plan, Subscription, UsageEvent
+from app.db.models import Account, DemoGrant, Plan, Subscription, UsageEvent
 from app.db.repositories import ensure_bootstrap_account
+from app.product import service as product
 from app.providers.base import ChatResult
 
 
@@ -41,6 +42,8 @@ class UsageReservation:
     plan_id: str | None
     markup_percent: Decimal
     bootstrap: bool = False
+    demo: bool = False
+    max_output_tokens: int | None = None
 
 
 def _month_start(now: datetime) -> datetime:
@@ -70,14 +73,16 @@ class UsageService:
         provider: str,
         model: str,
         now: datetime | None = None,
+        input_chars: int = 0,
+        requested_output_tokens: int | None = None,
     ) -> UsageReservation:
         resolved_now = now or datetime.now(UTC)
-        expires_at = resolved_now + timedelta(
-            seconds=self._settings.reservation_ttl_seconds
-        )
+        expires_at = resolved_now + timedelta(seconds=self._settings.reservation_ttl_seconds)
         bootstrap = account_id == "bootstrap"
 
-        with self._database.session() as session:
+        with product.locked_session(self._database) as session:
+            is_demo = False
+            output_limit = requested_output_tokens
             plan: Plan | None = None
             if bootstrap:
                 ensure_bootstrap_account(session)
@@ -105,10 +110,28 @@ class UsageService:
                     )
                     .order_by(Subscription.starts_at.desc(), Subscription.created_at.desc())
                 ).first()
-                if subscription_row is None:
+                grant = session.get(DemoGrant, account_id)
+                if subscription_row is None and grant is None:
                     raise SubscriptionRequiredError("Active subscription is required")
-                _, plan = subscription_row
-                self._check_limits(session, account_id, plan, resolved_now)
+                allowed = product.allowed_models(session, account_id, source, resolved_now)
+                if allowed is not None and model not in allowed:
+                    raise product.PolicyError()
+                config = product.policy(session)
+                product.limit_rate(session, account_id, config, resolved_now)
+                if subscription_row:
+                    _, plan = subscription_row
+                    self._check_limits(session, account_id, plan, resolved_now)
+                    output_limit = min(requested_output_tokens or 4096, 4096)
+                    if input_chars > 200000:
+                        raise product.InputTooLarge()
+                else:
+                    if input_chars > config.demo_max_input_chars or (
+                        requested_output_tokens is not None
+                        and requested_output_tokens > config.demo_max_output_tokens
+                    ):
+                        raise product.InputTooLarge()
+                    output_limit = requested_output_tokens or config.demo_max_output_tokens
+                    is_demo = product.reserve_demo(session, account_id, config, resolved_now)
 
             reserve = plan.request_credit_reserve if plan is not None else 0
             markup = plan.markup_percent if plan is not None else Decimal("0")
@@ -119,6 +142,7 @@ class UsageService:
                 provider=provider,
                 model=model,
                 status="pending",
+                quota_kind="demo" if is_demo else "monthly",
                 reserved_credits=reserve,
                 pricing_markup_percent=markup,
                 reservation_expires_at=expires_at,
@@ -135,6 +159,8 @@ class UsageService:
                 plan_id=event.plan_id,
                 markup_percent=markup,
                 bootstrap=bootstrap,
+                demo=is_demo,
+                max_output_tokens=output_limit,
             )
 
     def _check_limits(
@@ -153,6 +179,7 @@ class UsageService:
         common = (
             UsageEvent.account_id == account_id,
             UsageEvent.created_at >= period_start,
+            UsageEvent.quota_kind != "demo",
         )
 
         request_count = int(
@@ -205,9 +232,7 @@ class UsageService:
             or 0
         )
         if _enabled_numeric_limit(plan.monthly_cost_limit_usd):
-            multiplier = Decimal("1") + max(plan.markup_percent, Decimal("0")) / Decimal(
-                "100"
-            )
+            multiplier = Decimal("1") + max(plan.markup_percent, Decimal("0")) / Decimal("100")
             pending_billed = Decimal(pending_credits) * self._settings.credit_unit_usd
             pending_cost = pending_billed / multiplier if multiplier > 0 else pending_billed
             committed_cost = successful_cost + pending_cost
@@ -242,18 +267,21 @@ class UsageService:
                 result=result,
             )
 
-        with self._database.session() as session:
+        with product.locked_session(self._database) as session:
             event = session.get(UsageEvent, reservation.event_id)
             if event is None:
                 raise LookupError("Usage reservation not found")
 
+            if event.status != "pending":
+                return event
             billed_usd, credits = self._calculate_charge(
-                result.cost_usd,
+                result.cost_usd if not reservation.demo else Decimal("0"),
                 reservation.markup_percent,
             )
             event.provider_request_id = result.request_id
             event.prompt_tokens = result.prompt_tokens
             event.completion_tokens = result.completion_tokens
+            event.cost_known = result.cost_known
             event.cost_usd = result.cost_usd
             event.cost_diem = result.cost_diem
             event.billed_usd = billed_usd
@@ -272,10 +300,22 @@ class UsageService:
         *,
         error_code: str,
     ) -> UsageEvent:
-        with self._database.session() as session:
+        with product.locked_session(self._database) as session:
             event = session.get(UsageEvent, reservation.event_id)
             if event is None:
                 raise LookupError("Usage reservation not found")
+            if event.status != "pending":
+                return event
+            # Эти ответы однозначно отклонили генерацию. Неизвестный сетевой результат
+            # не возвращает демо автоматически и не даёт бесконечно повторять запрос.
+            if reservation.demo and error_code in {
+                "provider_authentication_error",
+                "provider_balance_exhausted",
+                "provider_rate_limit",
+            }:
+                grant = session.get(DemoGrant, reservation.account_id)
+                if grant:
+                    grant.requests_used = max(0, grant.requests_used - 1)
             event.status = "failed"
             event.error_code = error_code
             event.reserved_credits = 0
@@ -291,15 +331,13 @@ class UsageService:
     ) -> tuple[Decimal, int]:
         safe_cost = max(cost_usd, Decimal("0"))
         safe_markup = max(markup_percent, Decimal("0"))
-        billed_usd = (
-            safe_cost * (Decimal("1") + safe_markup / Decimal("100"))
-        ).quantize(Decimal("0.00000001"))
+        billed_usd = (safe_cost * (Decimal("1") + safe_markup / Decimal("100"))).quantize(
+            Decimal("0.00000001")
+        )
         if billed_usd == 0:
             return billed_usd, 0
         credits = int(
-            (billed_usd / self._settings.credit_unit_usd).to_integral_value(
-                rounding=ROUND_CEILING
-            )
+            (billed_usd / self._settings.credit_unit_usd).to_integral_value(rounding=ROUND_CEILING)
         )
         return billed_usd, credits
 

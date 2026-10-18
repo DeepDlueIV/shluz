@@ -37,6 +37,7 @@ class ChatMessage:
 class ChatRequest:
     model: str
     messages: list[ChatMessage]
+    max_completion_tokens: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +48,7 @@ class ChatResult:
     request_id: str | None = None
     cost_usd: Decimal = Decimal("0")
     cost_diem: Decimal = Decimal("0")
+    cost_known: bool = True
 
 
 @dataclass(frozen=True, slots=True)

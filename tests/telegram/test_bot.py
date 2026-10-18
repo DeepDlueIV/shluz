@@ -634,18 +634,35 @@ def test_automatic_start_creates_application_and_invite_connects_without_json(tm
 
     async def scenario():
         key_file = tmp_path / "connector" / "key"
-        settings = Settings(_env_file=None, telegram_connector_file=key_file,
-                            database_url=SecretStr("sqlite+pysqlite:///:memory:"))
+        settings = Settings(
+            _env_file=None,
+            telegram_connector_file=key_file,
+            database_url=SecretStr("sqlite+pysqlite:///:memory:"),
+        )
         with TestClient(create_app(settings)) as client:
-            bot_settings = BotSettings(_env_file=None, bot_token="123456:" + "A" * 35,
-                                       connector_file=key_file,
-                                       access_file=tmp_path / "missing.json",
-                                       database_path=tmp_path / "bot.sqlite", cooldown_seconds=0)
+            from app.db.models import ProductPolicy
+
+            with client.app.state.database.session() as db:
+                db.add(ProductPolicy(id="default", mode="closed"))
+            bot_settings = BotSettings(
+                _env_file=None,
+                bot_token="123456:" + "A" * 35,
+                connector_file=key_file,
+                access_file=tmp_path / "missing.json",
+                database_path=tmp_path / "bot.sqlite",
+                cooldown_seconds=0,
+            )
             http = httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app))
-            gateway = GatewayClient("http://gateway", http=http,
-                                    connector_key=SecretStr(key_file.read_text()))
-            ctrl = Controller(bot_settings, AccessRegistry(bot_settings.access_file, optional=True),
-                              Store(bot_settings.database_path), gateway, sleep=no_wait)
+            gateway = GatewayClient(
+                "http://gateway", http=http, connector_key=SecretStr(key_file.read_text())
+            )
+            ctrl = Controller(
+                bot_settings,
+                AccessRegistry(bot_settings.access_file, optional=True),
+                Store(bot_settings.database_path),
+                gateway,
+                sleep=no_wait,
+            )
             dp = create_dispatcher(ctrl)
             session = RecordingSession()
             bot = Bot(bot_settings.bot_token.get_secret_value(), session=session)
@@ -668,4 +685,66 @@ def test_automatic_start_creates_application_and_invite_connects_without_json(tm
             assert not bot_settings.access_file.exists()
             await ctrl.close()
             await http.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_demo_start_exhaustion_and_payment_menu_without_personal_files(tmp_path):
+    from fastapi.testclient import TestClient
+    from pydantic import SecretStr
+
+    from app.config import Settings
+    from app.factory import create_app
+    from telegram_bot.config import AccessRegistry, BotSettings
+    from telegram_bot.controller import Controller, create_dispatcher
+    from telegram_bot.gateway import GatewayClient
+    from telegram_bot.storage import Store
+
+    async def scenario():
+        key_file = tmp_path / "connector" / "key"
+        settings = Settings(
+            _env_file=None,
+            telegram_connector_file=key_file,
+            database_url=SecretStr("sqlite+pysqlite:///" + str(tmp_path / "db")),
+        )
+        with TestClient(create_app(settings)) as client:
+            cfg = BotSettings(
+                _env_file=None,
+                bot_token="123456:" + "A" * 35,
+                connector_file=key_file,
+                access_file=tmp_path / "none",
+                database_path=tmp_path / "bot.db",
+                cooldown_seconds=0,
+            )
+            http = httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app))
+            gate = GatewayClient(
+                "http://gateway", http=http, connector_key=SecretStr(key_file.read_text())
+            )
+            ctrl = Controller(
+                cfg,
+                AccessRegistry(cfg.access_file, optional=True),
+                Store(cfg.database_path),
+                gate,
+                sleep=no_wait,
+            )
+            dp = create_dispatcher(ctrl)
+            session = RecordingSession()
+            bot = Bot(cfg.bot_token.get_secret_value(), session=session)
+            await dp.feed_update(bot, incoming(1, "/start"))
+            assert "осталось 3 из 3" in session.texts()
+            for i in range(2, 6):
+                await dp.feed_update(bot, incoming(i, "hello"))
+            assert count_usage(client) == 3
+            assert "Пробные запросы закончились" in session.texts()
+            await dp.feed_update(bot, incoming(6, "/tariffs"))
+            await dp.feed_update(bot, incoming(7, callback="pay"))
+            assert "Оплата ещё не подключена" in session.texts()
+            await dp.feed_update(bot, incoming(8, "/stats"))
+            assert "Входные токены" in session.texts() and "Списано:" in session.texts()
+            await dp.feed_update(bot, incoming(9, "/models"))
+            assert "Выберите модель" in session.texts()
+            assert count_usage(client) == 3
+            await ctrl.close()
+            await http.aclose()
+
     asyncio.run(scenario())

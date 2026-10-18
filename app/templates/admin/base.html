@@ -15,7 +15,7 @@
   <main class="shell wide" id="main-content">
     {% block content %}{% endblock %}
     <footer class="app-footer">
-      <span>Shluz · панель владельца</span>
+      <span>Shluz · панель владельца{% if request.app.state.settings.build_sha %} · версия {{ request.app.state.settings.build_sha[:8] }}{% endif %}</span>
       <span>Время: <span data-timezone>UTC</span>. <button type="button" class="help-trigger" aria-label="Справка: время" data-tooltip="{{ help_text('dates') }}" title="{{ help_text('dates') }}">?</button></span>
       <span>Подсказки открываются наведением или нажатием на <span class="help-example">?</span></span>
     </footer>

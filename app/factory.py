@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
 
+from app.admin.access import router as access_admin_router
 from app.admin.auxiliary import router as auxiliary_router
 from app.admin.errors import admin_http_error, admin_validation_error
 from app.admin.routes import router as admin_router
@@ -70,6 +71,7 @@ def create_app(
         return {
             "status": "ok", "service": resolved_settings.service_name,
             "version": resolved_settings.service_version,
+            **({"build": resolved_settings.build_sha} if resolved_settings.build_sha else {}),
         }
 
     @app.get("/docs", include_in_schema=False)
@@ -89,6 +91,7 @@ def create_app(
 
     static_dir = Path(__file__).resolve().parent / "static"
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    app.include_router(access_admin_router)
     app.include_router(api_router)
     app.include_router(telegram_router)
     app.include_router(telegram_admin_router)

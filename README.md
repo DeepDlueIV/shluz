@@ -1,3 +1,14 @@
+## Быстрый вход в проект
+
+[Шлюз и админка](app/) · [Telegram](telegram_bot/) · [Сайт (параллельная разработка)](web/) ·
+[Решения](docs/product-decisions-2026-10-18.md) · [Демо и API для клиентов](docs/client-api-demo.md)
+
+**Локальный просмотр без команд:** [скачать Shluz-launcher.zip](https://github.com/DeepDlueIV/shluz/releases/download/preview/Shluz-launcher.zip),
+распаковать и открыть `Shluz.cmd`. [Что делает запускатель и где данные](launcher/README.md).
+Требуются уже установленный Python 3.12+ и работающий Docker Desktop (Linux/x64).
+Архив появляется после успешной публикации CI; он всегда ссылается на проверенную версию,
+а не на произвольную последнюю ветку. Ваши секреты/базы в GitHub не передаются.
+
 # Shluz
 
 Telegram подключается автоматически: приглашение → Start → аккаунт/доступ.

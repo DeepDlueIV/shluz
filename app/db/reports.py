@@ -5,7 +5,7 @@ from decimal import Decimal
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.db.models import Account, ApiToken, Identity, Plan, Subscription, UsageEvent
+from app.db.models import Account, ApiToken, DemoGrant, Identity, Plan, Subscription, UsageEvent
 
 
 def _decimal(value: object) -> Decimal:
@@ -79,6 +79,7 @@ class AccountOverview:
     remaining_cost_usd: Decimal | None
     blocked_reason: str | None
     created_at: datetime
+    demo: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,9 +205,7 @@ def list_accounts_overview(
     }
 
     month_usage: dict[str, dict[str, object]] = {}
-    month_events = session.scalars(
-        select(UsageEvent).where(UsageEvent.created_at >= period_start)
-    )
+    month_events = session.scalars(select(UsageEvent).where(UsageEvent.created_at >= period_start))
     for event in month_events:
         totals = month_usage.setdefault(
             event.account_id,
@@ -218,19 +217,26 @@ def list_accounts_overview(
             },
         )
         if event.status == "success":
-            totals["requests"] = int(totals["requests"]) + 1
+            totals["requests"] = int(totals["requests"]) + (event.quota_kind != "demo")
             totals["credits"] = int(totals["credits"]) + event.internal_credits
             totals["cost"] = _decimal(totals["cost"]) + _decimal(event.cost_usd)
             totals["billed"] = _decimal(totals["billed"]) + _decimal(event.billed_usd)
         elif event.status == "pending":
             expires_at = _as_utc(event.reservation_expires_at)
             if expires_at is not None and expires_at > resolved_now:
-                totals["requests"] = int(totals["requests"]) + 1
+                totals["requests"] = int(totals["requests"]) + (event.quota_kind != "demo")
                 totals["credits"] = int(totals["credits"]) + event.reserved_credits
 
+    from app.product.service import policy
+
+    demo_config = policy(session)
+    demo_grants = {grant.account_id: grant for grant in session.scalars(select(DemoGrant))}
     result = []
     for account in accounts:
         plan = plans_by_account.get(account.id)
+        demo = demo_grants.get(account.id) if plan is None or not plan.active else None
+        if demo:
+            plan = None
         usage = all_usage_by_account.get(
             account.id,
             (0, 0, 0, Decimal("0"), Decimal("0"), Decimal("0"), 0),
@@ -261,10 +267,12 @@ def list_accounts_overview(
             month_cost,
         )
 
+        if demo:
+            remaining_requests = max(0, demo_config.demo_requests - demo.requests_used)
         blocked_reason = None
         if account.status != "active":
             blocked_reason = "Аккаунт заблокирован"
-        elif account.id != "bootstrap" and plan is None:
+        elif account.id != "bootstrap" and plan is None and not demo:
             blocked_reason = "Нет активного тарифа"
         elif plan is not None and not plan.active:
             blocked_reason = "Тариф отключён"
@@ -286,9 +294,11 @@ def list_accounts_overview(
                 identities=tuple(identities_by_account.get(account.id, ())),
                 plan_id=plan.id if plan else None,
                 plan_code=plan.code if plan else None,
-                plan_name=plan.name if plan else None,
+                plan_name=plan.name if plan else ("Демо" if demo else None),
                 plan_active=plan.active if plan else None,
-                monthly_request_limit=plan.monthly_request_limit if plan else None,
+                monthly_request_limit=plan.monthly_request_limit
+                if plan
+                else (demo_config.demo_requests if demo else None),
                 monthly_credit_limit=plan.monthly_credit_limit if plan else None,
                 monthly_cost_limit_usd=plan.monthly_cost_limit_usd if plan else None,
                 token_count=token_counts.get(account.id, 0),
@@ -300,7 +310,7 @@ def list_accounts_overview(
                 billed_usd=billed,
                 margin_usd=billed - cost,
                 internal_credits=usage[6],
-                month_request_count=month_requests,
+                month_request_count=demo.requests_used if demo else month_requests,
                 month_internal_credits=month_credits,
                 month_cost_usd=month_cost,
                 month_billed_usd=month_billed,
@@ -310,6 +320,7 @@ def list_accounts_overview(
                 remaining_cost_usd=remaining_cost,
                 blocked_reason=blocked_reason,
                 created_at=account.created_at,
+                demo=bool(demo),
             )
         )
     return result

@@ -64,6 +64,16 @@ def _decimal(value: Any) -> Decimal:
         return Decimal("0")
 
 
+def _known_cost(value: Any) -> bool:
+    if value is None or isinstance(value, bool):
+        return False
+    try:
+        result = Decimal(str(value))
+        return result.is_finite() and result >= 0
+    except (InvalidOperation, ValueError, TypeError):
+        return False
+
+
 def _price_usd(value: Any) -> Decimal | None:
     if value is None:
         return None
@@ -116,6 +126,11 @@ class VeniceProvider:
                     for message in request.messages
                 ],
                 "stream": False,
+                **(
+                    {"max_completion_tokens": request.max_completion_tokens}
+                    if request.max_completion_tokens
+                    else {}
+                ),
             },
         )
         payload = self._json(response)
@@ -135,7 +150,8 @@ class VeniceProvider:
             prompt_tokens=_int(usage.get("prompt_tokens")),
             completion_tokens=_int(usage.get("completion_tokens")),
             request_id=payload.get("id"),
-            cost_usd=_decimal(cost.get("usd")),
+            cost_usd=_decimal(cost.get("usd")) if _known_cost(cost.get("usd")) else Decimal("0"),
+            cost_known=_known_cost(cost.get("usd")),
             cost_diem=_decimal(cost.get("diem")),
         )
 
@@ -212,9 +228,7 @@ class VeniceProvider:
         )
 
     def _fetch_models(self, model_type: str) -> list[ModelInfo]:
-        payload = self._json(
-            self._request("GET", "/models", params={"type": model_type})
-        )
+        payload = self._json(self._request("GET", "/models", params={"type": model_type}))
         models = []
         for item in payload.get("data") or []:
             model_id = item.get("id")

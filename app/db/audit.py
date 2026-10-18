@@ -9,6 +9,9 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 from app.db.base import Base
 
 ACTION_LABELS = {
+    "demo.updated": "Настройки демо изменены",
+    "models.updated": "Доступные модели изменены",
+    "telegram.demo_registered": "Telegram: демо выдано автоматически",
     "telegram.imported": "Telegram: прежний доступ перенесён автоматически",
     "telegram.approved": "Telegram: доступ разрешён",
     "telegram.blocked": "Telegram: доступ закрыт",
@@ -27,13 +30,30 @@ ACTION_LABELS = {
     "plan.restored": "Тариф восстановлен",
 }
 PLAN_FIELDS = (
-    "code", "name", "monthly_price_usd", "monthly_cost_limit_usd",
-    "monthly_credit_limit", "monthly_request_limit", "request_credit_reserve",
-    "markup_percent", "active",
+    "code",
+    "name",
+    "monthly_price_usd",
+    "monthly_cost_limit_usd",
+    "monthly_credit_limit",
+    "monthly_request_limit",
+    "request_credit_reserve",
+    "markup_percent",
+    "active",
 )
 _SAFE_FIELDS = set(PLAN_FIELDS) | {
-    "before", "after", "role", "status", "source", "account_id", "plan_id",
-    "revoked_tokens", "cancelled_subscriptions", "telegram_id", "invite_id",
+    "before",
+    "after",
+    "role",
+    "status",
+    "source",
+    "account_id",
+    "plan_id",
+    "revoked_tokens",
+    "cancelled_subscriptions",
+    "telegram_id",
+    "invite_id",
+    "mode",
+    "demo_requests",
 }
 
 
@@ -44,7 +64,9 @@ class AdminEvent(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: uuid.uuid4().hex)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        index=True,
     )
     actor: Mapped[str] = mapped_column(String(200))
     action: Mapped[str] = mapped_column(String(64), index=True)
@@ -73,13 +95,23 @@ def plan_snapshot(plan) -> dict[str, Any]:
 
 
 def record_admin_event(
-    session: Session, *, actor: str, action: str, target_type: str, target_id: str,
+    session: Session,
+    *,
+    actor: str,
+    action: str,
+    target_type: str,
+    target_id: str,
     details: dict[str, Any] | None = None,
 ) -> None:
     """Вызывается внутри транзакции изменения: запись и действие сохраняются вместе."""
     if action not in ACTION_LABELS:
         raise ValueError("Unknown administrative action")
-    session.add(AdminEvent(
-        actor=actor[:200], action=action, target_type=target_type, target_id=target_id,
-        details=safe_details(details or {}),
-    ))
+    session.add(
+        AdminEvent(
+            actor=actor[:200],
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            details=safe_details(details or {}),
+        )
+    )

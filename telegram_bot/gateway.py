@@ -15,6 +15,21 @@ class GatewayError(Exception):
 
 
 ERROR_TEXT = {
+    "demo_temporarily_unavailable": (
+        "⏳ Пробные ответы временно приостановлены на сегодня. "
+        "Остаток ваших запросов сохранён."
+    ),
+    "demo_exhausted": (
+        "🎁 Пробные запросы закончились. Откройте «Тарифы и оплата». "
+        "История и меню остаются доступны."
+    ),
+    "model_not_allowed": (
+        "🔒 Модель недоступна для вашего тарифа или Telegram. Выберите другую в меню."
+    ),
+    "input_too_large": (
+        "📝 Запрос с историей слишком длинный для демо. Начните новый чат или сократите сообщение."
+    ),
+    "request_rate_limited": "⏳ Достигнут временный лимит запросов. Попробуйте немного позже.",
     "invite_invalid": "🔗 Приглашение истекло или уже использовано. Попросите новую ссылку.",
     "onboarding_blocked": "🔒 Доступ закрыт. Обратитесь к администратору.",
     "retry_unavailable": "Повтор устарел. Откройте /retry для последнего завершённого ответа.",
@@ -123,20 +138,30 @@ class GatewayClient:
         if not self.connector_key:
             raise GatewayError("unavailable")
         await self._request(
-            "POST", "/internal/telegram/hello", self.connector_key.get_secret_value(),
+            "POST",
+            "/internal/telegram/hello",
+            self.connector_key.get_secret_value(),
             json={"username": username},
         )
 
     async def onboard(
-        self, user_id: int, display_name: str, username: str | None,
-        *, invite: str | None = None, legacy_token: SecretStr | None = None,
+        self,
+        user_id: int,
+        display_name: str,
+        username: str | None,
+        *,
+        invite: str | None = None,
+        legacy_token: SecretStr | None = None,
     ) -> dict:
         if not self.connector_key:
             raise GatewayError("unavailable")
         data = await self._request(
-            "POST", "/internal/telegram/session", self.connector_key.get_secret_value(),
+            "POST",
+            "/internal/telegram/session",
+            self.connector_key.get_secret_value(),
             json={
-                "telegram_id": user_id, "display_name": display_name[:200] or "Telegram",
+                "telegram_id": user_id,
+                "display_name": display_name[:200] or "Telegram",
                 "username": username,
                 "invite": invite,
                 "legacy_token": legacy_token.get_secret_value() if legacy_token else None,
@@ -158,6 +183,12 @@ class GatewayClient:
             raise GatewayError("invalid_response")
         return data
 
+    async def plans(self, token: str) -> dict:
+        return await self._request("GET", "/v1/plans", token)
+
+    async def usage(self, token: str) -> dict:
+        return await self._request("GET", "/v1/me/usage", token)
+
     async def bind(self, token: str, user_id: int, username: str | None) -> None:
         await self._request(
             "POST", "/v1/me/telegram", token, json={"telegram_id": user_id, "username": username}
@@ -175,8 +206,6 @@ class GatewayClient:
                 if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"]
             )
         )
-        if not models:
-            raise GatewayError("model_not_found")
         return models
 
     async def chat(
