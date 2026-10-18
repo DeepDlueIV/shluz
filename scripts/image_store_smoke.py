@@ -144,8 +144,24 @@ def main():
                         + ready.stderr[-2000:]
                     )
 
-                def nested(*args, timeout=180, optional=False, daemon=name):
-                    return run("docker", "exec", daemon, "docker", *args, optional=optional)
+                # The real launcher runs the CLI as its host user. Match that identity
+                # here, otherwise docker-save creates root-owned private host files.
+                client_user = f"{os.getuid()}:{os.getgid()}"
+                run("docker", "exec", name, "chown", client_user, "/var/run/docker.sock")
+
+                def nested(*args, timeout=180, optional=False, daemon=name, user=client_user):
+                    return run(
+                        "docker",
+                        "exec",
+                        "--user",
+                        user,
+                        "--env",
+                        "DOCKER_CONFIG=/tmp/shluz-ci-client",
+                        daemon,
+                        "docker",
+                        *args,
+                        optional=optional,
+                    )
 
                 updater.docker = nested
                 updater.validate_manifest(data)
