@@ -171,9 +171,9 @@ def test_consecutive_messages_send_context_and_new_chat_resets_only_current(clie
         original = ctrl.gateway.chat
         contexts = []
 
-        async def spy(token, model, messages, request_id):
+        async def spy(token, model, messages, request_id, **kwargs):
             contexts.append(messages)
-            return await original(token, model, messages, request_id)
+            return await original(token, model, messages, request_id, **kwargs)
 
         ctrl.gateway.chat = spy
         await dp.feed_update(bot, incoming(1, "Первое"))
@@ -243,7 +243,7 @@ def test_long_answer_is_exported_in_full_not_truncated(client, tmp_path):
         ctrl, dp, bot, session = environment(client, tmp_path)
         answer = "Большой ответ <script> 🚀\n" * 3000
 
-        async def long_answer(*args):
+        async def long_answer(*args, **kwargs):
             return answer
 
         ctrl.gateway.chat = long_answer
@@ -262,7 +262,7 @@ def test_multipart_answer_and_html_injection(client, tmp_path):
         ctrl, dp, bot, session = environment(client, tmp_path)
         answer = "<script>" + "x" * 8000
 
-        async def long_answer(*args):
+        async def long_answer(*args, **kwargs):
             return answer
 
         ctrl.gateway.chat = long_answer
@@ -280,7 +280,7 @@ def test_cancel_is_not_a_refund_and_unknown_request_is_not_replayed(client, tmp_
         ctrl, dp, bot, session = environment(client, tmp_path)
         started = asyncio.Event()
 
-        async def slow(*args):
+        async def slow(*args, **kwargs):
             started.set()
             await asyncio.Event().wait()
 
@@ -306,7 +306,7 @@ def test_busy_user_cannot_start_second_generation(client, tmp_path):
         started, finish = asyncio.Event(), asyncio.Event()
         calls = []
 
-        async def slow(*args):
+        async def slow(*args, **kwargs):
             calls.append(args)
             started.set()
             await finish.wait()
@@ -381,7 +381,7 @@ def test_spinner_stops_before_error_is_rendered(client, tmp_path):
             finally:
                 stopped.set()
 
-        async def failed(*args):
+        async def failed(*args, **kwargs):
             await started.wait()
             raise GatewayError("provider_unavailable")
 
@@ -406,7 +406,7 @@ def test_owner_old_stop_button_does_not_cancel_new_request(client, tmp_path):
         old_button = waiting.reply_markup.inline_keyboard[0][0].callback_data
         started = asyncio.Event()
 
-        async def slow(*args):
+        async def slow(*args, **kwargs):
             started.set()
             await asyncio.Event().wait()
 
@@ -459,9 +459,9 @@ def test_owner_retry_requires_one_time_confirmation_and_clean_context(client, tm
         original_chat = ctrl.gateway.chat
         contexts = []
 
-        async def spy(token, model, messages, request_id):
+        async def spy(token, model, messages, request_id, **kwargs):
             contexts.append(messages)
-            return await original_chat(token, model, messages, request_id)
+            return await original_chat(token, model, messages, request_id, **kwargs)
 
         ctrl.gateway.chat = spy
         await dp.feed_update(bot, incoming(1, "first"))

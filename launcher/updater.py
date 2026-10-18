@@ -480,17 +480,35 @@ def compose_text(manifest, config, settings):
     )
 
 
-BACKUP_CODE = """import sqlite3,sys,tarfile
+BACKUP_CODE = """import os,shutil,sqlite3,sys,tarfile,tempfile
 from pathlib import Path
 root=Path('/source')
-for path in root.rglob('*'):
- if path.is_file():
-  with path.open('rb') as f: header=f.read(16)
-  if header==b'SQLite format 3\\0':
-   db=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True)
-   assert db.execute('PRAGMA quick_check').fetchone()[0]=='ok','SQLite integrity failure'
-   db.close()
-with tarfile.open(fileobj=sys.stdout.buffer,mode='w|gz') as f: f.add(root,arcname='data')
+try:
+ # Источник read-only: SQLite WAL требует writable shm даже при mode=ro.
+ # Проверяем полную остановленную копию, включая WAL, а не открываем оригинал.
+ with tempfile.TemporaryDirectory(prefix='shluz-backup-') as folder:
+  staged=Path(folder)/'data'
+  shutil.copytree(root,staged,symlinks=True)
+  for path in [staged,*staged.rglob('*')]:
+   if path.is_symlink(): raise OSError('unsupported symlink')
+   path.chmod(0o700 if path.is_dir() else 0o600)
+  for path in list(staged.rglob('*')):
+   if not path.is_file(): continue
+   with path.open('rb') as f: header=f.read(16)
+   if header==b'SQLite format 3\\0':
+    db=sqlite3.connect(str(path))
+    try:
+     if db.execute('PRAGMA quick_check').fetchone()[0]!='ok':
+      raise sqlite3.DatabaseError('integrity failure')
+    finally: db.close()
+  with tarfile.open(fileobj=sys.stdout.buffer,mode='w|gz') as f:
+   f.add(root,arcname='data')
+except sqlite3.Error:
+ print('SHLUZ_BACKUP_SQLITE',file=sys.stderr)
+ sys.exit(20)
+except OSError:
+ print('SHLUZ_BACKUP_STORAGE',file=sys.stderr)
+ sys.exit(21)
 """
 
 
@@ -531,7 +549,16 @@ def archive_volume(volume, image, archive):
             output.flush()
             os.fsync(output.fileno())
         if result.returncode:
-            raise UpdateError("Резервная копия не создана; обновление не начато.")
+            reason = {
+                20: "не пройдена проверка целостности копии SQLite",
+                21: "не удалось прочитать том или записать временную копию",
+                125: "Docker не смог запустить процесс резервного копирования",
+            }.get(result.returncode, "процесс резервного копирования завершился с ошибкой")
+            # Только код и этап; сырой stderr никогда не содержит публичного отчёта.
+            raise UpdateError(
+                f"Резервная копия не создана: {reason} (код {result.returncode}). "
+                "Обновление не начато; прежние процессы запускаются снова."
+            )
         # Прочитать весь архив до EOF: проверить и gzip CRC, и доступность на хосте.
         import gzip
 

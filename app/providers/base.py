@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Protocol
@@ -49,6 +50,19 @@ class ChatResult:
     cost_usd: Decimal = Decimal("0")
     cost_diem: Decimal = Decimal("0")
     cost_known: bool = True
+    usage_known: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class StreamChunk:
+    content: str = ""
+    request_id: str | None = None
+    finish_reason: str | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    cost_usd: Decimal | None = None
+    cost_diem: Decimal | None = None
+    done: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,3 +84,5 @@ class Provider(Protocol):
     def list_models(self) -> list[ModelInfo]: ...
 
     def chat_completion(self, request: ChatRequest) -> ChatResult: ...
+
+    def chat_stream(self, request: ChatRequest) -> AsyncIterator[StreamChunk]: ...

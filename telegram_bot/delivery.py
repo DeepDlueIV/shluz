@@ -1,6 +1,8 @@
 """Доставка уже полученного ответа. Ошибки Telegram не запускают модель повторно."""
 
 import asyncio
+import html
+import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from typing import Any
@@ -159,3 +161,57 @@ class Delivery:
                 reply_markup=ui.answer_controls(turn_id),
             )
         )
+
+
+class StreamPreview:
+    """Один редактируемый префикс; Telegram rate limits не тормозят чтение модели."""
+
+    def __init__(self, delivery, message, waiting, interval=1.2):
+        self.delivery, self.message, self.waiting = delivery, message, waiting
+        self.interval = interval
+        self.latest = self.shown = ""
+        self.changed = asyncio.Event()
+        self.task = None
+
+    async def push(self, text):
+        self.latest = text
+        self.changed.set()
+        if self.task is None:
+            self.task = asyncio.create_task(self.run())
+
+    async def run(self):
+        last = 0.0
+        while True:
+            await self.changed.wait()
+            await asyncio.sleep(max(0, self.interval - (time.monotonic() - last)))
+            self.changed.clear()
+            prefix = split_text(self.latest, limit=3200)[0]
+            # При длинном ответе не рассылаем десятки промежуточных сообщений.
+            text = html.escape(prefix) + (
+                "\n\n⏳ Ответ продолжается. Полный текст придёт после завершения."
+                if len(prefix) < len(self.latest)
+                else "\n\n▌"
+            )
+            if text == self.shown:
+                continue
+            try:
+                await self.delivery.edit(
+                    self.message, self.waiting, text, self.waiting.reply_markup
+                )
+                self.shown = text
+            except TelegramAPIError:
+                # Итоговую доставку выполнит обычный Delivery.answer; POST не повторяем.
+                pass
+            last = time.monotonic()
+
+    async def close(self):
+        if self.task:
+            self.task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self.task
+
+    def interrupted(self, warning):
+        if not self.latest:
+            return warning
+        prefix = split_text(self.latest, limit=2800)[0]
+        return html.escape(prefix) + "\n\n" + warning

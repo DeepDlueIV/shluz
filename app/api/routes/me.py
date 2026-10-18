@@ -69,8 +69,11 @@ def my_account(principal: Principal, database: Db, response: Response) -> dict:
             UsageEvent.created_at >= month_start,
             UsageEvent.quota_kind != "demo",
         )
-        success = UsageEvent.status == "success"
+        success = UsageEvent.status.in_(["success", "interrupted"])
         pending = and_(UsageEvent.status == "pending", UsageEvent.reservation_expires_at > now)
+        pending_credits = or_(
+            pending, and_(UsageEvent.status == "interrupted", UsageEvent.cost_known.is_(False))
+        )
 
         def total(column, condition) -> int:
             return int(
@@ -141,7 +144,7 @@ def my_account(principal: Principal, database: Db, response: Response) -> dict:
                 "credits": _allowance(
                     plan.monthly_credit_limit if plan else None,
                     total(UsageEvent.internal_credits, success),
-                    total(UsageEvent.reserved_credits, pending),
+                    total(UsageEvent.reserved_credits, pending_credits),
                 ),
             },
         }

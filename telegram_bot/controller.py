@@ -14,7 +14,7 @@ from pydantic import SecretStr
 
 from telegram_bot import ui
 from telegram_bot.config import AccessRegistry, BotSettings
-from telegram_bot.delivery import Delivery
+from telegram_bot.delivery import Delivery, StreamPreview
 from telegram_bot.features import Confirmations, handle_action
 from telegram_bot.gateway import ERROR_TEXT, GatewayClient, GatewayError
 from telegram_bot.presentation import prepare_messages
@@ -314,6 +314,11 @@ class Controller:
                 f"Выходные токены: {summary.get('completion_tokens', 0)}\n"
                 f"Списано: {money_text}"
             )
+            if summary.get("usage_unknown"):
+                expenses += (
+                    f"\n⚠️ Статистика {summary['usage_unknown']} прерванных запросов "
+                    "не подтверждена провайдером."
+                )
             await self.delivery.screen(
                 message,
                 ui.profile_text(remote, local) + expenses,
@@ -514,9 +519,12 @@ class Controller:
         self.jobs[user_id] = task
         self.job_ids[user_id] = uuid.uuid4().hex
         waiting, spinner, turn_id = None, None, None
+        preview = None
         stop = asyncio.Event()
 
         async def stop_animation() -> None:
+            if preview:
+                await preview.close()
             stop.set()
             if spinner:
                 spinner.cancel()
@@ -573,7 +581,18 @@ class Controller:
                 return
             self.last_request[user_id] = time.monotonic()
             spinner = asyncio.create_task(self.delivery.animate(message, waiting, stop))
-            answer = await self.gateway.chat(token, model, messages, turn_id)
+            preview = StreamPreview(self.delivery, message, waiting)
+
+            async def show_delta(text):
+                # Остановить старую анимацию до первого фрагмента, иначе она затрёт текст.
+                stop.set()
+                if spinner and not spinner.done():
+                    spinner.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await spinner
+                await preview.push(text)
+
+            answer = await self.gateway.chat(token, model, messages, turn_id, on_delta=show_delta)
             self.store.complete_turn(turn_id, answer)
             await stop_animation()
             await self.delivery.answer(message, waiting, answer, turn_id=turn_id)
@@ -602,6 +621,8 @@ class Controller:
                 )
                 if turn_id and self.store.turn_status(turn_id) == "complete":
                     text = "⏹ Показ остановлен. Ответ уже сохранён — он доступен через /export."
+                if preview and not (turn_id and self.store.turn_status(turn_id) == "complete"):
+                    text = preview.interrupted(text)
                 with suppress(TelegramAPIError):
                     if waiting:
                         await self.delivery.edit(
@@ -620,6 +641,8 @@ class Controller:
                 }
                 self.store.fail_turn(turn_id, "unknown" if uncertain else "failed")
             text = ERROR_TEXT.get(exc.code, ERROR_TEXT["unavailable"])
+            if preview:
+                text = preview.interrupted(text)
             if waiting:
                 await self.delivery.edit(message, waiting, text, ui.answer_controls())
             else:

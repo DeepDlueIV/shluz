@@ -5,6 +5,7 @@ from decimal import Decimal
 from sqlalchemy import (
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -141,6 +142,10 @@ class UsageEvent(Base):
         ForeignKey("accounts.id", ondelete="RESTRICT"),
         index=True,
     )
+    streamed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    usage_known: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    first_token_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     quota_kind: Mapped[str] = mapped_column(String(16), default="monthly", server_default="monthly")
     cost_known: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     plan_id: Mapped[str | None] = mapped_column(

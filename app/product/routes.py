@@ -70,7 +70,7 @@ def own_usage(
     month = datetime(now.year, now.month, 1, tzinfo=UTC)
     with database.session() as session:
         scope = (UsageEvent.account_id == principal.account_id, UsageEvent.created_at >= month)
-        successful = (*scope, UsageEvent.status == "success")
+        successful = (*scope, UsageEvent.status.in_(["success", "interrupted"]))
         unknown = (
             session.scalar(
                 select(func.count())
@@ -84,7 +84,12 @@ def own_usage(
 
         def total(column):
             return (
-                session.scalar(select(func.coalesce(func.sum(column), 0)).where(*successful)) or 0
+                session.scalar(
+                    select(func.coalesce(func.sum(column), 0)).where(
+                        *successful, UsageEvent.usage_known.is_(True)
+                    )
+                )
+                or 0
             )
 
         known_charge = (
@@ -112,8 +117,11 @@ def own_usage(
                     "model": event.model,
                     "channel": event.source,
                     "status": event.status,
-                    "prompt_tokens": event.prompt_tokens,
-                    "completion_tokens": event.completion_tokens,
+                    "prompt_tokens": event.prompt_tokens if event.usage_known else None,
+                    "completion_tokens": event.completion_tokens if event.usage_known else None,
+                    "usage_known": event.usage_known,
+                    "duration_ms": event.duration_ms,
+                    "first_token_ms": event.first_token_ms,
                     "charged_usd": format(event.billed_usd, "f") if known else None,
                     "charge_status": "known" if known else "unknown",
                     "created_at": (
@@ -137,6 +145,17 @@ def own_usage(
                 "charged_usd": format(Decimal(known_charge), "f") if not unknown else None,
                 "known_charged_usd": format(Decimal(known_charge), "f"),
                 "unpriced_requests": unknown,
+                "usage_unknown": int(
+                    session.scalar(
+                        select(func.count())
+                        .select_from(UsageEvent)
+                        .where(
+                            *successful,
+                            UsageEvent.usage_known.is_(False),
+                        )
+                    )
+                    or 0
+                ),
             },
             "data": data,
             "offset": offset,

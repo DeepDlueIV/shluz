@@ -6,6 +6,8 @@ import json as jsonlib
 import httpx
 from pydantic import SecretStr
 
+from app.streaming.sse import SSEError, events
+
 
 class GatewayError(Exception):
     def __init__(self, code: str, status: int = 0) -> None:
@@ -16,8 +18,7 @@ class GatewayError(Exception):
 
 ERROR_TEXT = {
     "demo_temporarily_unavailable": (
-        "⏳ Пробные ответы временно приостановлены на сегодня. "
-        "Остаток ваших запросов сохранён."
+        "⏳ Пробные ответы временно приостановлены на сегодня. Остаток ваших запросов сохранён."
     ),
     "demo_exhausted": (
         "🎁 Пробные запросы закончились. Откройте «Тарифы и оплата». "
@@ -209,8 +210,16 @@ class GatewayClient:
         return models
 
     async def chat(
-        self, token: str, model: str, messages: list[dict[str, str]], request_id: str
+        self,
+        token: str,
+        model: str,
+        messages: list[dict[str, str]],
+        request_id: str,
+        *,
+        on_delta=None,
     ) -> str:
+        if on_delta is not None:
+            return await self._chat_stream(token, model, messages, request_id, on_delta)
         data = await self._request(
             "POST",
             "/v1/chat/completions",
@@ -228,3 +237,73 @@ class GatewayClient:
         if len(answer) > self.max_response_chars:
             raise GatewayError("response_too_large")
         return answer
+
+    async def _chat_stream(self, token, model, messages, request_id, on_delta):
+        parts, size = [], 0
+        try:
+            async with asyncio.timeout(self.timeout):
+                async with self.http.stream(
+                    "POST",
+                    self.base_url + "/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {token}", "X-Request-ID": request_id},
+                    json={
+                        "model": model,
+                        "messages": messages,
+                        "stream": True,
+                        "stream_options": {"include_usage": True},
+                    },
+                    follow_redirects=False,
+                ) as response:
+                    if not response.is_success:
+                        body = bytearray()
+                        async for block in response.aiter_bytes():
+                            if len(body) + len(block) > 65536:
+                                raise GatewayError("invalid_response")
+                            body.extend(block)
+                        data = jsonlib.loads(body)
+                        error = data.get("error") if isinstance(data, dict) else None
+                        code = error.get("code") if isinstance(error, dict) else None
+                        if not isinstance(code, str) or code not in ERROR_TEXT:
+                            code = {
+                                401: "unauthorized",
+                                403: "wrong_channel",
+                                429: "rate_limit",
+                                402: "subscription_required",
+                            }.get(response.status_code, "provider_unavailable")
+                        raise GatewayError(code, response.status_code)
+                    if not response.headers.get("content-type", "").startswith("text/event-stream"):
+                        raise GatewayError("invalid_response")
+                    async for value in events(
+                        response.aiter_bytes(), max_total=self.max_response_chars * 12 + 65536
+                    ):
+                        if value == "[DONE]":
+                            answer = "".join(parts)
+                            if not answer.strip():
+                                raise GatewayError("invalid_response")
+                            return answer
+                        data = jsonlib.loads(value)
+                        if not isinstance(data, dict):
+                            raise GatewayError("invalid_response")
+                        if "error" in data:
+                            raise GatewayError("outcome_unknown")
+                        choices = data.get("choices") or []
+                        if not isinstance(choices, list):
+                            raise GatewayError("invalid_response")
+                        for choice in choices[:1]:
+                            delta = choice.get("delta") if isinstance(choice, dict) else None
+                            if not isinstance(delta, dict):
+                                raise GatewayError("invalid_response")
+                            text = delta.get("content") or ""
+                            if not isinstance(text, str):
+                                raise GatewayError("invalid_response")
+                            if text:
+                                size += len(text)
+                                if size > self.max_response_chars:
+                                    raise GatewayError("response_too_large")
+                                parts.append(text)
+                                await on_delta("".join(parts))
+                    raise GatewayError("outcome_unknown")
+        except (TimeoutError, httpx.RequestError, SSEError) as exc:
+            raise GatewayError("outcome_unknown") from exc
+        except (ValueError, UnicodeError, TypeError) as exc:
+            raise GatewayError("invalid_response") from exc

@@ -35,6 +35,8 @@ def install_observability(app: FastAPI) -> None:
     async def request_log(request: Request, call_next):
         started = time.perf_counter()
         request_id = uuid.uuid4().hex
+        request.state.request_id = request_id
+        request.state.request_started = started
         error_type = None
         try:
             response = await call_next(request)
@@ -68,7 +70,7 @@ def install_observability(app: FastAPI) -> None:
             "request_id": request_id, "method": request.method,
             "route": getattr(route, "path", "unmatched"),
             "status": response.status_code,
-            "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+            "response_headers_ms": round((time.perf_counter() - started) * 1000, 2),
         }
         if error_type:
             entry["error_type"] = error_type

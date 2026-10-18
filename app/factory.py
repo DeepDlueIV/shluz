@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -9,6 +10,7 @@ from starlette.exceptions import HTTPException
 
 from app.admin.access import router as access_admin_router
 from app.admin.auxiliary import router as auxiliary_router
+from app.admin.diagnostics import router as diagnostics_router
 from app.admin.errors import admin_http_error, admin_validation_error
 from app.admin.routes import router as admin_router
 from app.admin.telegram import router as telegram_admin_router
@@ -20,6 +22,7 @@ from app.observability import install_observability
 from app.providers.mock import MockProvider
 from app.providers.registry import ProviderRegistry
 from app.providers.venice import VeniceProvider
+from app.streaming.telemetry import Telemetry
 from app.telegram.credentials import ensure_connector_key
 from app.telegram.routes import router as telegram_router
 from app.usage.service import UsageService
@@ -55,9 +58,21 @@ def create_app(
     if resolved_settings.telegram_connector_file:
         ensure_connector_key(resolved_settings.telegram_connector_file)
 
+    telemetry = Telemetry(resolved_settings)
+
+    @asynccontextmanager
+    async def lifespan(app):
+        yield
+        telemetry.close()
+
     app = FastAPI(
-        title="Shluz", version=resolved_settings.service_version, docs_url=None, redoc_url=None,
+        lifespan=lifespan,
+        title="Shluz",
+        version=resolved_settings.service_version,
+        docs_url=None,
+        redoc_url=None,
     )
+    app.state.telemetry = telemetry
     app.state.settings = resolved_settings
     app.state.provider_registry = resolved_registry
     app.state.database = resolved_database
@@ -69,7 +84,8 @@ def create_app(
     @app.get("/health", tags=["system"])
     def health() -> dict[str, str]:
         return {
-            "status": "ok", "service": resolved_settings.service_name,
+            "status": "ok",
+            "service": resolved_settings.service_name,
             "version": resolved_settings.service_version,
             **({"build": resolved_settings.build_sha} if resolved_settings.build_sha else {}),
         }
@@ -77,11 +93,13 @@ def create_app(
     @app.get("/docs", include_in_schema=False)
     def docs() -> HTMLResponse:
         page = get_swagger_ui_html(
-            openapi_url=app.openapi_url, title="Shluz — документация API",
+            openapi_url=app.openapi_url,
+            title="Shluz — документация API",
             swagger_ui_parameters={"persistAuthorization": False},
         )
         html = page.body.decode("utf-8").replace(
-            "</head>", '<link rel="stylesheet" href="/static/docs.css"></head>',
+            "</head>",
+            '<link rel="stylesheet" href="/static/docs.css"></head>',
         )
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
@@ -91,6 +109,7 @@ def create_app(
 
     static_dir = Path(__file__).resolve().parent / "static"
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    app.include_router(diagnostics_router)
     app.include_router(access_admin_router)
     app.include_router(api_router)
     app.include_router(telegram_router)

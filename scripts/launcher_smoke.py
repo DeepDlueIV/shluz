@@ -128,10 +128,11 @@ with db.session() as s:
                 "python",
                 image,
                 "-c",
-                "import sqlite3; db=sqlite3.connect('/app/data/telegram.sqlite');"
+                "import sqlite3,os; db=sqlite3.connect('/app/data/telegram.sqlite');"
+                "db.execute('PRAGMA journal_mode=WAL');"
                 "db.execute('create table preserved(value text)');"
                 "db.execute(\"insert into preserved values('history-before-upgrade')\");"
-                "db.commit()",
+                "db.commit(); os.remove('/app/data/telegram.sqlite-shm'); os._exit(0)",
             )
             managed = root / "managed installation"
             managed.mkdir()
@@ -196,6 +197,14 @@ with db.session() as s:
             )
             db.close()
             assert (backups[0] / "bot/data.tar.gz").is_file()
+            bot_restore = root / "bot restored"
+            with tarfile.open(backups[0] / "bot/data.tar.gz", "r:gz") as tar:
+                tar.extractall(bot_restore, filter="data")
+            with sqlite3.connect(bot_restore / "data/telegram.sqlite") as restored:
+                assert restored.execute("select value from preserved").fetchone() == (
+                    "history-before-upgrade",
+                )
+                assert restored.execute("PRAGMA quick_check").fetchone()[0] == "ok"
             current = u.inspect_container("shluz")
             command("docker", "restart", current["Id"])
             command(
@@ -214,7 +223,8 @@ with db.session() as s:
             assert api("/v1/me")["allowance"]["requests"]["used"] == 2
             assert json.loads((managed / "installed.json").read_text())["commit"] == sha
             print(
-                "PASS: launcher settings discovery, exact image, backup integrity, schema6→7, "
+                "PASS: launcher settings discovery, exact image, backup including committed WAL, "
+                "schema6→8, "
                 "existing user/key/plan/usage, bot DB backup, restart persistence"
             )
         finally:

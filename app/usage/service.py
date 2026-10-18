@@ -171,10 +171,9 @@ class UsageService:
         now: datetime,
     ) -> None:
         period_start = _month_start(now)
-        active_pending = and_(
-            UsageEvent.status == "pending",
-            UsageEvent.reservation_expires_at.is_not(None),
-            UsageEvent.reservation_expires_at > now,
+        active_pending = or_(
+            and_(UsageEvent.status == "pending", UsageEvent.reservation_expires_at > now),
+            and_(UsageEvent.status == "interrupted", UsageEvent.cost_known.is_(False)),
         )
         common = (
             UsageEvent.account_id == account_id,
@@ -186,7 +185,9 @@ class UsageService:
             session.scalar(
                 select(func.count())
                 .select_from(UsageEvent)
-                .where(*common, or_(UsageEvent.status == "success", active_pending))
+                .where(
+                    *common, or_(UsageEvent.status.in_(["success", "interrupted"]), active_pending)
+                )
             )
             or 0
         )
@@ -200,7 +201,7 @@ class UsageService:
             session.scalar(
                 select(func.coalesce(func.sum(UsageEvent.internal_credits), 0)).where(
                     *common,
-                    UsageEvent.status == "success",
+                    UsageEvent.status.in_(["success", "interrupted"]),
                 )
             )
             or 0
@@ -226,7 +227,7 @@ class UsageService:
             session.scalar(
                 select(func.coalesce(func.sum(UsageEvent.cost_usd), 0)).where(
                     *common,
-                    UsageEvent.status == "success",
+                    UsageEvent.status.in_(["success", "interrupted"]),
                 )
             )
             or 0
@@ -253,6 +254,7 @@ class UsageService:
         source: str | None = None,
         provider: str | None = None,
         model: str | None = None,
+        timing: dict | None = None,
     ) -> UsageEvent:
         """Settle a reservation or retain the legacy direct-recording path."""
 
@@ -278,6 +280,10 @@ class UsageService:
                 result.cost_usd if not reservation.demo else Decimal("0"),
                 reservation.markup_percent,
             )
+            if timing:
+                for name in ("duration_ms", "first_token_ms", "streamed"):
+                    setattr(event, name, timing[name])
+            event.usage_known = result.usage_known
             event.provider_request_id = result.request_id
             event.prompt_tokens = result.prompt_tokens
             event.completion_tokens = result.completion_tokens
@@ -299,6 +305,8 @@ class UsageService:
         reservation: UsageReservation,
         *,
         error_code: str,
+        timing: dict | None = None,
+        partial: ChatResult | None = None,
     ) -> UsageEvent:
         with product.locked_session(self._database) as session:
             event = session.get(UsageEvent, reservation.event_id)
@@ -316,9 +324,24 @@ class UsageService:
                 grant = session.get(DemoGrant, reservation.account_id)
                 if grant:
                     grant.requests_used = max(0, grant.requests_used - 1)
-            event.status = "failed"
+            if timing:
+                for name in ("duration_ms", "first_token_ms", "streamed"):
+                    setattr(event, name, timing[name])
+            event.status = "interrupted" if partial is not None else "failed"
+            if partial is not None:
+                event.prompt_tokens = partial.prompt_tokens
+                event.completion_tokens = partial.completion_tokens
+                event.usage_known = partial.usage_known
+                event.cost_known = partial.cost_known
+                event.cost_usd = partial.cost_usd
+                event.cost_diem = partial.cost_diem
+                event.billed_usd, event.internal_credits = self._calculate_charge(
+                    partial.cost_usd if not reservation.demo else Decimal("0"),
+                    reservation.markup_percent,
+                )
             event.error_code = error_code
-            event.reserved_credits = 0
+            if partial is None or partial.cost_known:
+                event.reserved_credits = 0
             event.reservation_expires_at = None
             event.completed_at = datetime.now(UTC)
             session.flush()

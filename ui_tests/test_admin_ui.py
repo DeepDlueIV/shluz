@@ -244,3 +244,20 @@ def test_demo_policy_screen_and_safe_model_form(page, preview):
     page.keyboard.press('Escape')
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
     capture(page, 'demo-model-permissions')
+
+
+def test_diagnostics_navigation_tooltips_and_mobile(page, preview):
+    server, _ = preview
+    page.goto(server.url + '/admin/diagnostics')
+    expect(page.get_by_role('heading', name='Диагностика моделей')).to_be_visible()
+    expect(page.locator('.app-nav [aria-current="page"]')).to_have_text('Диагностика')
+    assert '0E-8' not in page.locator('body').inner_text()
+    page.get_by_role('button', name='Справка: p95', exact=True).hover()
+    expect(page.get_by_role('tooltip')).to_be_visible()
+    expect(page.get_by_role('tooltip')).to_contain_text('95%')
+    page.keyboard.press('Escape')
+    capture(page, 'diagnostics-desktop')
+    page.set_viewport_size({'width': 390, 'height': 844})
+    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+    expect(page.get_by_role('heading', name='Диагностика моделей')).to_be_visible()
+    capture(page, 'diagnostics-mobile')
