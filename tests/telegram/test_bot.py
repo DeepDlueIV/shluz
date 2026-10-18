@@ -618,3 +618,54 @@ def test_owner_old_clear_and_delete_confirmations_cannot_delete_new_messages(cli
         assert count_usage(client) == 4
 
     asyncio.run(scenario())
+
+
+def test_automatic_start_creates_application_and_invite_connects_without_json(tmp_path):
+    from fastapi.testclient import TestClient
+    from pydantic import SecretStr
+
+    from app.config import Settings
+    from app.factory import create_app
+    from app.telegram.service import issue_invite
+    from telegram_bot.config import AccessRegistry, BotSettings
+    from telegram_bot.controller import Controller, create_dispatcher
+    from telegram_bot.gateway import GatewayClient
+    from telegram_bot.storage import Store
+
+    async def scenario():
+        key_file = tmp_path / "connector" / "key"
+        settings = Settings(_env_file=None, telegram_connector_file=key_file,
+                            database_url=SecretStr("sqlite+pysqlite:///:memory:"))
+        with TestClient(create_app(settings)) as client:
+            bot_settings = BotSettings(_env_file=None, bot_token="123456:" + "A" * 35,
+                                       connector_file=key_file,
+                                       access_file=tmp_path / "missing.json",
+                                       database_path=tmp_path / "bot.sqlite", cooldown_seconds=0)
+            http = httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app))
+            gateway = GatewayClient("http://gateway", http=http,
+                                    connector_key=SecretStr(key_file.read_text()))
+            ctrl = Controller(bot_settings, AccessRegistry(bot_settings.access_file, optional=True),
+                              Store(bot_settings.database_path), gateway, sleep=no_wait)
+            dp = create_dispatcher(ctrl)
+            session = RecordingSession()
+            bot = Bot(bot_settings.bot_token.get_secret_value(), session=session)
+            await dp.feed_update(bot, incoming(1, "/start"))
+            assert "Заявка" in session.texts()
+            assert "Передайте этот ID" not in session.texts()
+            assert count_usage(client) == 0
+            with client.app.state.database.session() as db:
+                p = Plan(code="auto", name="Auto", monthly_request_limit=10)
+                db.add(p)
+                db.flush()
+                pid = p.id
+            link = issue_invite(client.app.state.database, pid, actor="owner")
+            await dp.feed_update(bot, incoming(2, "/start " + link))
+            await dp.feed_update(bot, incoming(3, "Привет"))
+            await dp.feed_update(bot, incoming(3, "Привет"))
+            assert "Shluz mock reply: Привет" in session.texts()
+            assert count_usage(client) == 1
+            assert ctrl.store.profile(100)["account_id"] is not None
+            assert not bot_settings.access_file.exists()
+            await ctrl.close()
+            await http.aclose()
+    asyncio.run(scenario())

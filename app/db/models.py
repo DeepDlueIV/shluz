@@ -186,3 +186,45 @@ class UsageEvent(Base):
         default=_utc_now,
         index=True,
     )
+
+
+class TelegramAdmission(Base):
+    """Разрешение на канал, а не отдельный финансовый аккаунт."""
+    __tablename__ = "telegram_admissions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_new_id)
+    telegram_id: Mapped[str] = mapped_column(String(32), unique=True)
+    display_name: Mapped[str] = mapped_column(String(200))
+    username: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    account_id: Mapped[str | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True, index=True,
+    )
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    # Отсутствие/удаление старого ключа должно закрывать доступ, а не снимать проверку.
+    legacy_token_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    session_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+
+
+class TelegramInvite(Base):
+    __tablename__ = "telegram_invites"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_new_id)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="RESTRICT"))
+    account_id: Mapped[str | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True,
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    redeemed_telegram_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+
+
+class TelegramIntegration(Base):
+    __tablename__ = "telegram_integration"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default="default")
+    username: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)

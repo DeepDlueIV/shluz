@@ -15,6 +15,7 @@ class ConfigurationError(ValueError):
 class BotSettings(BaseSettings):
     bot_token: SecretStr = SecretStr("")
     gateway_url: str = "http://shluz:8000"
+    connector_file: Path | None = None
     access_file: Path = Path("secrets/telegram-access.json")
     database_path: Path = Path("data/telegram.sqlite")
     default_model: str = "mock-chat"
@@ -64,16 +65,20 @@ def _unique_object(pairs):
 class AccessRegistry:
     """Список перечитывается на каждом событии: удалённый доступ закрывается сразу."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, optional: bool = False) -> None:
         self.path = path
+        self.optional = optional
         self._load()
 
     def _load(self) -> dict[int, SecretStr]:
         try:
-            if self.path.stat().st_size > 262144:
+            path = self.path / "telegram-access.json" if self.path.is_dir() else self.path
+            if self.optional and not path.exists():
+                return {}
+            if path.stat().st_size > 262144:
                 raise ConfigurationError("Слишком большой список доступа")
             data = json.loads(
-                self.path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object
+                path.read_text(encoding="utf-8-sig"), object_pairs_hook=_unique_object
             )
             if not isinstance(data, dict):
                 raise ConfigurationError("Список доступа должен быть JSON-объектом")

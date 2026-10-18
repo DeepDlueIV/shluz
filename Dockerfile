@@ -16,7 +16,7 @@ COPY migrations ./migrations
 
 RUN python -m pip install --upgrade pip \
     && python -m pip install . \
-    && mkdir -p /app/data \
+    && mkdir -p /app/data /app/telegram-connector \
     && chown -R shluz:shluz /app
 
 USER shluz

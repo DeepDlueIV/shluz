@@ -11,7 +11,7 @@ from pathlib import Path
 from aiogram import Bot
 from aiogram.types import BotCommand, BotCommandScopeAllPrivateChats
 from aiogram.utils.token import TokenValidationError, validate_token
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from telegram_bot.config import AccessRegistry, BotSettings, ConfigurationError
 from telegram_bot.controller import Controller, create_dispatcher
@@ -23,7 +23,10 @@ logger = logging.getLogger(__name__)
 
 
 class SecretRedaction(logging.Filter):
-    pattern = re.compile(r"shluz_[A-Za-z0-9_-]+|(?:bot)?\d{3,}(?::|%3[Aa])[A-Za-z0-9_-]{20,}")
+    pattern = re.compile(
+        r"shluz_tg\.[A-Za-z0-9_-]+\.[a-f0-9]+|shluz_[A-Za-z0-9_-]+|"
+        r"(?:bot)?\d{3,}(?::|%3[Aa])[A-Za-z0-9_-]{20,}"
+    )
 
     def filter(self, record: logging.LogRecord) -> bool:
         text = record.getMessage()
@@ -120,8 +123,22 @@ async def maintenance(store: Store, settings: BotSettings) -> None:
         await asyncio.sleep(5)
 
 
+def connector_key(settings: BotSettings) -> SecretStr | None:
+    if settings.connector_file is None:
+        return None
+    try:
+        if settings.connector_file.stat().st_size > 128:
+            raise ValueError("invalid length")
+        value = settings.connector_file.read_text(encoding="ascii").strip()
+        if not re.fullmatch(r"shluz_connector_[A-Za-z0-9_-]{43}", value):
+            raise ValueError("invalid key")
+        return SecretStr(value)
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise ConfigurationError("Не найден служебный доступ к шлюзу. Запустите gateway.") from exc
+
+
 async def run(settings: BotSettings, *, bot: Bot | None = None) -> None:
-    access = AccessRegistry(settings.access_file)
+    access = AccessRegistry(settings.access_file, optional=settings.connector_file is not None)
     resolved_bot = bot or Bot(token=settings.bot_token.get_secret_value())
     heartbeat = heartbeat_path(settings.database_path)
     try:
@@ -143,6 +160,7 @@ async def run(settings: BotSettings, *, bot: Bot | None = None) -> None:
                     settings.gateway_url,
                     timeout=settings.request_timeout,
                     max_response_chars=settings.max_response_chars,
+                    connector_key=connector_key(settings),
                 )
                 controller = Controller(settings, access, store, gateway)
                 webhook = await resolved_bot.get_webhook_info()
@@ -151,6 +169,9 @@ async def run(settings: BotSettings, *, bot: Bot | None = None) -> None:
                         "У бота настроен webhook. Для polling используйте отдельного бота "
                         "или отключите webhook самостоятельно."
                     )
+                if settings.connector_file:
+                    me = await resolved_bot.get_me()
+                    await gateway.register_bot(me.username)
                 await resolved_bot.set_my_commands(
                     [
                         BotCommand(command=command, description=description)
@@ -191,7 +212,8 @@ def main() -> int:
     try:
         settings = BotSettings()
         validate_token(settings.bot_token.get_secret_value())
-        AccessRegistry(settings.access_file)
+        AccessRegistry(settings.access_file, optional=settings.connector_file is not None)
+        connector_key(settings)
         if args.check:
             print("Конфигурация Telegram проверена. Сетевые запросы не выполнялись.")
             return 0

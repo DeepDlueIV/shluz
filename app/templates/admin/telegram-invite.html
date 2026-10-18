@@ -1,0 +1,6 @@
+{% extends 'admin/base.html' %}
+{% block title %}Приглашение в Telegram{% endblock %}
+{% block content %}
+<header class="hero compact"><div><h1>Приглашение готово</h1><p class="muted">Отправьте эту ссылку человеку. После Start приложение подключит его автоматически.</p></div></header>
+<section class="form-card section-block"><div class="field"><label for="invite-link">Одноразовая ссылка · 24 часа</label><code class="identifier" id="invite-link">{{ link }}</code><button type="button" data-copy="invite-link" data-copy-label="Приглашение">Скопировать приглашение</button><span class="copy-status" role="status"></span><p>Не публикуйте ссылку: первый воспользовавшийся получит выбранный доступ. Полная ссылка показывается только сейчас.</p><a href="/admin/telegram">Вернуться к Telegram</a></div></section>
+{% endblock %}

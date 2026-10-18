@@ -9,6 +9,7 @@
 {% endmacro %}
 {% macro account_row(account) %}
 {% set tokens = tokens_by_account.get(account.id, ()) %}
+{% set tg = telegram_by_account.get(account.id) %}
 <tr id="user-{{ account.id }}" data-search="{{ account.display_name }} {{ account.id }} {{ account.plan_name or '' }}">
   <td class="name-cell"><strong>{{ 'Служебный доступ' if account.id == 'bootstrap' else account.display_name }}</strong>
     {% if account.blocked_reason %}<span class="pill blocked">{{ account.blocked_reason }}</span>{% else %}<span class="pill ready">Доступ разрешён</span>{% endif %}
@@ -23,7 +24,8 @@
     {% if account.id != 'bootstrap' and not show_archived %}<details class="technical"><summary>Изменить тариф</summary><form method="post" action="/admin/users/{{ account.id }}/plan" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label class="sr-only" for="plan-for-{{ account.id }}">Тариф пользователя</label><select id="plan-for-{{ account.id }}" name="plan_id"><option value="">Без тарифа</option>{% for plan in plans %}<option value="{{ plan.id }}" {% if account.plan_id == plan.id %}selected{% endif %}>{{ plan.name }}</option>{% endfor %}</select><button type="submit">Назначить</button></form></details>{% endif %}
   </td>
   <td class="access-cell"><div class="token-list">
-    {% for token in tokens if not token.revoked %}{{ token_card(token) }}{% else %}<span class="muted">Нет активных ключей</span>{% endfor %}
+    {% if tg and tg.status == 'approved' %}<a href="/admin/telegram#tg-{{ tg.id }}"><strong>Telegram подключён автоматически</strong></a><small>Управление доступом — в разделе Telegram. Личный ключ для бота не требуется.</small>{% endif %}
+    {% for token in tokens if not token.revoked %}{{ token_card(token) }}{% else %}{% if not tg or tg.status != 'approved' %}<span class="muted">Нет активных ключей</span>{% endif %}{% endfor %}
     {% set revoked = tokens | selectattr('revoked') | list %}
     {% if revoked %}<details class="technical"><summary>Отозванные ключи ({{ revoked | length }})</summary>{% for token in revoked %}{{ token_card(token) }}{% endfor %}</details>{% endif %}
     </div>
@@ -38,6 +40,7 @@
 {% block content %}
 {% set people = accounts | rejectattr('id', 'equalto', 'bootstrap') | list %}
 <header class="hero compact"><div><p class="eyebrow">Управление доступом</p><h1>Пользователи</h1><p class="muted">Имена, тарифы и доступные запросы. Технические данные — по необходимости.</p></div><span class="count-label">{{ people | length }} {{ (people | length) | plural('пользователь', 'пользователя', 'пользователей') }}</span></header>
+<p class="footnote">Для Telegram используйте <a href="/admin/telegram">приглашения и заявки</a> — аккаунты подключаются без ручной выдачи ключей.</p>
 <div class="tabs"><a href="/admin/users" {% if not show_archived %}aria-current="page"{% endif %}>Пользователи</a><a href="/admin/users?archive=1" {% if show_archived %}aria-current="page"{% endif %}>Архив</a></div>
 {% if not show_archived %}<section class="form-card section-block"><div><p class="eyebrow">Новый аккаунт</p><h2>Добавить пользователя</h2><p class="muted">После создания назначьте тариф и выдайте личный ключ доступа. {{ hint('api_token') }}</p></div>
 <form method="post" action="/admin/users" class="create-account-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">{{ text_field('new-user', 'display_name', 'Имя пользователя', '', 'Например, Алексей', true) }}<button type="submit">Создать пользователя</button>

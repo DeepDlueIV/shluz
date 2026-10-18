@@ -10,6 +10,7 @@ from starlette.exceptions import HTTPException
 from app.admin.auxiliary import router as auxiliary_router
 from app.admin.errors import admin_http_error, admin_validation_error
 from app.admin.routes import router as admin_router
+from app.admin.telegram import router as telegram_admin_router
 from app.api.router import api_router
 from app.config import Settings, get_settings
 from app.db.database import Database
@@ -18,6 +19,8 @@ from app.observability import install_observability
 from app.providers.mock import MockProvider
 from app.providers.registry import ProviderRegistry
 from app.providers.venice import VeniceProvider
+from app.telegram.credentials import ensure_connector_key
+from app.telegram.routes import router as telegram_router
 from app.usage.service import UsageService
 
 
@@ -47,6 +50,9 @@ def create_app(
     resolved_database.create_schema()
     with resolved_database.session() as session:
         ensure_bootstrap_account(session)
+
+    if resolved_settings.telegram_connector_file:
+        ensure_connector_key(resolved_settings.telegram_connector_file)
 
     app = FastAPI(
         title="Shluz", version=resolved_settings.service_version, docs_url=None, redoc_url=None,
@@ -84,6 +90,8 @@ def create_app(
     static_dir = Path(__file__).resolve().parent / "static"
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
     app.include_router(api_router)
+    app.include_router(telegram_router)
+    app.include_router(telegram_admin_router)
     app.include_router(admin_router)
     app.include_router(auxiliary_router)
     return app

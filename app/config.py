@@ -1,8 +1,9 @@
 from decimal import Decimal
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +17,9 @@ class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password: SecretStr = SecretStr("change-me")
     database_url: SecretStr = SecretStr("sqlite+pysqlite:///./data/shluz.db")
+
+    telegram_connector_file: Path | None = None
+    telegram_pending_limit: int = Field(default=500, ge=1, le=10000)
 
     active_provider: Literal["mock", "venice"] = "mock"
     venice_api_key: SecretStr | None = None

@@ -89,14 +89,14 @@
       try {
         if (!navigator.clipboard) throw new Error("unavailable");
         await navigator.clipboard.writeText(value.textContent.trim());
-        if (status) status.textContent = "Ключ скопирован. Сохраните его в безопасном месте.";
+        if (status) status.textContent = `${button.dataset.copyLabel || "Ключ"} скопирован${button.dataset.copyLabel ? "о" : ""}. Сохраните в безопасном месте.`;
       } catch {
         const range = document.createRange();
         range.selectNodeContents(value);
         const selection = getSelection();
         selection.removeAllRanges();
         selection.addRange(range);
-        if (status) status.textContent = "Ключ выделен. Нажмите Ctrl+C (на Mac — ⌘C).";
+        if (status) status.textContent = `${button.dataset.copyLabel || "Ключ"} выделен${button.dataset.copyLabel ? "о" : ""}. Нажмите Ctrl+C (на Mac — ⌘C).`;
       }
     });
   });

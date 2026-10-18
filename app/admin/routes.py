@@ -19,7 +19,7 @@ from app.admin.presentation import database_info, install_presentation, label
 from app.config import Settings
 from app.db.audit import plan_snapshot, record_admin_event
 from app.db.database import Database
-from app.db.models import Account, ApiToken, Plan, Subscription
+from app.db.models import Account, ApiToken, Plan, Subscription, TelegramAdmission
 from app.db.reports import get_usage_summary, list_accounts_overview, list_plans_overview
 from app.db.repositories import create_api_token, generate_api_token, revoke_api_token
 from app.providers.base import ProviderError
@@ -144,8 +144,14 @@ def users_dashboard(
         plans = list(session.scalars(
             select(Plan).where(Plan.active.is_(True)).order_by(Plan.name, Plan.code)
         ))
+    with database.session() as session:
+        telegram_by_account = {
+            row.account_id: row for row in session.scalars(select(TelegramAdmission))
+            if row.account_id
+        }
     return templates.TemplateResponse(
         request=request, name="admin/users.html", context={
+            "telegram_by_account": telegram_by_account,
             "accounts": accounts, "plans": plans, "show_archived": show_archived,
             "tokens_by_account": _safe_tokens_by_account(database),
             "csrf_token": _admin_csrf_token(settings),

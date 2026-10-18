@@ -9,7 +9,7 @@ from contextlib import suppress
 
 from aiogram import BaseMiddleware, Dispatcher, Router
 from aiogram.exceptions import TelegramAPIError
-from aiogram.types import CallbackQuery, Message, Update
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from pydantic import SecretStr
 
 from telegram_bot import ui
@@ -41,6 +41,41 @@ class ClosedAccessMiddleware(BaseMiddleware):
                 await callback.answer("Работаю только в личном чате.", show_alert=True)
             return None
         token = self.controller.access.token_for(sender.id)
+        if self.controller.settings.connector_file:
+            start_parts = (message.text or "").split(maxsplit=1) if not callback else []
+            invite = None
+            if start_parts and start_parts[0].split("@")[0] == "/start" and len(start_parts) == 2:
+                candidate = start_parts[1].strip()
+                if candidate.startswith("join_"):
+                    invite = candidate
+            try:
+                admission = await self.controller.gateway.onboard(
+                    sender.id, sender.full_name, sender.username, invite=invite, legacy_token=token,
+                )
+            except GatewayError as exc:
+                if callback:
+                    with suppress(TelegramAPIError):
+                        await callback.answer()
+                await self.controller.delivery.say(message, ERROR_TEXT[exc.code])
+                return None
+            if admission["state"] != "active":
+                if callback:
+                    with suppress(TelegramAPIError):
+                        await callback.answer()
+                pending = admission["state"] == "pending"
+                await self.controller.delivery.screen(
+                    message,
+                    ("📨 <b>Заявка отправлена</b>\n\n"
+                     "Сейчас идёт закрытое тестирование. Администратор увидит вашу заявку "
+                     "в панели. После одобрения нажмите «Проверить доступ» или напишите мне.\n\n"
+                     "Никаких ключей, ID или файлов отправлять не нужно.")
+                    if pending else ERROR_TEXT["onboarding_blocked"],
+                    InlineKeyboardMarkup(inline_keyboard=[[
+                        InlineKeyboardButton(text="Проверить доступ", callback_data="access_check"),
+                    ]]) if pending else None,
+                )
+                return None
+            token = SecretStr(admission["token"])
         if token is None:
             if callback:
                 await callback.answer("Доступ к закрытой бете не выдан.", show_alert=True)
@@ -232,8 +267,8 @@ class Controller:
             update_id=update_id,
         ):
             return
-        if action in {"start", "menu"}:
-            if action == "start":
+        if action in {"start", "menu", "access_check"}:
+            if action in {"start", "access_check"}:
                 await self.linked_profile(message, token, user=user)
                 if local["model"] is None:
                     models = await self.gateway.models(token)
@@ -480,9 +515,11 @@ class Controller:
                 style=local["style"],
                 budget=self.settings.context_char_limit,
             )
-            latest = self.access.token_for(user_id)
-            if latest is None or latest.get_secret_value() != token:
-                raise GatewayError("unauthorized")
+            if not self.settings.connector_file:
+                latest = self.access.token_for(user_id)
+                if latest is None or latest.get_secret_value() != token:
+                    raise GatewayError("unauthorized")
+            # В автоматическом режиме статус доступа проверяется самим gateway при POST.
             waiting = await self.delivery.waiting(message, request_id=self.job_ids[user_id])
             turn_id = self.store.begin_turn(
                 user_id,

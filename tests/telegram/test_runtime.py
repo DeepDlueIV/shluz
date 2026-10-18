@@ -205,3 +205,74 @@ def test_instance_lock_is_held_until_controller_finishes_shutdown(tmp_path, monk
     monkeypatch.setattr(Controller, "close", close)
     monkeypatch.setattr(Dispatcher, "start_polling", AsyncMock())
     asyncio.run(run(settings, bot=bot))
+
+
+def test_automatic_mode_accepts_missing_legacy_json(tmp_path):
+    from telegram_bot.config import AccessRegistry
+    registry = AccessRegistry(tmp_path / "no-file.json", optional=True)
+    assert registry.token_for(123) is None
+
+
+def test_session_secret_redaction_covers_full_signed_value():
+    from telegram_bot.runtime import SecretRedaction
+    token = "shluz_tg." + "payload" * 20 + "." + "a" * 64
+    record = logging.LogRecord("test", logging.ERROR, __file__, 1, token, (), None)
+    SecretRedaction().filter(record)
+    assert "payload" not in record.getMessage()
+    assert "a" * 64 not in record.getMessage()
+
+
+def test_optional_legacy_directory_supports_notepad_bom(tmp_path):
+    from telegram_bot.config import AccessRegistry
+    path = tmp_path / "legacy"
+    path.mkdir()
+    registry = AccessRegistry(path, optional=True)
+    assert registry.token_for(123) is None
+    (path / "telegram-access.json").write_text(
+        json.dumps({"123": "shluz_" + "a" * 43}), encoding="utf-8-sig",
+    )
+    assert registry.token_for(123).get_secret_value() == "shluz_" + "a" * 43
+
+
+def test_compose_auto_onboarding_generates_shared_key_without_per_user_file():
+    import yaml
+    root = Path(__file__).resolve().parents[2]
+    for filename, volume in [("compose.yaml", "telegram_connector"),
+                             ("compose.owner.telegram.yaml", "owner_telegram_connector")]:
+        compose = yaml.safe_load((root / filename).read_text())
+        bot = compose["services"]["telegram_bot"]
+        gateway = compose["services"]["shluz"]
+        assert bot["environment"]["TELEGRAM_CONNECTOR_FILE"] == "/run/shluz-connector/key"
+        assert (
+            gateway["environment"]["SHLUZ_TELEGRAM_CONNECTOR_FILE"]
+            == "/app/telegram-connector/key"
+        )
+        assert volume + ":/run/shluz-connector:ro" in bot["volumes"]
+        legacy = next(v for v in bot["volumes"] if isinstance(v, dict))
+        assert legacy["bind"]["create_host_path"] is True
+        assert legacy["read_only"] is True
+
+
+def test_automatic_startup_registers_bot_and_needs_no_access_file(tmp_path, monkeypatch):
+    from aiogram import Dispatcher
+
+    from app.telegram.credentials import ensure_connector_key
+    from telegram_bot.config import BotSettings
+    from telegram_bot.gateway import GatewayClient
+    from telegram_bot.runtime import run
+
+    key = tmp_path / "key"
+    ensure_connector_key(key)
+    settings = BotSettings(_env_file=None, connector_file=key,
+                           access_file=tmp_path / "absent.json",
+                           database_path=tmp_path / "bot.sqlite")
+    bot = AsyncMock()
+    bot.get_webhook_info.return_value.url = ""
+    bot.get_me.return_value.username = "auto_test_bot"
+    register = AsyncMock()
+    monkeypatch.setattr(GatewayClient, "register_bot", register)
+    monkeypatch.setattr(Dispatcher, "start_polling", AsyncMock())
+    asyncio.run(run(settings, bot=bot))
+    register.assert_awaited_once_with("auto_test_bot")
+    bot.session.close.assert_awaited_once()
+    assert not settings.access_file.exists()

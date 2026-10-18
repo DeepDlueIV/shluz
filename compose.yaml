@@ -5,8 +5,11 @@ services:
       - .env
     ports:
       - "8000:8000"
+    environment:
+      SHLUZ_TELEGRAM_CONNECTOR_FILE: /app/telegram-connector/key
     volumes:
       - shluz_data:/app/data
+      - telegram_connector:/app/telegram-connector
     restart: unless-stopped
 
   telegram_bot:
@@ -18,19 +21,21 @@ services:
     environment:
       TELEGRAM_GATEWAY_URL: http://shluz:8000
       TELEGRAM_DATABASE_PATH: /app/data/telegram.sqlite
-      TELEGRAM_ACCESS_FILE: /run/secrets/telegram-access.json
+      TELEGRAM_ACCESS_FILE: /run/telegram-legacy
+      TELEGRAM_CONNECTOR_FILE: /run/shluz-connector/key
     command: [python, -m, telegram_bot]
     depends_on:
       shluz:
         condition: service_healthy
     volumes:
       - telegram_data:/app/data
+      - telegram_connector:/run/shluz-connector:ro
       - type: bind
-        source: ${TELEGRAM_ACCESS_FILE_HOST:-./secrets/telegram-access.json}
-        target: /run/secrets/telegram-access.json
+        source: ${TELEGRAM_ACCESS_FILE_HOST:-./secrets}
+        target: /run/telegram-legacy
         read_only: true
         bind:
-          create_host_path: false
+          create_host_path: true
     healthcheck:
       test: [CMD, python, -m, telegram_bot.healthcheck]
       interval: 30s
@@ -44,3 +49,4 @@ services:
 volumes:
   shluz_data:
   telegram_data:
+  telegram_connector:

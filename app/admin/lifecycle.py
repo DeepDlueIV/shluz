@@ -5,7 +5,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.audit import record_admin_event
-from app.db.models import Account, ApiToken, Plan, Subscription
+from app.db.models import Account, ApiToken, Plan, Subscription, TelegramAdmission
 
 
 def ensure_plan_unused(session: Session, plan_id: str) -> None:
@@ -44,6 +44,11 @@ def change_account_archive(session: Session, account_id: str, actor: str, archiv
         )):
             token.revoked_at = now
             revoked += 1
+        for admission in session.scalars(select(TelegramAdmission).where(
+            TelegramAdmission.account_id == account_id,
+        )):
+            admission.status = "blocked"
+            admission.session_version += 1
         for subscription in session.scalars(select(Subscription).where(
             Subscription.account_id == account_id, Subscription.status == "active",
         )):

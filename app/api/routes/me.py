@@ -141,6 +141,8 @@ def bind_telegram(
 ) -> dict:
     """Привязка от доверенного бота с персональным токеном, не публичный Telegram Login."""
     _personal(principal)
+    if principal.telegram_id is not None and principal.telegram_id != payload.telegram_id:
+        raise HTTPException(403, detail="Telegram session identity mismatch")
     if principal.source != "telegram":
         raise HTTPException(403, detail="Telegram channel token required")
     response.headers["Cache-Control"] = "no-store"

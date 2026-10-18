@@ -9,6 +9,12 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 from app.db.base import Base
 
 ACTION_LABELS = {
+    "telegram.imported": "Telegram: прежний доступ перенесён автоматически",
+    "telegram.approved": "Telegram: доступ разрешён",
+    "telegram.blocked": "Telegram: доступ закрыт",
+    "telegram.invite_created": "Telegram: приглашение создано",
+    "telegram.invite_used": "Telegram: приглашение активировано",
+    "telegram.invite_revoked": "Telegram: приглашение отозвано",
     "user.created": "Пользователь создан",
     "user.archived": "Пользователь перемещён в архив",
     "user.restored": "Пользователь восстановлен",
@@ -27,7 +33,7 @@ PLAN_FIELDS = (
 )
 _SAFE_FIELDS = set(PLAN_FIELDS) | {
     "before", "after", "role", "status", "source", "account_id", "plan_id",
-    "revoked_tokens", "cancelled_subscriptions",
+    "revoked_tokens", "cancelled_subscriptions", "telegram_id", "invite_id",
 }
 
 

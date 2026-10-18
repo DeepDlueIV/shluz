@@ -4,6 +4,7 @@ import asyncio
 import json as jsonlib
 
 import httpx
+from pydantic import SecretStr
 
 
 class GatewayError(Exception):
@@ -14,6 +15,8 @@ class GatewayError(Exception):
 
 
 ERROR_TEXT = {
+    "invite_invalid": "🔗 Приглашение истекло или уже использовано. Попросите новую ссылку.",
+    "onboarding_blocked": "🔒 Доступ закрыт. Обратитесь к администратору.",
     "retry_unavailable": "Повтор устарел. Откройте /retry для последнего завершённого ответа.",
     "unauthorized": "🔒 Доступ отозван или ключ недействителен. Обратитесь к администратору.",
     "wrong_channel": "🔒 Для этого бота нужен персональный ключ канала Telegram.",
@@ -49,8 +52,10 @@ class GatewayClient:
         timeout: float = 120,
         http: httpx.AsyncClient | None = None,
         max_response_chars: int = 100000,
+        connector_key: SecretStr | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
+        self.connector_key = connector_key
         self.http = http or httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=10))
         self._owned = http is None
         self.max_response_chars = max_response_chars
@@ -112,6 +117,37 @@ class GatewayClient:
                     429: "rate_limit",
                 }.get(response.status_code, "provider_unavailable")
             raise GatewayError(code, response.status_code)
+        return data
+
+    async def register_bot(self, username: str) -> None:
+        if not self.connector_key:
+            raise GatewayError("unavailable")
+        await self._request(
+            "POST", "/internal/telegram/hello", self.connector_key.get_secret_value(),
+            json={"username": username},
+        )
+
+    async def onboard(
+        self, user_id: int, display_name: str, username: str | None,
+        *, invite: str | None = None, legacy_token: SecretStr | None = None,
+    ) -> dict:
+        if not self.connector_key:
+            raise GatewayError("unavailable")
+        data = await self._request(
+            "POST", "/internal/telegram/session", self.connector_key.get_secret_value(),
+            json={
+                "telegram_id": user_id, "display_name": display_name[:200] or "Telegram",
+                "username": username,
+                "invite": invite,
+                "legacy_token": legacy_token.get_secret_value() if legacy_token else None,
+            },
+        )
+        if data.get("state") not in {"pending", "active", "blocked"}:
+            raise GatewayError("invalid_response")
+        if data["state"] == "active" and (
+            not isinstance(data.get("token"), str) or not data["token"].startswith("shluz_tg.")
+        ):
+            raise GatewayError("invalid_response")
         return data
 
     async def profile(self, token: str) -> dict:

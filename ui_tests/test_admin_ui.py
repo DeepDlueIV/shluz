@@ -11,7 +11,14 @@ from sqlalchemy import select
 
 from app.config import Settings
 from app.db.database import Database
-from app.db.models import Account, Plan, Subscription, UsageEvent
+from app.db.models import (
+    Account,
+    Plan,
+    Subscription,
+    TelegramAdmission,
+    TelegramIntegration,
+    UsageEvent,
+)
 from app.db.repositories import create_api_token
 from tests.server_support import GatewayProcess
 
@@ -37,6 +44,13 @@ def preview(tmp_path_factory):
             for _ in range(2):
                 session.add(UsageEvent(account_id=account.id, provider='mock', model='mock-chat',
                                        source='harness', status='success'))
+    with database.session() as session:
+        admission = TelegramAdmission(telegram_id='987654321', display_name='Новый участник',
+                                      username='new_person')
+        session.add(admission)
+        session.add(TelegramIntegration(id='default', username='test_shluz_bot'))
+        session.flush()
+        server.admission_id = admission.id
     server.start()
     yield server, database
     server.stop()
@@ -78,7 +92,8 @@ def capture(page, name):
 def test_navigation_and_layout(page, preview):
     server, _ = preview
     for path, label in [('', 'Обзор'), ('/users', 'Пользователи'), ('/plans', 'Тарифы'),
-                        ('/usage', 'Расходы'), ('/logs', 'Журнал'), ('/test', 'Проверка запроса'),
+                        ('/usage', 'Расходы'), ('/telegram', 'Telegram'),
+                        ('/logs', 'Журнал'), ('/test', 'Проверка запроса'),
                         ('/providers/venice', 'Поставщик')]:
         page.goto(server.url + '/admin' + path)
         expect(page.locator('.app-nav [aria-current="page"]')).to_have_text(label)
@@ -191,3 +206,24 @@ def test_no_javascript_fallback(browser, preview):
         expect(form.locator('[name="request_credit_reserve"]')).to_be_visible()
     finally:
         context.close()
+
+
+def test_telegram_onboarding_approve_and_invite_without_per_user_files(page, preview):
+    import re
+    server, _ = preview
+    page.goto(server.url + '/admin/telegram')
+    row = page.locator('#tg-' + server.admission_id)
+    expect(row).to_contain_text('Ожидает одобрения')
+    row.locator('select[name="plan_id"]').select_option(label='Базовый')
+    row.get_by_role('button', name='Разрешить доступ', exact=True).click()
+    expect(page.locator('#tg-' + server.admission_id)).to_contain_text('Разрешён')
+    capture(page, 'telegram-onboarding')
+    page.get_by_role('button', name='Создать приглашение', exact=True).click()
+    link = page.locator('#invite-link').inner_text()
+    assert re.fullmatch(r'https://t.me/test_shluz_bot\?start=join_[A-Za-z0-9_-]{32}', link)
+    page.get_by_role('button', name='Скопировать приглашение').click()
+    expect(page.locator('.copy-status')).to_contain_text('Приглашение')
+    page.get_by_role('link', name='Вернуться к Telegram').click()
+    expect(page.get_by_role('heading', name='Telegram', exact=True)).to_be_visible()
+    page.set_viewport_size({'width': 390, 'height': 844})
+    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
