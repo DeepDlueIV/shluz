@@ -1,6 +1,7 @@
 """Package one immutable, already tested preview revision. No user settings included."""
 
 import hashlib
+import importlib.util
 import json
 import re
 import subprocess
@@ -31,12 +32,17 @@ def main():
     image_id = subprocess.check_output(
         ["docker", "image", "inspect", image, "--format", "{{.Id}}"], text=True
     ).strip()
+    spec = importlib.util.spec_from_file_location("preview_updater", Path("launcher/updater.py"))
+    updater = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(updater)
+    config_digest = updater.archive_config_digest(saved, image)
     manifest = {
-        "schema": 1,
+        "schema": 2,
         "channel": "preview",
         "commit": commit,
         "image": image,
         "image_id": image_id,
+        "image_config_digest": config_digest,
         "platform": "linux/amd64",
         "image_size": saved.stat().st_size,
         "image_sha256": digest(saved),
@@ -59,7 +65,13 @@ def main():
     )
     with zipfile.ZipFile(target / "Shluz-launcher.zip", "w", zipfile.ZIP_DEFLATED) as z:
         for file in ["Shluz.cmd", "updater.py", "README.md"]:
-            z.write(Path("launcher") / file, "Shluz/" + file)
+            source = Path("launcher") / file
+            if file.endswith(".cmd"):
+                z.writestr(
+                    "Shluz/" + file, source.read_text(encoding="utf-8").replace("\n", "\r\n")
+                )
+            else:
+                z.write(source, "Shluz/" + file)
     files = sorted(target.iterdir())
     (target / "SHA256SUMS").write_text(
         "\n".join(f"{digest(path)}  {path.name}" for path in files) + "\n", encoding="utf-8"

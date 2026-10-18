@@ -220,9 +220,21 @@ jobs:
       - run: python -m pip install pytest pyyaml
       - run: python -m pytest tests/launcher -q --noconftest
 
+  launcher-image-stores:
+    name: Launcher legacy and containerd images
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Reproduce and verify identical content across real Docker stores
+        run: python scripts/image_store_smoke.py
+
   preview:
     name: Checked preview and safe upgrade
-    needs: [test, admin-ui, postgres, launcher-windows]
+    needs: [test, admin-ui, postgres, launcher-windows, launcher-image-stores]
     if: >-
       github.event_name == 'push' && github.repository == 'DeepDlueIV/shluz' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/implementation/telegram-beta-complete')

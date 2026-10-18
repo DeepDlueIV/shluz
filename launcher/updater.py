@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -41,7 +42,7 @@ def validate_manifest(data):
     expected = RELEASE_ROOT + f"preview-{commit}/image.tar.gz"
     if not (
         type(data.get("schema")) is int
-        and data.get("schema") == 1
+        and data.get("schema") in {1, 2}
         and data.get("channel") == "preview"
         and isinstance(commit, str)
         and re.fullmatch("[a-f0-9]{40}", commit)
@@ -52,6 +53,10 @@ def validate_manifest(data):
         and 0 < data["image_size"] <= MAX_IMAGE
         and data.get("image_url") == expected
         and data.get("platform") == "linux/amd64"
+        and (
+            data["schema"] == 1
+            or re.fullmatch(r"sha256:[a-f0-9]{64}", str(data.get("image_config_digest", "")))
+        )
     ):
         raise UpdateError("Обновление не прошло проверку. Текущая версия не изменена.")
     return data
@@ -183,6 +188,97 @@ def docker(*args, timeout=180, optional=False):
             "Данные и резервные копии сохранены. Передайте это окно Codex."
         )
     return result.stdout if result.returncode == 0 else ""
+
+
+def archive_config_digest(path, image=None):
+    """Read the unchanged config blob (including layer diff_ids), never extract/run the image.
+
+    Legacy Docker saves <digest>.json; containerd saves blobs/sha256/<digest>.
+    Inspect .Id is NOT portable: graphdriver returns a config digest, containerd a
+    manifest/index digest. Archive SHA-256 is checked separately before this call.
+    """
+    try:
+        with tarfile.open(path, "r:*") as archive:
+
+            def read_small(name):
+                matches = [m for m in archive.getmembers() if m.name == name]
+                if len(matches) != 1 or not matches[0].isfile() or matches[0].size > 4 * 1024**2:
+                    raise UpdateError("Некорректные метаданные Docker-архива.")
+                with archive.extractfile(matches[0]) as stream:
+                    return stream.read(4 * 1024**2 + 1)
+
+            entries = json.loads(read_small("manifest.json"))
+            if not isinstance(entries, list) or len(entries) != 1:
+                raise UpdateError("Ожидался архив одной проверенной версии образа.")
+            entry = entries[0]
+            if not isinstance(entry, dict) or (
+                image and image not in (entry.get("RepoTags") or [])
+            ):
+                raise UpdateError("Архив не содержит указанную версию Shluz.")
+            name = entry.get("Config", "")
+            if not isinstance(name, str) or not re.fullmatch(
+                r"(?:[a-f0-9]{64}\.json|blobs/sha256/[a-f0-9]{64})", name
+            ):
+                raise UpdateError("Неподдерживаемый формат конфигурации Docker-образа.")
+            raw = read_small(name)
+            digest = hashlib.sha256(raw).hexdigest()
+            if name not in {digest + ".json", "blobs/sha256/" + digest}:
+                raise UpdateError("Контрольная сумма конфигурации в архиве не совпала.")
+            config = json.loads(raw)
+            if not isinstance(config, dict) or (config.get("os"), config.get("architecture")) != (
+                "linux",
+                "amd64",
+            ):
+                raise UpdateError("Образ не предназначен для Linux/x64.")
+            return "sha256:" + digest
+    except (OSError, ValueError, KeyError, TypeError, tarfile.TarError) as exc:
+        raise UpdateError("Не удалось проверить конфигурацию Docker-архива.") from exc
+
+
+def exported_config_digest(image_id):
+    """Docker exports its exact config bytes; no container is started or executable trusted."""
+    with tempfile.TemporaryDirectory(prefix="shluz-image-check-") as directory:
+        archive = Path(directory) / "loaded.tar"
+        docker("image", "save", "--output", str(archive), image_id, timeout=300)
+        return archive_config_digest(archive)
+
+
+def inspect_image(image):
+    raw = docker("image", "inspect", image, optional=True)
+    if not raw:
+        return None
+    try:
+        items = json.loads(raw)
+        info = items[0] if isinstance(items, list) and len(items) == 1 else None
+        if not isinstance(info, dict) or not re.fullmatch(
+            r"sha256:[a-f0-9]{64}", str(info.get("Id", ""))
+        ):
+            raise ValueError()
+        return info
+    except (ValueError, TypeError, KeyError) as exc:
+        raise UpdateError("Docker вернул некорректный идентификатор образа.") from exc
+
+
+def prepare_image(manifest, archive):
+    """Verify archive, load, compare config by content across both Docker storage backends."""
+    if not valid_file(archive, manifest["image_size"], manifest["image_sha256"]):
+        raise UpdateError("Контрольная сумма скачанного архива не совпала; установка остановлена.")
+    expected = manifest.get("image_config_digest", manifest["image_id"])
+    if archive_config_digest(archive, manifest["image"]) != expected:
+        raise UpdateError("Конфигурация образа не совпала с опубликованной версией.")
+    info = inspect_image(manifest["image"])
+    if not info or info["Id"] != expected:
+        # Load only the checksum-verified archive. Its local ID may legitimately change
+        # when containerd wraps a legacy export in a manifest/index.
+        docker("image", "load", "--input", str(archive), timeout=600)
+        info = inspect_image(manifest["image"])
+    if not info or (info.get("Os"), info.get("Architecture")) != ("linux", "amd64"):
+        raise UpdateError("Загруженный образ не найден или предназначен для другой платформы.")
+    local_id = info["Id"]
+    actual = local_id if local_id == expected else exported_config_digest(local_id)
+    if not secrets.compare_digest(actual, expected):
+        raise UpdateError("Контрольная сумма конфигурации загруженного Docker-образа не совпала.")
+    return local_id
 
 
 def inspect_container(service):
@@ -326,7 +422,11 @@ def prepare_settings(root, gateway, bot):
 def compose_text(manifest, config, settings):
     # JSON — валидный YAML. Не интерполируем секреты в сгенерированный Compose.
     config = Path(config).resolve()
-    shared = {"image": manifest["image"], "pull_policy": "never", "restart": "unless-stopped"}
+    shared = {
+        "image": manifest.get("local_image_id", manifest["image"]),
+        "pull_policy": "never",
+        "restart": "unless-stopped",
+    }
     service = {
         **shared,
         "env_file": [str(config / ".env.owner")],
@@ -403,15 +503,30 @@ def archive_volume(volume, image, archive):
     archive = Path(archive)
     partial = archive.with_suffix(".part")
     args = [
-        "docker", "run", "--rm", "--network", "none", "--user", "0",
-        "--mount", f"type=volume,source={volume},target=/source,readonly",
-        "--entrypoint", "python", image, "-c", BACKUP_CODE,
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--user",
+        "0",
+        "--mount",
+        f"type=volume,source={volume},target=/source,readonly",
+        "--entrypoint",
+        "python",
+        image,
+        "-c",
+        BACKUP_CODE,
     ]
     try:
         with partial.open("xb") as output:
             partial.chmod(0o600)
             result = subprocess.run(
-                args, stdout=output, stderr=subprocess.PIPE, timeout=300, check=False,
+                args,
+                stdout=output,
+                stderr=subprocess.PIPE,
+                timeout=300,
+                check=False,
             )
             output.flush()
             os.fsync(output.fileno())
@@ -476,6 +591,7 @@ def perform_update(manifest, root, settings, *, prepare, backup, start):
         {
             "commit": manifest["commit"],
             "image_id": manifest["image_id"],
+            "local_image_id": manifest.get("local_image_id", manifest["image_id"]),
             "updated_at": datetime.now(UTC).isoformat(),
         },
     )
@@ -518,20 +634,18 @@ def main():
             def prepare():
                 print("Скачиваю и проверяю готовый образ…")
                 download_image(manifest, image_archive)
-                current = docker(
-                    "image", "inspect", manifest["image"], "--format", "{{.Id}}", optional=True
-                ).strip()
-                if current != manifest["image_id"]:
-                    docker("image", "load", "--input", str(image_archive), timeout=600)
-                actual = docker(
-                    "image", "inspect", manifest["image"], "--format", "{{.Id}}"
-                ).strip()
-                if actual != manifest["image_id"]:
-                    raise UpdateError("Контрольная сумма Docker-образа не совпала.")
+                manifest["local_image_id"] = prepare_image(manifest, image_archive)
+                # Pin the runtime to the ID just verified; a mutable tag cannot change it.
+                compose.write_text(
+                    compose_text(manifest, home / "config", settings), encoding="utf-8"
+                )
+                docker(*args, "config", "--quiet")
 
             def backup():
                 print("Сохраняю настройки и резервные копии баз…")
-                location = backup_volumes(home, settings, manifest["image"], [bot, gateway])
+                location = backup_volumes(
+                    home, settings, manifest["local_image_id"], [bot, gateway]
+                )
                 print("Копия сохранена: " + str(location))
 
             def start():
@@ -549,17 +663,22 @@ def main():
                     timeout=240,
                 )
 
+            prepare()  # Always verify before any backup, stop or migration.
             installed = home / "installed.json"
             same = (
                 installed.exists()
                 and json.loads(installed.read_text()).get("commit") == manifest["commit"]
             )
-            if same and gateway and gateway["Image"] == manifest["image_id"]:
+            matching_ids = {
+                manifest["local_image_id"],
+                manifest.get("image_config_digest", manifest["image_id"]),
+            }
+            if same and gateway and gateway["Image"] in matching_ids:
                 print("Последняя версия уже установлена. Запускаю её.")
                 start()
             else:
                 perform_update(
-                    manifest, home, settings, prepare=prepare, backup=backup, start=start
+                    manifest, home, settings, prepare=lambda: None, backup=backup, start=start
                 )
             print("Готово. Открываю панель. Данные сохранены.")
             webbrowser.open("http://127.0.0.1:18000/admin")
