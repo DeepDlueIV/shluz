@@ -115,7 +115,7 @@ def main():
                     "--iptables=false",
                     "--ip6tables=false",
                     "--bridge=none",
-                    "--features=containerd-snapshotter="
+                    "--feature=containerd-snapshotter="
                     + ("true" if backend == "containerd" else "false"),
                 )
                 for _attempt in range(60):
