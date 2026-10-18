@@ -76,7 +76,8 @@ def main():
     previous_tempdir = tempfile.tempdir
     try:
         run("docker", "pull", "docker:29-dind")
-        with tempfile.TemporaryDirectory(prefix="shluz-stores-") as folder:
+        # DinD mounts a fresh /tmp; keep the shared fixture outside that overmount.
+        with tempfile.TemporaryDirectory(prefix="shluz-stores-", dir=ROOT) as folder:
             directory = Path(folder)
             # Save output from the nested CLI must be readable at the same path on the host.
             tempfile.tempdir = str(directory)
