@@ -1,0 +1,57 @@
+name: Transfer verified streaming source
+on:
+  push:
+    branches: [delivery/streaming-transfer-20261019]
+    paths: [.github/workflows/transfer-verified-streaming.yml]
+permissions:
+  contents: write
+jobs:
+  transfer:
+    if: github.repository == 'DeepDlueIV/shluz'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: f8f8edf39ecf3bac5afd210e22f6694b3c0face0
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore exact verified tree without user secrets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import base64, hashlib, json, lzma, os, subprocess, urllib.request
+          from pathlib import Path
+          assert subprocess.check_output(['git','rev-parse','HEAD']).decode().strip() == 'f8f8edf39ecf3bac5afd210e22f6694b3c0face0'
+          chunks=[]
+          for sha in ['31870e940d9f922ee929ff2635320baeebd48cfc','37d2a2fa4d120127bc3033885248a99b90b96b41','fa4e27762bbbbf7652bde0603fbf81960b5b1e51']:
+              request=urllib.request.Request('https://api.github.com/repos/DeepDlueIV/shluz/git/blobs/'+sha, headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(request,timeout=30) as response:
+                  data=json.load(response)
+              assert data['encoding']=='base64'
+              chunk=base64.b64decode(data['content'])
+              assert hashlib.sha1(b'blob '+str(len(chunk)).encode()+b'\0'+chunk).hexdigest()==sha
+              chunks.append(chunk)
+          packed=b''.join(chunks)
+          assert len(packed)==29960
+          assert hashlib.sha256(packed).hexdigest()=='0291a01575f036f3512c19c9701b7a3bd30ff1c95fc92885d14a9ce536634cd7'
+          patch=lzma.decompress(packed)
+          assert len(patch)==129589
+          assert hashlib.sha256(patch).hexdigest()=='ac67af9f94f15c9ed9433a79bfd3133bbaea2636c7adc7c7a3ee04e96536350f'
+          path=Path('/tmp/shluz-streaming.patch'); path.write_bytes(patch)
+          subprocess.run(['git','apply','--check',str(path)],check=True)
+          subprocess.run(['git','apply','--index',str(path)],check=True)
+          tree=subprocess.check_output(['git','write-tree']).decode().strip()
+          assert tree=='9fd80e7f4b286ac4035da7b5bbcb7e3cdbc93d0a',tree
+          print('Verified exact source tree:',tree)
+          PY
+      - name: Make candidate objects available without changing the shared branch
+        run: |
+          test -z "$(git ls-remote --heads origin delivery/streaming-candidate-20261019)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat: verified gateway SSE, privacy-safe metrics, Telegram streaming and WAL backup fix'
+          git push origin HEAD:refs/heads/delivery/streaming-candidate-20261019
