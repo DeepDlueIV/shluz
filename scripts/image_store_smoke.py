@@ -118,22 +118,29 @@ def main():
                     "--features=containerd-snapshotter="
                     + ("true" if backend == "containerd" else "false"),
                 )
-                for _attempt in range(90):
-                    if run(
-                        "docker",
-                        "exec",
-                        name,
-                        "docker",
-                        "info",
-                        "--format",
-                        "{{.ID}}",
-                        optional=True,
-                    ):
+                for _attempt in range(60):
+                    ready = subprocess.run(
+                        ["docker", "exec", name, "docker", "info"],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        check=False,
+                    )
+                    if ready.returncode == 0:
                         break
                     time.sleep(1)
                 else:
+                    log = subprocess.run(
+                        ["docker", "logs", name],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
                     raise RuntimeError(
-                        "Nested Docker failed: " + run("docker", "logs", name)[-3000:]
+                        "Nested Docker failed: "
+                        + (log.stdout + log.stderr)[-6000:]
+                        + "\nLast client error: "
+                        + ready.stderr[-2000:]
                     )
 
                 def nested(*args, timeout=180, optional=False, daemon=name):
