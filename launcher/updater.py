@@ -14,6 +14,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import tarfile
 import time
 import urllib.error
 import urllib.request
@@ -379,7 +380,7 @@ def compose_text(manifest, config, settings):
     )
 
 
-BACKUP_CODE = """import os,sqlite3,tarfile
+BACKUP_CODE = """import sqlite3,sys,tarfile
 from pathlib import Path
 root=Path('/source')
 for path in root.rglob('*'):
@@ -389,11 +390,51 @@ for path in root.rglob('*'):
    db=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True)
    assert db.execute('PRAGMA quick_check').fetchone()[0]=='ok','SQLite integrity failure'
    db.close()
-out=Path('/destination/data.tar.gz')
-with tarfile.open(out,'w:gz') as f: f.add(root,arcname='data')
-with tarfile.open(out,'r:gz') as f: f.getmembers()
-out.chmod(0o600)
+with tarfile.open(fileobj=sys.stdout.buffer,mode='w|gz') as f: f.add(root,arcname='data')
 """
+
+
+def archive_volume(volume, image, archive):
+    """Поток из read-only тома; файл создаёт хост, не root внутри Docker.
+
+    Не монтируем каталог назначения: UID контейнера не должен лишать владельца
+    чтения резервной копии. Бинарные данные не проходят через кодировку Windows.
+    """
+    archive = Path(archive)
+    partial = archive.with_suffix(".part")
+    args = [
+        "docker", "run", "--rm", "--network", "none", "--user", "0",
+        "--mount", f"type=volume,source={volume},target=/source,readonly",
+        "--entrypoint", "python", image, "-c", BACKUP_CODE,
+    ]
+    try:
+        with partial.open("xb") as output:
+            partial.chmod(0o600)
+            result = subprocess.run(
+                args, stdout=output, stderr=subprocess.PIPE, timeout=300, check=False,
+            )
+            output.flush()
+            os.fsync(output.fileno())
+        if result.returncode:
+            raise UpdateError("Резервная копия не создана; обновление не начато.")
+        # Прочитать весь архив до EOF: проверить и gzip CRC, и доступность на хосте.
+        import gzip
+
+        with gzip.open(partial, "rb") as stream:
+            while stream.read(1024 * 1024):
+                pass
+        with tarfile.open(partial, "r:gz") as saved:
+            if "data" not in saved.getnames():
+                raise UpdateError("В резервной копии отсутствуют данные; обновление остановлено.")
+        partial.replace(archive)
+    except (OSError, EOFError, tarfile.TarError, subprocess.TimeoutExpired) as exc:
+        # stderr может содержать приватные пути/данные; владельцу только безопасное описание.
+        raise UpdateError(
+            "Не удалось создать и проверить резервную копию. "
+            "Обновление не начато; прежние процессы будут запущены снова."
+        ) from exc
+    finally:
+        partial.unlink(missing_ok=True)
 
 
 def backup_volumes(root, settings, image, containers):
@@ -408,27 +449,7 @@ def backup_volumes(root, settings, image, containers):
                 continue
             dest = target / kind
             dest.mkdir()
-            docker(
-                "run",
-                "--rm",
-                "--network",
-                "none",
-                "--user",
-                "0",
-                "--mount",
-                f"type=volume,source={volume},target=/source,readonly",
-                "--mount",
-                f"type=bind,source={dest.resolve()},target=/destination",
-                "--entrypoint",
-                "python",
-                image,
-                "-c",
-                BACKUP_CODE,
-                timeout=300,
-            )
-            archive = dest / "data.tar.gz"
-            if not archive.is_file() or not archive.stat().st_size:
-                raise UpdateError("Резервная копия не создана; обновление не начато.")
+            archive_volume(volume, image, dest / "data.tar.gz")
         shutil.copytree(root / "config", target / "config")
         write_json(
             target / "backup.json",
