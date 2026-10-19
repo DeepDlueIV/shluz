@@ -137,6 +137,21 @@ def profile_text(remote: dict, local: dict) -> str:
     if plan.get("ends_at"):
         expires = datetime.fromisoformat(plan["ends_at"]).astimezone(UTC)
         lines.append(f"Тариф действует до: {expires:%d.%m.%Y %H:%M} UTC.")
+    if plan.get("billing_mode") == "payg":
+        funds = remote.get("wallet", {})
+        unit = funds.get("display_unit", "usd")
+        available = funds.get("available_credits" if unit == "credits" else "available_usd", "—")
+        lines.extend(
+            [
+                "По использованию: списывается стоимость каждого запроса по тарифу сервиса.",
+                f"Доступно: {html.escape(str(available))} "
+                + ("кредитов" if unit == "credits" else "USD"),
+                f"Баланс: {html.escape(str(funds.get('balance_usd', '—')))} USD.",
+                f"В резерве: {html.escape(str(funds.get('reserved_usd', '—')))} USD.",
+                "100 кредитов = 1 USD. Это один баланс, не два кошелька.",
+            ]
+        )
+        return "\n".join(lines)
     rows = (
         (("requests", "Пробные запросы"),)
         if plan.get("kind") == "demo"

@@ -3,6 +3,7 @@
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 {{ text_field(prefix, 'name', 'Название тарифа', values.get('name', ''), 'Например, Базовый', true) }}
 {{ text_field(prefix, 'code', 'Код тарифа', values.get('code', ''), 'basic', true, 64, 'plan_code', '[A-Za-z0-9][A-Za-z0-9_\\-]{0,63}') }}
+<label>Способ оплаты<select name="billing_mode"><option value="subscription" {% if values.get("billing_mode","subscription")=="subscription" %}selected{% endif %}>Подписка</option><option value="payg" {% if values.get("billing_mode")=="payg" %}selected{% endif %}>По использованию (PAYG)</option></select></label><small>В PAYG месячная цена, квоты и резерв кредитов ниже не применяются. Деньги списываются из кошелька по себестоимости плюс наценка. Значения подписки сохраняются для обратного переключения.</small>
 {{ number_field(prefix, 'monthly_price_usd', 'Цена в месяц, USD', values.get('monthly_price_usd', 0), '0.01', 'price') }}
 {{ number_field(prefix, 'monthly_request_limit', 'Запросов в месяц', values.get('monthly_request_limit'), '1', 'requests') }}
 <details class="details-panel field-wide advanced-fields" {% if show_advanced %}open{% endif %}>

@@ -35,3 +35,14 @@
 
 Перед публичным запуском: [GO_LIVE_CHECKLIST.md](GO_LIVE_CHECKLIST.md).
 Это отложенные подключения; тесты и наличие API не означают их настройки.
+
+## Дополнение 20.10.2026 — wallet-v1 и путь гостя
+
+[wallet-and-access.md](wallet-and-access.md): optional PAYG, общий кошелёк,
+представление USD/credits, назначение тарифов каналов и новые read-only wallet routes.
+`/plans` добавляет billing_mode; у PAYG цена в месяц null, не рисовать её как подписку.
+[guest-dashboard-journey.md](guest-dashboard-journey.md): первый prompt с главной
+переводит в гостевой кабинет, один SSE-запрос; OTP превращает гостя без второго демо.
+[venice-pricing-and-wallet.md](venice-pricing-and-wallet.md): проверенные внешние
+источники, старый billing/usage нельзя использовать как действующий.
+Frontend в web/ не изменён этим блоком. Публичный доступ и настоящие оплаты выключены.

@@ -82,7 +82,8 @@ def session_access(
                 headers={"Cache-Control": "no-store"},
             )
         raise
-    result = {"state": "active" if row.status == "approved" else row.status, "request_id": row.id}
+    state = "active" if row.status == "approved" else row.status
+    result = {"state": "blocked" if state == "archived" else state, "request_id": row.id}
     if row.status == "approved":
         result.update(
             account_id=row.account_id,

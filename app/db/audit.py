@@ -9,6 +9,10 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 from app.db.base import Base
 
 ACTION_LABELS = {
+    "wallet.reconciled": "Расход кошелька сверен",
+    "wallet.credited": "Средства начислены администратором",
+    "wallet.unit": "Отображение баланса изменено",
+    "wallet.price_reviewed": "Предел PAYG-модели изменён",
     "demo.protection.updated": "Защита демо изменена",
     "demo.model_bound.updated": "Предел стоимости демо-модели изменён",
     "demo.updated": "Настройки демо изменены",
@@ -32,6 +36,7 @@ ACTION_LABELS = {
     "plan.restored": "Тариф восстановлен",
 }
 PLAN_FIELDS = (
+    "billing_mode",
     "code",
     "name",
     "monthly_price_usd",

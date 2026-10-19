@@ -61,10 +61,14 @@ async def handle_action(
             models = ", ".join(m[:100] for m in model_list[:3]) or "модели пока не настроены"
             if len(model_list) > 3:
                 models += f" и ещё {len(model_list) - 3}"
+            price_line = (
+                "По использованию · списание с кошелька по тарифу сервиса"
+                if plan.get("billing_mode") == "payg"
+                else f"{html.escape(str(plan['monthly_price_usd']))} USD/месяц\n"
+                f"Запросов: {count if count is not None else 'лимит не задан'}"
+            )
             entry = (
-                f"<b>{html.escape(plan['name'][:100])}</b> · "
-                f"{html.escape(plan['monthly_price_usd'])} USD/месяц\n"
-                f"Запросов: {count if count is not None else 'лимит не задан'}\n"
+                f"<b>{html.escape(plan['name'][:100])}</b> · {price_line}\n"
                 f"Модели Telegram: {html.escape(models)}"
             )
             if len("\n\n".join(lines)) + len(entry) > 3200:

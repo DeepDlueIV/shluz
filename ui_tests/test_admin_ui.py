@@ -317,3 +317,21 @@ def test_web_protection_ready_states_and_mobile(page, preview):
     page.set_viewport_size({"width": 390, "height": 844})
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     capture(page, "web-protection-mobile")
+
+
+def test_wallet_units_and_channel_controls(page, preview):
+    server, _ = preview
+    page.goto(server.url + "/admin/wallets")
+    expect(page.get_by_role("heading", name="Кошельки", exact=True)).to_be_visible()
+    card = page.locator("#account-" + server.alice_id)
+    expect(card.get_by_text("Алексей", exact=True)).to_be_visible()
+    card.get_by_label("Показывать баланс").select_option("credits")
+    card.get_by_role("button", name="Сохранить отображение").click()
+    expect(
+        page.locator("#account-" + server.alice_id).get_by_label("Показывать баланс")
+    ).to_have_value("credits")
+    capture(page, "wallets-desktop")
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(server.url + "/admin/wallets")
+    expect(page.get_by_role("heading", name="Кошельки", exact=True)).to_be_visible()
+    capture(page, "wallets-mobile")

@@ -33,7 +33,7 @@ jobs:
       - name: Onboarding and concurrency on real PostgreSQL
         env:
           SHLUZ_ONBOARDING_TEST_POSTGRES: postgresql+psycopg://test_user:ephemeral_ci_only@127.0.0.1:5432/shluz_onboarding_ci
-        run: pytest tests/api/test_telegram_onboarding.py tests/product tests/webaccess -v
+        run: pytest tests/api/test_telegram_onboarding.py tests/product tests/webaccess tests/billing tests/api/test_telegram_recovery.py -v
       - name: PostgreSQL migration
         env:
           SHLUZ_DATABASE_URL: postgresql+psycopg://test_user:ephemeral_ci_only@127.0.0.1:5432/shluz_onboarding_ci

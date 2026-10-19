@@ -80,6 +80,8 @@ class AccountOverview:
     blocked_reason: str | None
     created_at: datetime
     demo: bool = False
+    billing_mode: str = "subscription"
+    channel_plans: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +97,7 @@ class PlanOverview:
     markup_percent: Decimal
     active: bool
     subscriber_count: int
+    billing_mode: str = "subscription"
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,6 +161,7 @@ def list_accounts_overview(
     }
 
     plans_by_account: dict[str, Plan] = {}
+    channel_accounts = set()
     subscription_rows = session.execute(
         select(Subscription, Plan)
         .join(Plan, Plan.id == Subscription.plan_id)
@@ -166,10 +170,16 @@ def list_accounts_overview(
             Subscription.starts_at <= resolved_now,
             or_(Subscription.ends_at.is_(None), Subscription.ends_at > resolved_now),
         )
-        .order_by(desc(Subscription.starts_at), desc(Subscription.created_at))
+        .order_by(
+            desc(Subscription.source == "*"),
+            desc(Subscription.starts_at),
+            desc(Subscription.created_at),
+        )
     )
     for subscription, plan in subscription_rows:
         plans_by_account.setdefault(subscription.account_id, plan)
+        if subscription.source != "*":
+            channel_accounts.add(subscription.account_id)
 
     all_usage_by_account = {
         account_id: (
@@ -227,9 +237,8 @@ def list_accounts_overview(
                 totals["requests"] = int(totals["requests"]) + (event.quota_kind != "demo")
                 totals["credits"] = int(totals["credits"]) + event.reserved_credits
 
-    from app.product.service import policy
+    from app.product.service import grant_limit
 
-    demo_config = policy(session)
     demo_grants = {grant.account_id: grant for grant in session.scalars(select(DemoGrant))}
     result = []
     for account in accounts:
@@ -254,21 +263,26 @@ def list_accounts_overview(
         month_credits = int(month["credits"])
         month_cost = _decimal(month["cost"])
         month_billed = _decimal(month["billed"])
+        quota_plan = (
+            plan
+            if plan and plan.billing_mode == "subscription" and account.id not in channel_accounts
+            else None
+        )
         remaining_requests = _remaining_int(
-            plan.monthly_request_limit if plan else None,
+            quota_plan.monthly_request_limit if quota_plan else None,
             month_requests,
         )
         remaining_credits = _remaining_int(
-            plan.monthly_credit_limit if plan else None,
+            quota_plan.monthly_credit_limit if quota_plan else None,
             month_credits,
         )
         remaining_cost = _remaining_decimal(
-            plan.monthly_cost_limit_usd if plan else None,
+            quota_plan.monthly_cost_limit_usd if quota_plan else None,
             month_cost,
         )
 
         if demo:
-            remaining_requests = max(0, demo_config.demo_requests - demo.requests_used)
+            remaining_requests = max(0, grant_limit(session, account.id) - demo.requests_used)
         blocked_reason = None
         if account.status != "active":
             blocked_reason = "Аккаунт заблокирован"
@@ -287,6 +301,8 @@ def list_accounts_overview(
         cost = usage[3]
         result.append(
             AccountOverview(
+                billing_mode=plan.billing_mode if plan else "subscription",
+                channel_plans=account.id in channel_accounts,
                 id=account.id,
                 display_name=account.display_name,
                 role=account.role,
@@ -298,7 +314,7 @@ def list_accounts_overview(
                 plan_active=plan.active if plan else None,
                 monthly_request_limit=plan.monthly_request_limit
                 if plan
-                else (demo_config.demo_requests if demo else None),
+                else (grant_limit(session, account.id) if demo else None),
                 monthly_credit_limit=plan.monthly_credit_limit if plan else None,
                 monthly_cost_limit_usd=plan.monthly_cost_limit_usd if plan else None,
                 token_count=token_counts.get(account.id, 0),
@@ -346,6 +362,7 @@ def list_plans_overview(
     }
     return [
         PlanOverview(
+            billing_mode=plan.billing_mode,
             id=plan.id,
             code=plan.code,
             name=plan.name,

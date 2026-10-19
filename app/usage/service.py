@@ -4,6 +4,7 @@ from decimal import ROUND_CEILING, Decimal
 
 from sqlalchemy import and_, func, or_, select
 
+from app.billing import service as billing
 from app.config import Settings
 from app.db.database import Database
 from app.db.models import Account, DemoGrant, Plan, UsageEvent
@@ -87,6 +88,7 @@ class UsageService:
             is_demo = False
             output_limit = requested_output_tokens
             plan: Plan | None = None
+            quota_scope = "*"
             if bootstrap:
                 ensure_bootstrap_account(session)
             else:
@@ -97,7 +99,9 @@ class UsageService:
                 )
                 if account is None:
                     raise SubscriptionRequiredError("Active account is required")
-                subscription_row = product.active_subscription(session, account_id, resolved_now)
+                subscription_row = product.active_subscription(
+                    session, account_id, resolved_now, source
+                )
                 grant = session.get(DemoGrant, account_id)
                 if subscription_row is None and grant is None:
                     raise SubscriptionRequiredError("Active subscription is required")
@@ -107,8 +111,12 @@ class UsageService:
                 config = product.policy(session)
                 product.limit_rate(session, account_id, config, resolved_now)
                 if subscription_row:
-                    _, plan = subscription_row
-                    self._check_limits(session, account_id, plan, resolved_now)
+                    subscription, plan = subscription_row
+                    quota_scope = subscription.source
+                    if plan.billing_mode == "subscription":
+                        self._check_limits(session, account_id, plan, resolved_now, quota_scope)
+                    elif plan.billing_mode != "payg":
+                        raise SubscriptionRequiredError("Unknown billing mode")
                     output_limit = min(requested_output_tokens or 4096, 4096)
                     if input_chars > 200000:
                         raise product.InputTooLarge()
@@ -120,7 +128,11 @@ class UsageService:
                         raise product.InputTooLarge()
                     output_limit = requested_output_tokens or config.demo_max_output_tokens
                     is_demo = product.reserve_demo(session, account_id, config, resolved_now)
-            reserve = plan.request_credit_reserve if plan is not None else 0
+            reserve = (
+                plan.request_credit_reserve
+                if plan is not None and plan.billing_mode == "subscription"
+                else 0
+            )
             markup = plan.markup_percent if plan is not None else Decimal("0")
             event = UsageEvent(
                 account_id=account_id,
@@ -129,7 +141,10 @@ class UsageService:
                 provider=provider,
                 model=model,
                 status="pending",
-                quota_kind="demo" if is_demo else "monthly",
+                quota_kind="demo"
+                if is_demo
+                else ("payg" if plan and plan.billing_mode == "payg" else "monthly"),
+                quota_scope=quota_scope,
                 reserved_credits=reserve,
                 pricing_markup_percent=markup,
                 reservation_expires_at=expires_at,
@@ -142,6 +157,8 @@ class UsageService:
                 total_timeout, idle_timeout = reserve_protection(
                     session, event, config, resolved_now
                 )
+            if plan and plan.billing_mode == "payg":
+                billing.reserve(session, event, input_chars, output_limit)
             # Серверный callback не является параметром JSON. Cookie, IP, повторный ID,
             # слот и деньги проверяются под ТОЙ ЖЕ блокировкой, до upstream.
             if web_context is not None:
@@ -161,7 +178,7 @@ class UsageService:
                 idle_seconds=idle_timeout,
             )
 
-    def _check_limits(self, session, account_id: str, plan: Plan, now: datetime) -> None:
+    def _check_limits(self, session, account_id: str, plan: Plan, now: datetime, scope="*") -> None:
         period_start = _month_start(now)
         active_pending = or_(
             and_(UsageEvent.status == "pending", UsageEvent.reservation_expires_at > now),
@@ -170,7 +187,8 @@ class UsageService:
         common = (
             UsageEvent.account_id == account_id,
             UsageEvent.created_at >= period_start,
-            UsageEvent.quota_kind != "demo",
+            UsageEvent.quota_kind == "monthly",
+            UsageEvent.quota_scope == scope,
         )
         request_count = int(
             session.scalar(
@@ -279,6 +297,7 @@ class UsageService:
             event.reservation_expires_at = None
             event.completed_at = datetime.now(UTC)
             settle_protection(session, event, result=result)
+            billing.settle(session, event, result=result)
             session.flush()
             return event
 
@@ -326,6 +345,7 @@ class UsageService:
             event.reservation_expires_at = None
             event.completed_at = datetime.now(UTC)
             settle_protection(session, event, result=partial, definite=definite)
+            billing.settle(session, event, result=partial, definite=definite)
             session.flush()
             return event
 

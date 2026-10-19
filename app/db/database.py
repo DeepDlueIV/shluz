@@ -7,6 +7,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.billing import models as _billing_models  # noqa: F401
 from app.config import Settings
 from app.db import models as _models  # noqa: F401
 from app.db.base import Base
