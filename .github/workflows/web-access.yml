@@ -11,6 +11,13 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+      - name: Snapshot exact candidate source
+        run: git archive --format=zip --output=candidate-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candidate-web-access-source
+          path: candidate-source.zip
+          retention-days: 7
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
