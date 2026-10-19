@@ -1,0 +1,69 @@
+name: Transfer web access candidate
+on:
+  push:
+    branches: ['delivery/web-access-transfer-20261019']
+    paths: ['.github/workflows/transfer-web-access.yml']
+permissions:
+  contents: write
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 983ff26b30c08245fa08edaad615791a47296407
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore exact locally verified candidate tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import base64, hashlib, json, lzma, os, subprocess, urllib.request
+          from pathlib import Path
+          blobs = ['ee2b1592f35276aeb6380119a722ab6c4beb1b0c', '2c13763e10663cc0ca3715fc8ee616e4f7299e77', 'a73a16da3186c650e7402415825b22f669e0ab61']
+          parts = []
+          for sha in blobs:
+              request = urllib.request.Request('https://api.github.com/repos/DeepDlueIV/shluz/git/blobs/' + sha,
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+              with urllib.request.urlopen(request, timeout=30) as stream:
+                  body = json.load(stream)
+              part = base64.b64decode(body['content'])
+              assert hashlib.sha1(('blob ' + str(len(part)) + '\0').encode() + part).hexdigest() == sha
+              parts.append(part)
+          raw = lzma.decompress(base64.b64decode(b''.join(parts)))
+          assert len(raw) == 144074
+          assert hashlib.sha256(raw).hexdigest() == 'c3e4d7a675f9c3b217db4e030950cb770e8788d3dfd243b2fa77c216a4b61fe6'
+          entries = json.loads(raw)
+          for name, before, payload in entries:
+              path = Path(name)
+              assert not path.is_absolute() and '..' not in path.parts and '.git' not in path.parts
+              assert path.parts[0] not in {'web', 'secrets', 'data'} and not path.name.startswith('.env')
+              if before == 'new':
+                  assert not path.exists(), name
+                  after = payload
+              else:
+                  old = path.read_text()
+                  assert hashlib.sha256(old.encode()).hexdigest() == before, name
+                  lines = old.splitlines(keepends=True)
+                  for start, end, replacement in reversed(payload):
+                      lines[start:end] = [replacement]
+                  after = ''.join(lines)
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text(after)
+          subprocess.run(['git', 'add', '-A'], check=True)
+          actual = subprocess.check_output(['git', 'write-tree'], text=True).strip()
+          assert actual == '3d67e3ad82fae1ab4d73e20b9eea93e14ed08909', actual
+          print('Exact candidate source verified:', actual)
+          PY
+      - name: Publish candidate objects without changing shared branch or preview
+        run: |
+          git fetch --depth=1 origin 81277e50cbe891f7442b67f61f0a44ef13d87263
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          commit=$(git commit-tree 3d67e3ad82fae1ab4d73e20b9eea93e14ed08909 -p 81277e50cbe891f7442b67f61f0a44ef13d87263 -m 'feat(web): integrate anonymous demo, passwordless OTP and server-side abuse controls' -m 'Local verification: 356 passed, 2 platform skips; 34 web security tests passed, lint clean. Public web disabled until real CAPTCHA/SMTP/HTTPS configuration. Pending independent CI execution on PostgreSQL and Chromium; no production readiness claim. Temporary tooling workflow removed from final source; shared preview and web frontend not touched.')
+          git push origin "$commit:refs/heads/delivery/web-access-candidate-20261019"
+          echo "Candidate commit: $commit"
