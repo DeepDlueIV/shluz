@@ -33,7 +33,7 @@ For every task, check which Superpowers Skills apply before taking action.
 - Use every relevant Skill and follow its workflow.
 - Prefer `Superpowers:brainstorming` when meaningful implementation choices require user alignment.
 - Do not skip a relevant Skill because the task appears small or familiar.
-- If no Skill applies, state that it was checked and skipped before continuing normally.
+- Do not announce that irrelevant skills were checked or skipped; keep operational chatter minimal.
 - Do not use a Skill when it would increase complexity without meaningful benefit.
 
 When independent subtasks exist, execute them in parallel using subagents whenever beneficial.
@@ -162,7 +162,6 @@ If two solutions are equally good, choose the simpler one.
 
 When proposing a next task or step after completing work:
 
-- briefly assess its complexity;
-- outline the key steps;
-- recommend an appropriate reasoning effort: low, medium, high, xhigh, max, or ultra;
-- state which Superpowers Skills were used, if any.
+- recommend the single most useful next action, if a next action is genuinely needed;
+- include complexity, implementation steps, reasoning effort, or skill names only when explicitly requested or needed for a consequential decision.
+- Never append a routine next-steps section to a simple answer.
