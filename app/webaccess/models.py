@@ -98,3 +98,14 @@ class WebRequest(Base):
     id: Mapped[str] = mapped_column(String(110), primary_key=True)
     event_id: Mapped[str] = mapped_column(ForeignKey("usage_events.id"))
     expires: Mapped[int] = mapped_column(Integer, index=True)
+
+
+class TelegramLoginChallenge(Base):
+    __tablename__ = "web_telegram_login_challenges"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(64), index=True)
+    nonce_hash: Mapped[str] = mapped_column(String(64))
+    created: Mapped[int] = mapped_column(Integer)
+    expires: Mapped[int] = mapped_column(Integer, index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    used: Mapped[bool] = mapped_column(Boolean, default=False)

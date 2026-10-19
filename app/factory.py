@@ -34,6 +34,8 @@ from app.webaccess.perimeter import WebPerimeter
 from app.webaccess.routes import router as web_router
 from app.webaccess.routes import web_http_error, web_validation_error
 from app.webaccess.settings import WebSettings
+from app.webaccess.telegram_login import TelegramVerifier
+from app.webaccess.telegram_login import router as telegram_login_router
 
 
 def build_provider_registry(settings: Settings) -> ProviderRegistry:
@@ -97,6 +99,7 @@ def create_app(
         docs_url=None,
         redoc_url=None,
     )
+    app.state.telegram_login = TelegramVerifier()
     app.state.web_settings = resolved_web
     app.state.web_captcha = web_captcha if web_captcha is not None else Turnstile(resolved_web)
     app.state.web_mailer = web_mailer if web_mailer is not None else SmtpMailer(resolved_web)
@@ -142,6 +145,7 @@ def create_app(
     app.include_router(access_admin_router)
     app.include_router(api_router)
     app.include_router(web_router)
+    app.include_router(telegram_login_router)
     app.include_router(web_admin_router)
     app.include_router(telegram_router)
     app.include_router(telegram_admin_router)

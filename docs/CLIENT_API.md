@@ -1,6 +1,6 @@
 # Контракт клиентов Shluz — индекс
 
-Версия веб-контракта: **web-access-v1, 19.10.2026**.
+Версия веб-контракта: **web-access-v1.1, 20.10.2026**.
 
 Это начальная точка для агента сайта. Прочитать до реализации API-запросов.
 Сайт живёт в `web/`, gateway в `app/`, Telegram в `telegram_bot/`. Один серверный
@@ -9,6 +9,7 @@
 
 | Документ | Назначение и статус |
 |---|---|
+| [telegram-web-login.md](telegram-web-login.md) | Официальный Telegram Login через JS library и серверный RS256/nonce; требует Client ID и Allowed URLs |
 | [web-access-and-abuse.md](web-access-and-abuse.md) | Реализованные cookie-сессии, гостевой демо-чат, OTP, CORS/CSRF, Turnstile и ограничения |
 | [client-api-demo.md](client-api-demo.md) | Существующий Bearer API профиля, моделей, тарифов и расхода; используется desktop/ботом, не публичным гостем |
 | [streaming-and-metrics.md](streaming-and-metrics.md) | SSE, `[DONE]`, ошибки, отмена, неопределённый usage и метрики |
@@ -29,5 +30,8 @@
 а не считать имя ветки гарантией актуальности. Разработку интерфейса на заглушках
 явно отличать от проверки настоящего gateway и доставки писем.
 
-Вход на сайт через официальный Telegram Login, связывание существующих email- и
-Telegram-аккаунтов, frontend и настоящий платежный API этим блоком не реализованы.
+Официальный Telegram Login сервера реализован дополнением v1.1. Связывание уже
+существующих email- и Telegram-аккаунтов, frontend и платёжный API не реализованы.
+
+Перед публичным запуском: [GO_LIVE_CHECKLIST.md](GO_LIVE_CHECKLIST.md).
+Это отложенные подключения; тесты и наличие API не означают их настройки.

@@ -71,6 +71,7 @@ def dashboard(request: Request, _: Admin):
             ),
             "mail_ready": bool(web.smtp_host and web.smtp_sender),
             "secure_cookie": web.secure_cookie,
+            "telegram_login_ready": bool(web.telegram_client_id),
         },
         headers={"Cache-Control": "no-store"},
     )

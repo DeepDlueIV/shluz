@@ -14,6 +14,7 @@ from app.webaccess.models import (
     CaptchaUse,
     DemoControl,
     OtpChallenge,
+    TelegramLoginChallenge,
     WebBucket,
     WebRequest,
     WebSession,
@@ -56,7 +57,7 @@ def consume(session, key, limit, seconds, now=None):
 
 def prune(session, now, limit=100):
     # Лимит работы уборки: не сканируем/не удаляем всю таблицу при каждом запросе.
-    for model in (WebBucket, CaptchaUse, OtpChallenge, WebRequest):
+    for model in (WebBucket, CaptchaUse, OtpChallenge, TelegramLoginChallenge, WebRequest):
         ids = list(session.scalars(select(model.id).where(model.expires <= now).limit(limit)))
         if ids:
             session.execute(delete(model).where(model.id.in_(ids)))

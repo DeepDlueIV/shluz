@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class WebSettings(BaseSettings):
+    telegram_client_id: str = Field(default="", pattern=r"^(?:[1-9][0-9]{0,19})?$")
     enabled: bool = False
     secret: SecretStr | None = None
     origins: list[str] = Field(default_factory=list)
