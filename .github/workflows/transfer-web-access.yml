@@ -59,11 +59,16 @@ jobs:
           assert actual == '3d67e3ad82fae1ab4d73e20b9eea93e14ed08909', actual
           print('Exact candidate source verified:', actual)
           PY
-      - name: Publish candidate objects without changing shared branch or preview
+      - name: Transfer product source only within Actions token permissions
         run: |
           git fetch --depth=1 origin 81277e50cbe891f7442b67f61f0a44ef13d87263
+          # Actions token cannot modify workflows. Preserve them exactly from parent;
+          # workflow changes will be applied separately by the authorized connector.
+          git restore --source=81277e50cbe891f7442b67f61f0a44ef13d87263 --staged --worktree .github/workflows
+          git diff --cached --exit-code 81277e50cbe891f7442b67f61f0a44ef13d87263 -- .github/workflows
+          tree=$(git write-tree)
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          commit=$(git commit-tree 3d67e3ad82fae1ab4d73e20b9eea93e14ed08909 -p 81277e50cbe891f7442b67f61f0a44ef13d87263 -m 'feat(web): integrate anonymous demo, passwordless OTP and server-side abuse controls' -m 'Local verification: 356 passed, 2 platform skips; 34 web security tests passed, lint clean. Public web disabled until real CAPTCHA/SMTP/HTTPS configuration. Pending independent CI execution on PostgreSQL and Chromium; no production readiness claim. Temporary tooling workflow removed from final source; shared preview and web frontend not touched.')
+          commit=$(git commit-tree "$tree" -p 81277e50cbe891f7442b67f61f0a44ef13d87263 -m 'feat(web): integrate anonymous demo, passwordless OTP and server-side abuse controls' -m 'Product source verified locally: 356 tests passed, 2 platform skips; 34 web security tests passed, lint clean. Public web disabled until real CAPTCHA/SMTP/HTTPS configuration. Workflows preserved due to Actions token scope; updated verification workflows pending authorized connector write. No shared preview or live data changes.')
           git push origin "$commit:refs/heads/delivery/web-access-candidate-20261019"
-          echo "Candidate commit: $commit"
+          echo "Candidate commit: $commit, tree: $tree"
