@@ -6,6 +6,8 @@ on:
 permissions:
   contents: read
 jobs:
+  postgres:
+    uses: ./.github/workflows/telegram-onboarding.yml
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 12
