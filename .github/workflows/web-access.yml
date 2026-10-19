@@ -1,0 +1,36 @@
+name: Web access security
+on:
+  push:
+    branches: ['feat/web-access-otp-20261019']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -e '.[dev,ui]'
+      - run: python -m pytest tests/webaccess -q
+      - run: ruff check .
+      - run: python -m pytest tests -q
+      - name: Check migrations from clean schema
+        run: alembic upgrade head
+        env:
+          SHLUZ_DATABASE_URL: sqlite+pysqlite:///./security-migration.db
+      - run: python -m playwright install --with-deps chromium
+      - run: python -m pytest ui_tests -q
+      - name: Package exact tracked source
+        if: success()
+        run: git archive --format=zip --output=source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: verified-web-access-source
+          path: source.zip
+          retention-days: 7
