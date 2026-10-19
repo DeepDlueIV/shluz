@@ -13,7 +13,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip download --only-binary=:all: --no-deps ruff aiogram magic-filter --dest wheels
+      - run: |
+          python -m pip download --only-binary=:all: --no-deps ruff aiogram magic-filter --dest wheels
       - uses: actions/upload-artifact@v4
         with:
           name: offline-verification-tools
