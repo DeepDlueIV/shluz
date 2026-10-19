@@ -247,9 +247,9 @@ class ProductPolicy(Base):
     __tablename__ = "product_policy"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default="default")
     mode: Mapped[str] = mapped_column(String(16), default="demo")
-    demo_requests: Mapped[int] = mapped_column(Integer, default=3)
+    demo_requests: Mapped[int] = mapped_column(Integer, default=1)
     demo_models_json: Mapped[str] = mapped_column(String(22000), default='["mock-chat"]')
-    demo_max_input_chars: Mapped[int] = mapped_column(Integer, default=24000)
+    demo_max_input_chars: Mapped[int] = mapped_column(Integer, default=3000)
     demo_max_output_tokens: Mapped[int] = mapped_column(Integer, default=512)
     demo_daily_requests: Mapped[int] = mapped_column(Integer, default=100)
     requests_per_minute: Mapped[int] = mapped_column(Integer, default=30)

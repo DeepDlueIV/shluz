@@ -173,7 +173,7 @@ async def chat_completions(
     )
     session = None
     try:
-        if payload.stream:
+        if payload.stream or reservation.demo:
             session = StreamSession(
                 provider,
                 chat_request,
@@ -187,8 +187,20 @@ async def chat_completions(
                 first = await session.next()
             except (TimeoutError, StopAsyncIteration) as exc:
                 raise ProviderError("Stream did not start") from exc
-            return ManagedStreamResponse(session, first)
-        result = await run_in_threadpool(provider.chat_completion, chat_request)
+            if payload.stream:
+                return ManagedStreamResponse(session, first)
+            # JSON-демо использует тот же отменяемый upstream и общий deadline,
+            # а не поток, который продолжит работать в фоне после wait_for(thread).
+            chunk = first
+            while True:
+                session.accept(chunk)
+                if chunk.done:
+                    result = session.result()
+                    break
+                chunk = await session.next()
+            await session.close()
+        else:
+            result = await run_in_threadpool(provider.chat_completion, chat_request)
     except ProviderAuthenticationError:
         await run_in_threadpool(
             usage_service.record_failure,
@@ -243,7 +255,7 @@ async def chat_completions(
             param=None,
             code="provider_rate_limit",
         )
-    except ProviderError:
+    except (ProviderError, TimeoutError, StopAsyncIteration):
         await run_in_threadpool(
             usage_service.record_failure,
             reservation,
@@ -277,6 +289,8 @@ async def chat_completions(
         result=result,
         timing=observation.timing(),
     )
+    if session:
+        session.settled = True
     observation.finish("success", result)
 
     return ChatCompletionResponseSchema(

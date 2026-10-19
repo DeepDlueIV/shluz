@@ -13,7 +13,7 @@ def test_stream_uses_lifetime_demo_and_does_not_reset(demo_client):
         "messages": [{"role": "user", "content": "hi"}],
         "stream": True,
     }
-    for _ in range(3):
+    for _ in range(1):
         r = c.post("/v1/chat/completions", headers=headers, json=request)
         assert r.status_code == 200 and r.text.endswith("data: [DONE]\n\n")
     assert c.post("/v1/chat/completions", headers=headers, json=request).status_code == 429

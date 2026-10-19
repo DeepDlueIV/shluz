@@ -39,7 +39,7 @@ def chat(c, token, model="mock-chat", **extra):
     )
 
 
-def test_start_grants_three_lifetime_requests_without_invite(demo_client):
+def test_start_grants_one_lifetime_request_without_invite(demo_client):
     c = demo_client
     first = start(c).json()
     assert first["state"] == "active", "Start должен сразу давать демо, без заявки"
@@ -48,11 +48,11 @@ def test_start_grants_three_lifetime_requests_without_invite(demo_client):
     p = c.get("/v1/me", headers=headers).json()
     assert p["plan"]["kind"] == "demo"
     assert p["allowance"]["resets_at"] is None
-    assert p["allowance"]["requests"]["remaining"] == 3
-    for i in range(3):
+    assert p["allowance"]["requests"]["remaining"] == 1
+    for i in range(1):
         assert chat(c, token).status_code == 200
         assert (
-            c.get("/v1/me", headers=headers).json()["allowance"]["requests"]["remaining"] == 2 - i
+            c.get("/v1/me", headers=headers).json()["allowance"]["requests"]["remaining"] == 0 - i
         )
     denied = chat(c, token)
     assert denied.status_code == 429 and denied.json()["error"]["code"] == "demo_exhausted"
@@ -63,6 +63,11 @@ def test_start_grants_three_lifetime_requests_without_invite(demo_client):
 
 def test_demo_does_not_reset_next_month_or_different_channel(demo_client):
     c = demo_client
+    # Проверяем исторический/настроенный пакет из трёх запросов, не новый default.
+    from app.db.models import ProductPolicy
+
+    with c.app.state.database.session() as s:
+        s.add(ProductPolicy(id="default", demo_requests=3))
     account = start(c).json()["account_id"]
     service = c.app.state.usage_service
     from app.product.service import DemoExhausted
@@ -86,7 +91,7 @@ def test_demo_does_not_reset_next_month_or_different_channel(demo_client):
         )
 
 
-def test_atomic_reservations_cannot_spend_four_demo_requests(demo_client):
+def test_atomic_reservations_cannot_spend_two_demo_requests(demo_client):
     c = demo_client
     account = start(c).json()["account_id"]
     service = c.app.state.usage_service
@@ -102,7 +107,7 @@ def test_atomic_reservations_cannot_spend_four_demo_requests(demo_client):
             return False
 
     with ThreadPoolExecutor(max_workers=8) as pool:
-        assert sum(pool.map(reserve, range(8))) == 3
+        assert sum(pool.map(reserve, range(8))) == 1
 
 
 def test_channel_and_plan_model_intersection_enforced_on_post(demo_client):
@@ -153,7 +158,7 @@ def test_paid_plan_preserves_demo_after_expiry_and_start(demo_client):
         s.get(Subscription, sub_id).status = "cancelled"
     start(c)
     p = c.get("/v1/me", headers={"Authorization": "Bearer " + token}).json()
-    assert p["allowance"]["requests"]["remaining"] == 2
+    assert p["allowance"]["requests"]["remaining"] == 0
 
 
 def test_demo_input_and_output_caps_before_upstream(demo_client):
@@ -172,7 +177,7 @@ def test_demo_input_and_output_caps_before_upstream(demo_client):
     )
     assert r.status_code == 400 and r.json()["error"]["code"] == "input_too_large"
     # Отклонённый до провайдера ввод не списывает демо.
-    assert c.get("/v1/me", headers=headers).json()["allowance"]["requests"]["remaining"] == 3
+    assert c.get("/v1/me", headers=headers).json()["allowance"]["requests"]["remaining"] == 1
     assert chat(c, token, max_completion_tokens=100000).status_code == 400
 
 
@@ -224,7 +229,7 @@ def test_policy_admin_requires_csrf_and_preserves_counter(demo_client):
         c.get("/v1/me", headers={"Authorization": "Bearer " + token}).json()["allowance"][
             "requests"
         ]["remaining"]
-        == 4
+        == 0  # Новый лимит действует на новые пакеты, не пополняет использованный.
     )
 
 
@@ -232,7 +237,7 @@ def test_demo_does_not_spend_paid_quota(demo_client):
     c = demo_client
     who = start(c).json()
     token = who["token"]
-    for _ in range(3):
+    for _ in range(1):
         assert chat(c, token).status_code == 200
     with c.app.state.database.session() as s:
         plan = Plan(code="upgrade", name="Upgrade", monthly_request_limit=10)

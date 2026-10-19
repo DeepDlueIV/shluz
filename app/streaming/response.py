@@ -28,9 +28,13 @@ class StreamSession:
         self.reservation, self.usage, self.observation = reservation, usage, observation
         self.deadline = time.monotonic() + min(
             settings.stream_timeout_seconds,
+            reservation.timeout_seconds or settings.stream_timeout_seconds,
             max(1, settings.reservation_ttl_seconds - 5),
         )
-        self.idle_timeout = settings.stream_idle_timeout_seconds
+        self.idle_timeout = min(
+            settings.stream_idle_timeout_seconds,
+            reservation.idle_seconds or settings.stream_idle_timeout_seconds,
+        )
         self.include_usage = include_usage
         self.parts = []
         self.chars = 0

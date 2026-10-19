@@ -731,10 +731,10 @@ def test_demo_start_exhaustion_and_payment_menu_without_personal_files(tmp_path)
             session = RecordingSession()
             bot = Bot(cfg.bot_token.get_secret_value(), session=session)
             await dp.feed_update(bot, incoming(1, "/start"))
-            assert "осталось 3 из 3" in session.texts()
+            assert "осталось 1 из 1" in session.texts()
             for i in range(2, 6):
                 await dp.feed_update(bot, incoming(i, "hello"))
-            assert count_usage(client) == 3
+            assert count_usage(client) == 1
             assert "Пробные запросы закончились" in session.texts()
             await dp.feed_update(bot, incoming(6, "/tariffs"))
             await dp.feed_update(bot, incoming(7, callback="pay"))
@@ -743,7 +743,7 @@ def test_demo_start_exhaustion_and_payment_menu_without_personal_files(tmp_path)
             assert "Входные токены" in session.texts() and "Списано:" in session.texts()
             await dp.feed_update(bot, incoming(9, "/models"))
             assert "Выберите модель" in session.texts()
-            assert count_usage(client) == 3
+            assert count_usage(client) == 1
             await ctrl.close()
             await http.aclose()
 

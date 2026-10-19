@@ -9,6 +9,8 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 from app.db.base import Base
 
 ACTION_LABELS = {
+    "demo.protection.updated": "Защита демо изменена",
+    "demo.model_bound.updated": "Предел стоимости демо-модели изменён",
     "demo.updated": "Настройки демо изменены",
     "models.updated": "Доступные модели изменены",
     "telegram.demo_registered": "Telegram: демо выдано автоматически",
