@@ -1,0 +1,31 @@
+{% extends 'admin/base.html' %}
+{% block title %}Диагностика{% endblock %}
+{% block content %}
+<h1>Диагностика моделей</h1>
+<p class="muted">Последние 24 часа · до {{ report.sample_limit }} принятых запросов.
+  Тексты переписок и ключи сюда не записываются.</p>
+{% if report.limited %}<p>Показана выборка последних {{ report.sample_limit }} запросов, не весь трафик.</p>{% endif %}
+<section class="card">
+  <strong>{{ report.summary.requests }} запросов</strong> · {{ report.summary.streamed }} потоковых ·
+  {{ report.summary.errors }} ошибок или обрывов · {{ report.summary.pending }} выполняются
+</section>
+<p>Время до первого текста измеряется на шлюзе, а не в браузере пользователя.
+  «—» означает, что измерение не получено. Для обычного ответа время первого фрагмента не вычисляется.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Модель / канал</th><th>Запросы / ошибки</th><th>Первый текст <button type="button" class="help-trigger" aria-label="Справка: первый текст" data-tooltip="Среднее время от поступления запроса до первого текстового фрагмента на шлюзе. Не включает отрисовку в браузере или Telegram.">?</button></th><th>Полное время / p95 <button type="button" class="help-trigger" aria-label="Справка: p95" data-tooltip="Среднее полное время и порог, в который укладываются 95% измерений в этой выборке. Обрывы также входят в длительность.">?</button></th><th>Токены: вход / выход</th><th>Себестоимость USD</th></tr></thead>
+<tbody>{% for row in report.models %}
+<tr><td><strong>{{ row.model }}</strong><br>{{ row.provider|label }} · {{ row.channel|label }}</td>
+<td>{{ row.requests }} / {{ row.errors }}</td>
+<td>{{ row.first_token_ms if row.first_token_ms is not none else '—' }} мс</td>
+<td>{{ row.duration_ms if row.duration_ms is not none else '—' }} / {{ row.p95_ms|round(1) if row.p95_ms is not none else '—' }} мс</td>
+<td>{{ row.input_tokens }} / {{ row.output_tokens }}{% if row.usage_unknown %}<br>Неизвестно для {{ row.usage_unknown }} запросов{% endif %}</td>
+<td>{{ row.provider_cost_usd|money }}{% if row.cost_unknown %}<br>+ неизвестная стоимость {{ row.cost_unknown }} запросов{% endif %}</td></tr>
+{% else %}<tr><td colspan="6">Пока нет запросов за этот период.</td></tr>{% endfor %}</tbody>
+</table></div>
+<details class="card"><summary>Ошибки и экспорт метрик</summary>
+<p>OpenTelemetry: {{ 'экспорт настроен' if export_enabled else 'внешний экспорт не настроен; локальная диагностика работает' }}.</p>
+<p>p95: 95% измеренных запросов в этой выборке завершались не медленнее указанного времени.
+  Стоимость модели — расход сервиса, не списание с пользователя. Неизвестные значения не заменяются нулём.</p>
+{% for code, count in report.errors.items() %}<p>{{ code|label }} — {{ count }}</p>{% else %}<p>Ошибок не зафиксировано.</p>{% endfor %}
+</details>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% macro hint(key) -%}
+<button type="button" class="help-trigger" aria-label="Справка: {{ help_title(key) }}" data-tooltip="{{ help_text(key) }}" title="{{ help_text(key) }}">?</button>
+{%- endmacro %}
+
+{% macro amount(value, unit='USD') -%}
+<span class="amount" title="Точное значение: {{ value | precise }} {{ unit }}">{{ value | money }}{% if value is not none %} <span class="unit">{{ unit }}</span>{% endif %}</span>
+{%- endmacro %}
+
+{% macro when(value) -%}
+{% if value %}<time datetime="{{ value | datetime_iso }}" data-local-time title="{{ value | datetime_ru }}">{{ value | datetime_ru }}</time>{% else %}<span class="muted">Ещё не использовался</span>{% endif %}
+{%- endmacro %}
+
+{% macro identifier(value) -%}
+<details class="technical"><summary>Служебные данные</summary><small>ID записи {{ hint('id') }}</small><code class="identifier">{{ value }}</code></details>
+{%- endmacro %}
+
+{% macro badge(value) -%}
+<span class="metric status-{{ value }}">{{ value | label }}</span>
+{%- endmacro %}
+
+{% macro text_field(prefix, name, label, value='', placeholder='', required=false, max_length=200, help_key='', pattern='') -%}
+<div class="field">
+  <div class="field-heading"><label for="{{ prefix }}-{{ name }}">{{ label }}</label>{% if help_key %}{{ hint(help_key) }}{% endif %}</div>
+  <input id="{{ prefix }}-{{ name }}" name="{{ name }}" maxlength="{{ max_length }}" value="{{ value }}" placeholder="{{ placeholder }}" {% if required %}required{% endif %} {% if pattern %}pattern="{{ pattern }}" title="Латинские буквы, цифры, дефис или подчёркивание. Например: test"{% endif %}>
+</div>
+{%- endmacro %}
+
+{% macro number_field(prefix, name, label, value='', step='1', help_key='') -%}
+<div class="field">
+  <div class="field-heading"><label for="{{ prefix }}-{{ name }}">{{ label }}</label>{% if help_key %}{{ hint(help_key) }}{% endif %}</div>
+  <input id="{{ prefix }}-{{ name }}" name="{{ name }}" type="number" min="0" step="{{ step }}" value="{{ value | form_number }}" placeholder="Без лимита" inputmode="decimal">
+</div>
+{%- endmacro %}

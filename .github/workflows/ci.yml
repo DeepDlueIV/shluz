@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, implementation/telegram-beta-complete]
   pull_request:
     branches: [main]
 
@@ -35,6 +35,13 @@ jobs:
 
       - name: Test
         run: pytest -v
+
+      - name: Verify gateway-only Compose without Telegram secrets
+        run: |
+          cp .env.example .env
+          docker compose config --services | tee /tmp/services.txt
+          grep -qx shluz /tmp/services.txt
+          test "$(wc -l < /tmp/services.txt)" -eq 1
 
       - name: Build Docker image
         run: docker build -t shluz:ci .
@@ -77,6 +84,84 @@ jobs:
             http://127.0.0.1:18000/v1/chat/completions \
             | python -c 'import json,sys; data=json.load(sys.stdin); assert data["choices"][0]["message"]["content"] == "Shluz mock reply: docker smoke"'
 
+      - name: Verify Telegram client inside Docker without live Telegram
+        run: |
+          docker exec -i shluz-ci python - <<'PYTHON'
+          import asyncio
+          import json
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
+          from app.config import Settings
+          from app.db.database import Database
+          from app.db.models import Account, Plan, Subscription
+          from app.db.repositories import create_api_token
+          from telegram_bot.gateway import GatewayClient
+
+          # Ephemeral CI-only token/account. Never use a real Telegram or provider key here.
+          token = "shluz_" + "c" * 43
+          database = Database(Settings())
+          with database.session() as session:
+              plan = Plan(code="ci-telegram", name="CI", monthly_request_limit=10)
+              account = Account(display_name="CI Telegram")
+              session.add_all([plan, account])
+              session.flush()
+              session.add(Subscription(account_id=account.id, plan_id=plan.id))
+              create_api_token(session, account_id=account.id, source="telegram",
+                               raw_token=token, name="CI only")
+          async def check():
+              gateway = GatewayClient("http://127.0.0.1:8000")
+              try:
+                  await gateway.bind(token, 123456789, "ci_test")
+                  before = await gateway.profile(token)
+                  assert before["allowance"]["requests"]["remaining"] == 10
+                  assert "mock-chat" in await gateway.models(token)
+                  answer = await gateway.chat(token, "mock-chat",
+                      [{"role": "user", "content": "telegram docker smoke"}], "ci-telegram")
+                  assert answer == "Shluz mock reply: telegram docker smoke"
+                  after = await gateway.profile(token)
+                  assert after["allowance"]["requests"]["remaining"] == 9
+              finally:
+                  await gateway.close()
+          asyncio.run(check())
+          path = Path("/app/data/ci-access.json")
+          path.write_text(json.dumps({"123456789": token}))
+          path.chmod(0o600)
+          env = {**os.environ, "TELEGRAM_ACCESS_FILE": str(path),
+                 "TELEGRAM_BOT_TOKEN": "123456789:" + "A" * 35}
+          subprocess.run([sys.executable, "-m", "telegram_bot", "--check"], env=env, check=True)
+          path.unlink()
+          print("Telegram container client/profile/identity/chat/config: PASS")
+          PYTHON
+
+      - name: Verify isolated owner acceptance setup and HTTP check
+        run: |
+          python scripts/gateway_owner_check.py --prepare
+          docker compose --env-file .env.owner -f compose.owner.yaml config --quiet
+          python - <<'PYTHON'
+          import importlib.util
+          spec = importlib.util.spec_from_file_location("owner_check", "scripts/gateway_owner_check.py")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          # The ephemeral CI account was created in the preceding container check.
+          checks = module.check_gateway("http://127.0.0.1:18000", "shluz_" + "c" * 43,
+                                        send_mock=True)
+          assert all(item["ok"] for item in checks), checks
+          print("Owner acceptance HTTP checks: PASS")
+          PYTHON
+          rm .env.owner
+
+      - name: Verify enabled Compose profile
+        run: |
+          cp .env.telegram.example .env.telegram
+          mkdir -p secrets
+          printf '{}' > secrets/telegram-access.json
+          docker compose --profile telegram config --quiet
+          python scripts/gateway_owner_check.py --prepare
+          docker compose --env-file .env.owner -f compose.owner.yaml -f compose.owner.telegram.yaml config --quiet
+          rm .env.owner
+
       - name: Print Docker logs on failure
         if: failure()
         run: docker logs shluz-ci || true
@@ -84,3 +169,96 @@ jobs:
       - name: Stop Docker container
         if: always()
         run: docker rm --force shluz-ci || true
+
+  admin-ui:
+    name: Admin UX in Chromium
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: python -m pip install -e ".[dev,ui]"
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Verify UI against isolated HTTP gateway
+        env:
+          SHLUZ_UI_SCREENSHOTS: artifacts/admin-ui
+        run: pytest ui_tests -v
+      - name: Save screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-ui-screenshots
+          path: artifacts/admin-ui
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Package tracked source
+        run: git archive --format=zip --prefix=shluz/ HEAD -o shluz-owner-ux.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shluz-owner-ux-source
+          path: shluz-owner-ux.zip
+          retention-days: 7
+
+  postgres:
+    name: PostgreSQL and onboarding
+    uses: ./.github/workflows/telegram-onboarding.yml
+
+  launcher-windows:
+    name: Launcher on Windows
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest pyyaml
+      - run: python -m pytest tests/launcher -q --noconftest
+
+  launcher-image-stores:
+    name: Launcher legacy and containerd images
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Reproduce and verify identical content across real Docker stores
+        run: python scripts/image_store_smoke.py
+
+  preview:
+    name: Checked preview and safe upgrade
+    needs: [test, admin-ui, postgres, launcher-windows, launcher-image-stores]
+    if: >-
+      github.event_name == 'push' && github.repository == 'DeepDlueIV/shluz' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/implementation/telegram-beta-complete')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: publish-shluz-preview
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build pinned preview image
+        run: docker build --label org.opencontainers.image.revision=${{ github.sha }} -t shluz-preview:${{ github.sha }} .
+      - name: Verify actual Docker upgrade, old data and backup restoration
+        run: python scripts/launcher_smoke.py "${{ github.sha }}" "shluz-preview:${{ github.sha }}"
+      - name: Package checked image and source
+        run: python scripts/package_preview.py "${{ github.sha }}" "shluz-preview:${{ github.sha }}" dist/preview
+      - name: Publish trusted preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/publish_preview.py

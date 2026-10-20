@@ -1,16 +1,50 @@
-{% macro plan_fields(values, csrf_token) -%}
+{% from 'admin/components.html' import hint, text_field, number_field %}
+{% macro plan_fields(values, csrf_token, prefix='new-plan', show_advanced=false) -%}
+{% set payg = values.get('billing_mode', 'subscription') == 'payg' %}
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-<label>Код тарифа<input name="code" maxlength="64" required pattern="[A-Za-z0-9][A-Za-z0-9_\-]{0,63}" title="Латинские буквы, цифры, дефис или подчёркивание. Например: test" value="{{ values.get('code', '') }}" placeholder="test"><small>Латиница, без пробелов. Начните с буквы или цифры.</small></label>
-<label>Название<input name="name" maxlength="200" required value="{{ values.get('name', '') }}" placeholder="Тестовый"><small>Можно на русском.</small></label>
-{% for key, label, step, default in [
-('monthly_price_usd', 'Цена в месяц, USD', '0.01', '0'),
-('monthly_cost_limit_usd', 'Лимит себестоимости, USD', '0.00000001', ''),
-('monthly_credit_limit', 'Кредитов в месяц', '1', ''),
-('monthly_request_limit', 'Запросов в месяц', '1', ''),
-('request_credit_reserve', 'Резерв кредитов на запрос', '1', '0'),
-('markup_percent', 'Наценка, %', '0.01', '0')
-] %}
-<label>{{ label }}<input name="{{ key }}" type="number" min="0" step="{{ step }}" value="{{ values.get(key, default) if values.get(key, default) is not none else '' }}" placeholder="Без лимита"></label>
-{% endfor %}
-<label class="checkbox-label"><input name="active" type="checkbox" {% if values.get('active', true) %}checked{% endif %}> Тариф активен</label>
+{{ text_field(prefix, 'name', 'Название тарифа', values.get('name', ''), 'Например, Базовый', true) }}
+{{ text_field(prefix, 'code', 'Код тарифа', values.get('code', ''), 'basic', true, 64, 'plan_code', '[A-Za-z0-9][A-Za-z0-9_\\-]{0,63}') }}
+<div class="field field-wide">
+  <div class="field-heading"><label for="{{ prefix }}-billing_mode">Способ оплаты</label>{{ hint('billing_mode') }}</div>
+  <select id="{{ prefix }}-billing_mode" name="billing_mode" data-plan-mode aria-controls="{{ prefix }}-subscription {{ prefix }}-payg">
+    <option value="subscription" {% if not payg %}selected{% endif %}>Подписка</option>
+    <option value="payg" {% if payg %}selected{% endif %}>По использованию (PAYG)</option>
+  </select>
+</div>
+<fieldset id="{{ prefix }}-subscription" class="plan-mode-group field-wide" data-plan-section="subscription" {% if payg %}hidden disabled{% endif %}>
+  <legend class="sr-only">Условия подписки</legend>
+  <p class="mode-note">Фиксированная цена за месяц и включённые запросы. Пустой или нулевой лимит — без ограничения.</p>
+  <div class="plan-form">
+    {{ number_field(prefix, 'monthly_price_usd', 'Цена в месяц, USD', values.get('monthly_price_usd', 0), '0.01', 'price') }}
+    {{ number_field(prefix, 'monthly_request_limit', 'Запросов в месяц', values.get('monthly_request_limit'), '1', 'requests') }}
+    <details class="details-panel field-wide advanced-fields" {% if show_advanced %}open{% endif %}>
+      <summary>Расширенные настройки <span class="summary-note">бюджет и квотные кредиты подписки</span></summary>
+      <div class="details-body plan-form">
+        <p class="muted field-wide">Необязательные ограничения подписки. Не относятся к денежному кошельку PAYG. {{ hint('advanced') }}</p>
+        {{ number_field(prefix, 'monthly_cost_limit_usd', 'Бюджет на модели в месяц, USD', values.get('monthly_cost_limit_usd'), '0.00000001', 'cost_limit') }}
+        {{ number_field(prefix, 'monthly_credit_limit', 'Кредитов в месяц', values.get('monthly_credit_limit'), '1', 'credits') }}
+        {{ number_field(prefix, 'request_credit_reserve', 'Резерв кредитов на запрос', values.get('request_credit_reserve', 0), '1', 'reserve') }}
+      </div>
+    </details>
+  </div>
+</fieldset>
+<div id="{{ prefix }}-payg" class="mode-note field-wide" data-plan-section="payg" {% if not payg %}hidden{% endif %}>
+  <strong>Оплата только за использование</strong>
+  <p>Клиент пополняет кошелёк. За запрос списывается себестоимость модели с вашей наценкой. Абонентской платы и месячной квоты нет.</p>
+  <small>Параметры подписки сохранены, но не действуют. Они вернутся при переключении обратно — без сброса значений.</small>
+</div>
+<div class="field-wide plan-markup">
+  {{ number_field(prefix, 'markup_percent', 'Наценка, %', values.get('markup_percent', 0), '0.01', 'markup') }}
+  <small class="muted" data-plan-section="payg" {% if not payg %}hidden{% endif %}>Например, себестоимость $0,01 + 20% = $0,012 списания. Пополнение $10 зачисляет все $10.</small>
+  <small class="muted" data-plan-section="subscription" {% if payg %}hidden{% endif %}>Для расчётного расхода и квотных кредитов. Не меняет указанную цену подписки.</small>
+</div>
+<details class="details-panel field-wide payg-controls" data-plan-section="payg" {% if not payg %}hidden{% endif %}>
+  <summary>Ограничения и контроль <span class="summary-note">баланс, модели, безопасность</span></summary>
+  <div class="details-body">
+  <small>PAYG ограничен доступным балансом и проверенным пределом стоимости запроса. <a href="/admin/wallets" target="_blank" rel="noopener">Кошельки и тарифы каналов ↗</a></small>
+  <small>Доступные модели задаются отдельно: <a href="/admin/access" target="_blank" rel="noopener">Демо и модели ↗</a>. Общие технические ограничения шлюза продолжают действовать; месячные поля подписки их не заменяют.</small>
+  </div>
+</details>
+<noscript><p class="mode-note field-wide">Для мгновенного переключения полей включите JavaScript. Без него сохраните выбранный способ оплаты и снова откройте тариф: неактивные параметры сохранятся, но не будут применяться.</p></noscript>
+<label class="checkbox-label field-wide"><input name="active" type="checkbox" {% if values.get('active', true) %}checked{% endif %}> Тариф активен</label>
 {%- endmacro %}

@@ -1,0 +1,40 @@
+# Дополнение к compose.owner.yaml: бот использует уже проверенный тестовый шлюз.
+services:
+  shluz:
+    environment:
+      SHLUZ_TELEGRAM_CONNECTOR_FILE: /app/telegram-connector/key
+    volumes:
+      - owner_telegram_connector:/app/telegram-connector
+  telegram_bot:
+    build: .
+    env_file: [.env.telegram]
+    environment:
+      TELEGRAM_GATEWAY_URL: http://shluz:8000
+      TELEGRAM_DATABASE_PATH: /app/data/telegram.sqlite
+      TELEGRAM_ACCESS_FILE: /run/telegram-legacy
+      TELEGRAM_CONNECTOR_FILE: /run/shluz-connector/key
+    command: [python, -m, telegram_bot]
+    depends_on:
+      shluz:
+        condition: service_healthy
+    volumes:
+      - owner_telegram_data:/app/data
+      - owner_telegram_connector:/run/shluz-connector:ro
+      - type: bind
+        source: ${TELEGRAM_ACCESS_FILE_HOST:-./secrets}
+        target: /run/telegram-legacy
+        read_only: true
+        bind:
+          create_host_path: true
+    healthcheck:
+      test: [CMD, python, -m, telegram_bot.healthcheck]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    init: true
+    stop_grace_period: 20s
+    restart: unless-stopped
+volumes:
+  owner_telegram_data:
+  owner_telegram_connector:

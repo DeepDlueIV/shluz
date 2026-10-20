@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -13,7 +14,9 @@ from app.providers.base import (
     ProviderError,
     ProviderInsufficientBalanceError,
     ProviderRateLimitError,
+    StreamChunk,
 )
+from app.streaming.sse import SSEError, events
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +67,16 @@ def _decimal(value: Any) -> Decimal:
         return Decimal("0")
 
 
+def _known_cost(value: Any) -> bool:
+    if value is None or isinstance(value, bool):
+        return False
+    try:
+        result = Decimal(str(value))
+        return result.is_finite() and result >= 0
+    except (InvalidOperation, ValueError, TypeError):
+        return False
+
+
 def _price_usd(value: Any) -> Decimal | None:
     if value is None:
         return None
@@ -84,12 +97,20 @@ def _int(value: Any) -> int:
 class VeniceProvider:
     """Adapter for Venice's OpenAI-compatible API and account endpoints."""
 
-    def __init__(self, settings: Settings, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        client: httpx.Client | None = None,
+        async_client: httpx.AsyncClient | None = None,
+    ) -> None:
         api_key = settings.venice_api_key
         if api_key is None or not api_key.get_secret_value().strip():
             raise ValueError("SHLUZ_VENICE_API_KEY is required for Venice")
 
         self._api_key = api_key.get_secret_value()
+        self._stream_client = async_client
+        self._stream_url = settings.venice_base_url.rstrip("/") + "/chat/completions"
+        self._stream_timeout = settings.venice_timeout_seconds
         self._client = client or httpx.Client(
             base_url=settings.venice_base_url.rstrip("/"),
             timeout=settings.venice_timeout_seconds,
@@ -116,6 +137,11 @@ class VeniceProvider:
                     for message in request.messages
                 ],
                 "stream": False,
+                **(
+                    {"max_completion_tokens": request.max_completion_tokens}
+                    if request.max_completion_tokens
+                    else {}
+                ),
             },
         )
         payload = self._json(response)
@@ -135,9 +161,84 @@ class VeniceProvider:
             prompt_tokens=_int(usage.get("prompt_tokens")),
             completion_tokens=_int(usage.get("completion_tokens")),
             request_id=payload.get("id"),
-            cost_usd=_decimal(cost.get("usd")),
+            cost_usd=_decimal(cost.get("usd")) if _known_cost(cost.get("usd")) else Decimal("0"),
+            cost_known=_known_cost(cost.get("usd")),
             cost_diem=_decimal(cost.get("diem")),
         )
+
+    async def chat_stream(self, request: ChatRequest):
+        # Отдельная сессия запроса: отмена закрывает соединение, POST не повторяется.
+        client = self._stream_client or httpx.AsyncClient(
+            timeout=httpx.Timeout(self._stream_timeout, connect=10),
+            follow_redirects=False,
+        )
+        response = None
+        try:
+            req = client.build_request(
+                "POST",
+                self._stream_url,
+                headers={"Authorization": f"Bearer {self._api_key}", "Accept": "text/event-stream"},
+                json={
+                    "model": request.model,
+                    "messages": [{"role": m.role, "content": m.content} for m in request.messages],
+                    "stream": True,
+                    "stream_options": {"include_usage": True},
+                    "max_completion_tokens": request.max_completion_tokens,
+                },
+            )
+            response = await client.send(req, stream=True, follow_redirects=False)
+            self._raise_for_status(response)
+            if not response.headers.get("content-type", "").startswith("text/event-stream"):
+                raise ProviderError("Invalid upstream stream type")
+            async for frame in events(response.aiter_bytes()):
+                if frame == "[DONE]":
+                    yield StreamChunk(done=True)
+                    return
+                data = json.loads(frame)
+                if not isinstance(data, dict) or "error" in data:
+                    raise ProviderError("Upstream stream failed")
+                usage, cost = data.get("usage") or {}, data.get("cost") or {}
+                if not isinstance(usage, dict) or not isinstance(cost, dict):
+                    raise ProviderError("Invalid upstream accounting")
+
+                def count(name, usage=usage):
+                    value = usage.get(name)
+                    return value if type(value) is int and 0 <= value <= 10000000 else None
+
+                content, finish = "", None
+                choices = data.get("choices") or []
+                if not isinstance(choices, list):
+                    raise ProviderError("Invalid upstream choices")
+                if choices:
+                    choice = choices[0]
+                    if not isinstance(choice, dict):
+                        raise ProviderError("Invalid upstream choice")
+                    delta = choice.get("delta") or {}
+                    if not isinstance(delta, dict):
+                        raise ProviderError("Invalid upstream delta")
+                    content = delta.get("content") or ""
+                    if not isinstance(content, str):
+                        raise ProviderError("Unsupported upstream content")
+                    finish = choice.get("finish_reason")
+                    if finish not in {None, "stop", "length", "content_filter"}:
+                        raise ProviderError("Unsupported upstream finish")
+                yield StreamChunk(
+                    content=content,
+                    finish_reason=finish,
+                    request_id=data.get("id") if isinstance(data.get("id"), str) else None,
+                    prompt_tokens=count("prompt_tokens"),
+                    completion_tokens=count("completion_tokens"),
+                    cost_usd=_decimal(cost["usd"]) if _known_cost(cost.get("usd")) else None,
+                    cost_diem=_decimal(cost["diem"]) if _known_cost(cost.get("diem")) else None,
+                )
+            raise ProviderError("Upstream stream ended without terminal marker")
+        except (httpx.RequestError, SSEError, ValueError, TypeError) as exc:
+            raise ProviderError("Upstream stream interrupted") from exc
+        finally:
+            if response is not None:
+                await response.aclose()
+            if self._stream_client is None:
+                await client.aclose()
 
     def get_account_snapshot(self, lookback: str = "7d") -> VeniceAccountSnapshot:
         warnings: list[str] = []
@@ -212,9 +313,7 @@ class VeniceProvider:
         )
 
     def _fetch_models(self, model_type: str) -> list[ModelInfo]:
-        payload = self._json(
-            self._request("GET", "/models", params={"type": model_type})
-        )
+        payload = self._json(self._request("GET", "/models", params={"type": model_type}))
         models = []
         for item in payload.get("data") or []:
             model_id = item.get("id")

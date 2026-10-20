@@ -3,9 +3,11 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from app.billing import models as _billing_models  # noqa: F401
 from app.config import Settings
 from app.db import models as _models  # noqa: F401
 from app.db.base import Base
+from app.webaccess import models as _web_models  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

@@ -1,4 +1,6 @@
-from app.providers.base import ChatRequest, ChatResult, ModelInfo
+import asyncio
+
+from app.providers.base import ChatRequest, ChatResult, ModelInfo, StreamChunk
 
 
 class MockProvider:
@@ -17,3 +19,17 @@ class MockProvider:
             "",
         )
         return ChatResult(content=f"Shluz mock reply: {last_user_message}")
+
+    async def chat_stream(self, request: ChatRequest):
+        result = self.chat_completion(request)
+        for offset in range(0, len(result.content), 16):
+            await asyncio.sleep(0.005)
+            yield StreamChunk(content=result.content[offset : offset + 16])
+        yield StreamChunk(
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            cost_usd=result.cost_usd,
+            cost_diem=result.cost_diem,
+            finish_reason="stop",
+        )
+        yield StreamChunk(done=True)

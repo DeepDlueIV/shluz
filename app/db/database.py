@@ -7,9 +7,11 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.billing import models as _billing_models  # noqa: F401
 from app.config import Settings
 from app.db import models as _models  # noqa: F401
 from app.db.base import Base
+from app.webaccess import models as _web_models  # noqa: F401
 
 
 class Database:
@@ -18,7 +20,7 @@ class Database:
     def __init__(self, settings: Settings) -> None:
         raw_url = settings.database_url.get_secret_value()
         url = make_url(raw_url)
-        engine_options: dict[str, object] = {"pool_pre_ping": True}
+        engine_options: dict[str, object] = {"pool_pre_ping": True, "hide_parameters": True}
 
         if url.get_backend_name() == "sqlite":
             database_path = url.database

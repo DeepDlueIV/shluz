@@ -172,6 +172,9 @@ def test_provider_failure_releases_api_reservation(tmp_path):
         database=database,
     )
     client = TestClient(app)
+    from app.db.models import ModelPolicy
+    with database.session() as s:
+        s.add(ModelPolicy(id="channel:harness", models_json='["failing-chat"]'))
     raw_token = "shluz_failure_token"
     with database.session() as session:
         account = Account(display_name="Failure user")

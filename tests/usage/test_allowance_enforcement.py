@@ -34,6 +34,10 @@ def _service(tmp_path) -> tuple[Database, UsageService]:
     )
     database = Database(settings)
     database.create_schema()
+    from app.db.models import ModelPolicy
+    with database.session() as s:
+        s.add(ModelPolicy(id="channel:harness", models_json='["mock-chat", "model-a"]'))
+        s.add(ModelPolicy(id="channel:telegram", models_json='["mock-chat", "model-a"]'))
     return database, UsageService(database, settings)
 
 

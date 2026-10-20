@@ -3,6 +3,7 @@ import re
 from fastapi import Request
 from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
 from app.admin.routes import _admin_csrf_token, templates
@@ -39,6 +40,10 @@ async def admin_http_error(request: Request, exc: HTTPException):
 
 
 async def admin_validation_error(request: Request, exc: RequestValidationError):
+    if request.url.path.startswith("/internal/telegram/"):
+        return JSONResponse(status_code=422, content={
+            "error": {"code": "invalid_request", "message": "Invalid Telegram connector input"},
+        }, headers={"Cache-Control": "no-store"})
     if not request.url.path.startswith("/admin"):
         return await request_validation_exception_handler(request, exc)
     return await admin_http_error(

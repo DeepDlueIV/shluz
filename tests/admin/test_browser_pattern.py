@@ -3,18 +3,17 @@ import os
 import re
 import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
 
 
-def test_tariff_pattern_accepts_latin_codes_in_browser_unicode_mode():
+def test_tariff_pattern_accepts_latin_codes_in_browser_unicode_mode(client):
     node = shutil.which("node")
     if node is None:
         if os.environ.get("CI"):
             pytest.fail("Node.js is required for the browser-pattern CI check")
         pytest.skip("Optional browser-pattern check requires Node.js 22+")
-    template = Path("app/templates/admin/plan_fields.html").read_text(encoding="utf-8")
+    template = client.get("/admin/plans", auth=("test-admin", "test-admin-password")).text
     pattern = re.search(r'pattern="([^"]+)"', template).group(1)
     script = """
     const fs = require('node:fs');

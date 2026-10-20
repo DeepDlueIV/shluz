@@ -1,0 +1,14 @@
+# Отдельная локальная приёмка: не читает .env, не использует рабочий том, не запускает Telegram.
+name: shluz-owner-check
+services:
+  shluz:
+    build: .
+    env_file:
+      - .env.owner
+    ports:
+      - "127.0.0.1:18000:8000"
+    volumes:
+      - owner_data:/app/data
+    restart: "no"
+volumes:
+  owner_data:

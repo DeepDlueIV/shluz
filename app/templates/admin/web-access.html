@@ -1,0 +1,30 @@
+{% extends 'admin/base.html' %}
+{% block title %}Защита демо{% endblock %}
+{% macro help(text) %}<button type="button" class="help-trigger" aria-label="Справка" data-tooltip="{{ text }}" title="{{ text }}">?</button>{% endmacro %}
+{% block content %}
+<header class="hero compact"><div><p class="eyebrow">Сайт · Telegram · Desktop</p><h1>Защита демо</h1><p class="muted">Расход ограничивает шлюз. Новые посетители сайта пробуют один запрос без регистрации; вход по почте — через код.</p></div></header>
+<section class="section-block"><h2>Готовность подключения сайта</h2>
+<div class="grid"><article class="card"><span>Веб-доступ</span><strong class="small-value">{{ 'Включён' if web_enabled else 'Не подключён' }}</strong></article><article class="card"><span>Антибот Turnstile</span><strong class="small-value">{{ 'Настроен' if captcha_ready else 'Нужна настройка' }}</strong></article><article class="card"><span>Почтовые коды</span><strong class="small-value">{{ 'SMTP настроен' if mail_ready else 'Нужен почтовый сервис' }}</strong></article><article class="card"><span>Вход через Telegram</span><strong class="small-value">{{ 'Client ID настроен' if telegram_login_ready else 'Нужна настройка BotFather' }}</strong></article></div>
+<p class="muted">Эти статусы показывают наличие настроек, не результат живой проверки. Секреты здесь не отображаются. Без проверки антибота гостевая генерация закрыта, без SMTP письмо не отправляется. OPFS, отпечаток браузера и запрет VPN для демо не требуются.</p></section>
+<section class="form-card section-block"><h2>Расход и доступность</h2>
+<form method="post" action="/admin/web-access/control" class="compact-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label class="checkbox-label"><input type="checkbox" name="enabled" {% if control.enabled %}checked{% endif %}> Разрешить новые демо-генерации</label>
+<p class="muted">Снимите галочку, чтобы сразу остановить допуск всех новых демо-запросов. Начатая генерация может завершиться; платные тарифы не блокируются.</p>
+<div class="field-heading"><label for="daily_usd">Максимальный бюджет демо в сутки, USD</label>{{ help('Общий резерв по всем каналам, сутки UTC. 0 закрывает платные демо-модели, но оставляет бесплатный mock. Перед запросом резервируется проверенная верхняя стоимость. При неизвестном результате резерв не возвращается. Это не тариф и не пополнение Venice.') }}</div><input type="number" name="daily_usd" id="daily_usd" min="0" max="10000" step="0.00000001" value="{{ '%.8f' | format(control.daily_usd) }}" required>
+<details class="details-panel"><summary>Время, частота и защита почты</summary><div class="details-body">
+{% for name, label, value, low, high in fields %}<label for="{{ name }}">{{ label }}</label><input id="{{ name }}" name="{{ name }}" type="number" min="{{ low }}" max="{{ high }}" value="{{ value }}" required>{% endfor %}
+<p class="muted">Сеть: один IPv4 или подсеть IPv6 /64. Это временные ограничения, не доказательство личности и не постоянный запрет аккаунту. OTP действует 10 минут и допускает пять попыток; новое письмо — не чаще одного раза в минуту. Общие ограничения HTTP действуют дополнительно.</p></div></details>
+<button type="submit">Сохранить защиту</button></form>
+<p><a href="/admin/access">Количество запросов, длина ввода и список моделей → Демо и модели</a></p></section>
+<details class="details-panel section-block"><summary>Проверенные пределы стоимости внешних моделей</summary><div class="details-body">
+<p>До подключения провайдера оставьте этот раздел пустым. Разработчик рассчитывает верхнюю стоимость полного запроса с учётом ввода, ответа и платного reasoning. Без проверенного предела и ненулевого общего бюджета внешняя демо-модель не запускается.</p>
+{% for bound in bounds %}<p><strong class="small-value">{{ bound.id }}</strong>: до {{ bound.max_cost_usd }} USD · {{ bound.max_input_chars }} символов · {{ bound.max_output_tokens }} выходных токенов · {{ 'проверено' if bound.reviewed else 'не разрешено' }}</p>{% else %}<p class="muted">Внешние модели демо пока не разрешены. Бесплатный mock доступен без этой настройки.</p>{% endfor %}
+<form method="post" action="/admin/web-access/model" class="compact-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label for="bound-provider">ID поставщика</label><input id="bound-provider" name="provider" maxlength="64" placeholder="venice" required>
+<label for="bound-model">Точный ID модели</label><input id="bound-model" name="model" maxlength="200" required>
+<label for="bound-cost">Верхняя стоимость полного запроса, USD</label><input id="bound-cost" name="max_cost_usd" type="number" min="0.00000001" max="10000" step="0.00000001" required>
+<label for="bound-chars">Проверено для ввода до, символов</label><input id="bound-chars" name="max_input_chars" type="number" min="100" max="200000" value="3000" required>
+<label for="bound-tokens">Проверено для ответа до, токенов</label><input id="bound-tokens" name="max_output_tokens" type="number" min="1" max="4096" value="512" required>
+<label class="checkbox-label"><input type="checkbox" name="reviewed"> Стоимость и ограничения провайдера проверены</label><button type="submit">Сохранить предел модели</button>
+<small>Сохранение не меняет провайдера и не открывает модель, запрещённую в тарифе или канале. Повторное сохранение того же ID обновляет правило; снятая галочка закрывает платное демо для этой модели.</small></form></div></details>
+{% endblock %}

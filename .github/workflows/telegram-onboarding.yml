@@ -1,0 +1,59 @@
+name: Telegram automatic onboarding
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-and-compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: ephemeral_ci_only
+          POSTGRES_DB: shluz_onboarding_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test_user -d shluz_onboarding_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Onboarding and concurrency on real PostgreSQL
+        env:
+          SHLUZ_ONBOARDING_TEST_POSTGRES: postgresql+psycopg://test_user:ephemeral_ci_only@127.0.0.1:5432/shluz_onboarding_ci
+        run: pytest tests/api/test_telegram_onboarding.py tests/product tests/webaccess tests/billing tests/api/test_telegram_recovery.py -v
+      - name: PostgreSQL migration
+        env:
+          SHLUZ_DATABASE_URL: postgresql+psycopg://test_user:ephemeral_ci_only@127.0.0.1:5432/shluz_onboarding_ci
+        run: alembic upgrade head
+      - name: Prepare isolated Compose without per-user files
+        run: |
+          python scripts/gateway_owner_check.py --prepare
+          cp .env.telegram.example .env.telegram
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.env.telegram')
+          path.write_text(path.read_text().replace('CHANGE_ME_BOTFATHER_TOKEN', '123456789:' + 'A'*35))
+          PY
+          test ! -e secrets/telegram-access.json
+      - name: Start gateway and create connector secret automatically
+        run: docker compose --env-file .env.owner -f compose.owner.yaml -f compose.owner.telegram.yaml up -d --build --wait shluz
+      - name: Bot config resolves shared key with no user JSON and no Telegram calls
+        run: |
+          docker compose --env-file .env.owner -f compose.owner.yaml -f compose.owner.telegram.yaml run --rm --no-deps telegram_bot python -m telegram_bot --check
+          test ! -e secrets/telegram-access.json
+      - name: Stop isolated services
+        if: always()
+        run: docker compose --env-file .env.owner -f compose.owner.yaml -f compose.owner.telegram.yaml down || true

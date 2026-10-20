@@ -5,6 +5,7 @@ from decimal import Decimal
 from sqlalchemy import (
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -62,6 +63,7 @@ class Plan(Base):
     __tablename__ = "plans"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_new_id)
+    billing_mode: Mapped[str] = mapped_column(String(20), default="subscription")
     code: Mapped[str] = mapped_column(String(64), unique=True)
     name: Mapped[str] = mapped_column(String(200))
     monthly_price_usd: Mapped[Decimal] = mapped_column(
@@ -101,6 +103,7 @@ class Subscription(Base):
         ForeignKey("plans.id", ondelete="RESTRICT"),
         index=True,
     )
+    source: Mapped[str] = mapped_column(String(32), default="*")
     status: Mapped[str] = mapped_column(String(32), default="active")
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -126,6 +129,7 @@ class ApiToken(Base):
 
 class UsageEvent(Base):
     __tablename__ = "usage_events"
+    quota_scope: Mapped[str] = mapped_column(String(32), default="*")
     __table_args__ = (
         UniqueConstraint(
             "provider",
@@ -141,6 +145,12 @@ class UsageEvent(Base):
         ForeignKey("accounts.id", ondelete="RESTRICT"),
         index=True,
     )
+    streamed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    usage_known: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    first_token_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quota_kind: Mapped[str] = mapped_column(String(16), default="monthly", server_default="monthly")
+    cost_known: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     plan_id: Mapped[str | None] = mapped_column(
         ForeignKey("plans.id", ondelete="SET NULL"),
         nullable=True,
@@ -186,3 +196,82 @@ class UsageEvent(Base):
         default=_utc_now,
         index=True,
     )
+
+
+class TelegramAdmission(Base):
+    """Разрешение на канал, а не отдельный финансовый аккаунт."""
+
+    __tablename__ = "telegram_admissions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_new_id)
+    telegram_id: Mapped[str] = mapped_column(String(32), unique=True)
+    display_name: Mapped[str] = mapped_column(String(200))
+    username: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    account_id: Mapped[str | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    # Отсутствие/удаление старого ключа должно закрывать доступ, а не снимать проверку.
+    legacy_token_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    session_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+
+
+class TelegramInvite(Base):
+    __tablename__ = "telegram_invites"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_new_id)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="RESTRICT"))
+    account_id: Mapped[str | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    redeemed_telegram_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+
+
+class TelegramIntegration(Base):
+    __tablename__ = "telegram_integration"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default="default")
+    username: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+
+
+class ProductPolicy(Base):
+    """Настройки демо и допуска. Не содержат ключей поставщика."""
+
+    __tablename__ = "product_policy"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default="default")
+    mode: Mapped[str] = mapped_column(String(16), default="demo")
+    demo_requests: Mapped[int] = mapped_column(Integer, default=1)
+    demo_models_json: Mapped[str] = mapped_column(String(22000), default='["mock-chat"]')
+    demo_max_input_chars: Mapped[int] = mapped_column(Integer, default=3000)
+    demo_max_output_tokens: Mapped[int] = mapped_column(Integer, default=512)
+    demo_daily_requests: Mapped[int] = mapped_column(Integer, default=100)
+    requests_per_minute: Mapped[int] = mapped_column(Integer, default=30)
+
+
+class DemoGrant(Base):
+    """Один пожизненный пакет на аккаунт; месяц и новый канал его не обновляют."""
+
+    __tablename__ = "demo_grants"
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), primary_key=True
+    )
+    requests_used: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+
+
+class ModelPolicy(Base):
+    """Пересечение channel:* и plan:*; отсутствие plan:* наследует канал."""
+
+    __tablename__ = "model_policies"
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    models_json: Mapped[str] = mapped_column(String(22000), default="[]")

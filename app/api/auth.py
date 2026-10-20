@@ -9,6 +9,8 @@ from app.api.dependencies import get_app_settings, get_database
 from app.config import Settings
 from app.db.database import Database
 from app.db.repositories import authenticate_api_token
+from app.telegram.credentials import SESSION_PREFIX
+from app.telegram.service import authenticate_session
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -19,6 +21,7 @@ class AuthenticatedPrincipal:
     source: str
     token_id: str | None
     bootstrap: bool = False
+    telegram_id: int | None = None
 
 
 def require_api_token(
@@ -36,6 +39,15 @@ def require_api_token(
             token_id=None,
             bootstrap=True,
         )
+
+    if provided.startswith(SESSION_PREFIX):
+        resolved = authenticate_session(database, provided, settings.telegram_connector_file)
+        if resolved:
+            account_id, access_id, telegram_id = resolved
+            return AuthenticatedPrincipal(
+                account_id=account_id, source="telegram", token_id="tg:" + access_id,
+                telegram_id=telegram_id,
+            )
 
     with database.session() as session:
         personal = authenticate_api_token(session, provided)
