@@ -1,0 +1,26 @@
+:root {
+  color-scheme: dark;
+  --font-sans: "Manrope Variable", "Arial", sans-serif;
+  --font-display: "Cormorant Garamond Variable", Georgia, serif;
+  --background: #0c0d0f;
+  --foreground: #f4f0e8;
+  --muted: #919295;
+  --accent: #bac4ff;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 110px; scrollbar-color: #424447 #0c0d0f; }
+body { margin: 0; background: var(--background); color: var(--foreground); font-family: var(--font-sans); font-size: 15px; -webkit-font-smoothing: antialiased; }
+button, input, textarea { font: inherit; }
+button, a, input, textarea { -webkit-tap-highlight-color: transparent; }
+button, a { touch-action: manipulation; }
+button { color: inherit; }
+button:not(:disabled), summary { cursor: pointer; }
+a { color: inherit; }
+img, video, svg { display: block; max-width: 100%; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid #bac4ff; outline-offset: 5px; }
+::selection { color: #fff; background: #596389; }
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
