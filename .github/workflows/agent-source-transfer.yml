@@ -1,0 +1,83 @@
+name: Verify agent source transfer
+on:
+  push:
+    branches: [automation/agent-tools-transfer-20261021]
+permissions:
+  contents: write
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install ruff==0.14.10
+      - name: Verify source, normalize imports and upload immutable blobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import base64, hashlib, json, os, pathlib, subprocess, urllib.request, zipfile, zlib
+          root = pathlib.Path.cwd()
+          base = 'f6858bbd201c17f5abbd57ed0d02492c39983134'
+          packed = b''.join((root / '_agent_transport' / f'{i:02}.bin').read_bytes() for i in range(10))
+          patch = zlib.decompress(packed)
+          assert hashlib.sha256(patch).hexdigest() == '8ea9ecc5d696c9e0a71d8ad39016c90f4d0e73e915815e90b9e16f52eb4e1e28'
+          work = pathlib.Path(os.environ['RUNNER_TEMP']) / 'verified-agent-source'
+          subprocess.run(['git', 'worktree', 'add', '--detach', str(work), base], check=True)
+          def git(*args):
+              return subprocess.check_output(['git', *args], cwd=work)
+          subprocess.run(['git', 'apply', '--index', '--whitespace=error-all', '-'], cwd=work, input=patch, check=True)
+          assert git('write-tree').decode().strip() == '709a1c5f537439f5b765de1c4382942c07fb1e67'
+          paths = git('diff', '--cached', '--name-only', '-z').decode().strip('\0').split('\0')
+          assert len(paths) == 23
+          assert not git('diff', '--cached', '--diff-filter=D', '--name-only').strip()
+          assert not any(p.startswith(('web/', 'telegram_bot/', 'desktop/')) for p in paths)
+          python_paths = [p for p in paths if p.endswith('.py')]
+          subprocess.run(['ruff', 'check', '--fix', *python_paths], cwd=work, check=True)
+          new_paths = git('diff', '--cached', '--diff-filter=A', '--name-only', '-z').decode().strip('\0').split('\0')
+          subprocess.run(['ruff', 'format', *[p for p in new_paths if p.endswith('.py')]], cwd=work, check=True)
+          subprocess.run(['ruff', 'check', '.'], cwd=work, check=True)
+          subprocess.run(['git', 'add', '--', *paths], cwd=work, check=True)
+          subprocess.run(['git', 'diff', '--cached', '--check'], cwd=work, check=True)
+          tree = git('write-tree').decode().strip()
+          out = root / 'agent-delivery'
+          out.mkdir()
+          (out / 'normalized.patch').write_bytes(git('diff', '--cached', '--binary'))
+          with zipfile.ZipFile(out / 'source.zip', 'w', compression=zipfile.ZIP_DEFLATED) as z:
+              for p in git('ls-files', '-z').decode().strip('\0').split('\0'):
+                  z.write(work / p, p)
+          records = []
+          for path in paths:
+              mode, expected_blob = git('ls-files', '--stage', '--', path).decode().split()[:2]
+              assert mode in {'100644', '100755'}
+              if path.startswith('.github/workflows/'):
+                  records.append({'path':path, 'mode':mode, 'type':'blob', 'sha':expected_blob, 'connector_write':True})
+                  continue
+              target = work / path
+              assert target.is_file() and not target.is_symlink()
+              data = target.read_bytes()
+              assert hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest() == expected_blob
+              req = urllib.request.Request('https://api.github.com/repos/DeepDlueIV/shluz/git/blobs',
+                  data=json.dumps({'encoding':'base64','content':base64.b64encode(data).decode()}).encode(),
+                  headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json'}, method='POST')
+              with urllib.request.urlopen(req, timeout=30) as reply:
+                  uploaded = json.load(reply)
+              assert uploaded['sha'] == expected_blob
+              records.append({'path':path,'mode':mode,'type':'blob','sha':expected_blob})
+          result = {'base':base,'tree':tree,'entries':records}
+          (out / 'verified-objects.json').write_text(json.dumps(result, indent=2))
+          print('VERIFIED_OBJECTS='+json.dumps(result,separators=(',',':')))
+          print('No application ref, production, personal data or secrets were modified.')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent-source-normalized
+          path: agent-delivery/
+          retention-days: 3
