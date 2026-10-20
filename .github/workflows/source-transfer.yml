@@ -2,65 +2,42 @@ name: Verified source object transfer
 on:
   push:
     branches: ['automation/verified-source-transfer-20261020']
-    paths: ['.github/workflows/source-transfer.yml', '_admin_transport/**']
+    paths: ['.github/workflows/source-transfer.yml']
 permissions:
   contents: write
 jobs:
   transfer:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: 6c582a5335d6e17f6f33534a8b716cc1efbc076a
           persist-credentials: false
-      - name: Verify admin patch and upload immutable source blobs only
+      - name: Upload exact single-line browser test correction
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           python - <<'PY'
-          import base64, hashlib, json, os, pathlib, subprocess, urllib.request, zlib
-          root = pathlib.Path.cwd()
-          base = '5db9cc291ebf6b4be070f1c9d6ee53bd9cea7832'
-          expected = 'd35857ac1a0a5655eed84c2fcd5e160107539095'
-          packed = b''.join((root / '_admin_transport' / f'{i:02}.bin').read_bytes() for i in range(8))
-          patch = zlib.decompress(packed)
-          assert hashlib.sha256(patch).hexdigest() == 'b95e21879a15e1fc22ab81048c0163c30d3f7e429fe29e74be695adc63352dce'
-          work = pathlib.Path(os.environ['RUNNER_TEMP']) / 'verified-admin-source'
-          subprocess.run(['git', 'worktree', 'add', '--detach', str(work), base], check=True)
-          def git(*args):
-              return subprocess.check_output(['git', *args], cwd=work)
-          subprocess.run(['git', 'apply', '--index', '--whitespace=error-all', '-'], cwd=work, input=patch, check=True)
-          assert git('write-tree').decode().strip() == expected, 'Source tree differs from tested tree'
-          assert not git('diff', '--cached', '--diff-filter=D', '--name-only').strip(), 'Unexpected deletion'
-          paths = git('diff', '--cached', '--name-only', '-z').decode().strip('\0').split('\0')
-          assert len(paths) == 15
-          assert all(not p.startswith(('.github/', 'web/', 'telegram_bot/')) for p in paths)
-          records = []
-          for path in paths:
-              entry = git('ls-files', '--stage', '--', path).decode().split()
-              mode, expected_blob = entry[0], entry[1]
-              assert mode in {'100644', '100755'}
-              target = work / path
-              assert target.is_file() and not target.is_symlink()
-              data = target.read_bytes()
-              assert hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest() == expected_blob
-              request = urllib.request.Request(
-                  'https://api.github.com/repos/DeepDlueIV/shluz/git/blobs',
-                  data=json.dumps({'encoding':'base64','content':base64.b64encode(data).decode()}).encode(),
-                  headers={'Authorization':'Bearer ' + os.environ['GH_TOKEN'], 'Accept':'application/vnd.github+json', 'Content-Type':'application/json'},
-                  method='POST')
-              with urllib.request.urlopen(request, timeout=30) as reply:
-                  uploaded = json.load(reply)
-              assert uploaded['sha'] == expected_blob, 'Uploaded blob differs'
-              records.append({'path':path, 'mode':mode, 'type':'blob', 'sha':expected_blob})
-          result = {'base':base, 'tree':expected, 'entries':records}
-          (root / 'verified-objects.json').write_text(json.dumps(result, indent=2))
-          print('VERIFIED_OBJECTS=' + json.dumps(result, separators=(',', ':')))
-          print('Only immutable source blobs uploaded. No application ref, secret or runtime changed.')
+          import base64, hashlib, json, os, pathlib, urllib.request
+          path = pathlib.Path('ui_tests/test_admin_ui.py')
+          original = path.read_bytes()
+          blob = lambda data: hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          assert blob(original) == '3a1674ef46b98b717ae6a031eb5ea9b9b8cd27d1'
+          before = '    page.locator(\'form[action="/admin/plans"]\').get_by_label("Способ оплаты").select_option("payg")'
+          after = '    create_form.get_by_label("Способ оплаты", exact=True).select_option("payg")'
+          text = original.decode()
+          assert text.count(before) == 1
+          data = text.replace(before, after).encode()
+          expected = 'cd1b01c368ba7032360b64c3a99d3eeffa4da8c4'
+          assert blob(data) == expected
+          request = urllib.request.Request(
+              'https://api.github.com/repos/DeepDlueIV/shluz/git/blobs',
+              data=json.dumps({'encoding':'base64','content':base64.b64encode(data).decode()}).encode(),
+              headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'], 'Accept':'application/vnd.github+json', 'Content-Type':'application/json'}, method='POST')
+          with urllib.request.urlopen(request, timeout=30) as reply:
+              result = json.load(reply)
+          assert result['sha'] == expected
+          print('Verified immutable browser-test blob: '+expected)
+          print('No application ref, secret or runtime changed.')
           PY
-      - uses: actions/upload-artifact@v4
-        with:
-          name: verified-admin-source-objects
-          path: verified-objects.json
-          retention-days: 1
