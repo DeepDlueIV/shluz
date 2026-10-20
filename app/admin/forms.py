@@ -8,11 +8,18 @@ _PLAN_CODE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _MAX_FORM_BYTES = 16_384
 FIELD_LABELS = {
     "billing_mode": "Способ оплаты",
-    "code": "Код тарифа", "name": "Название", "display_name": "Имя пользователя",
-    "monthly_price_usd": "Цена в месяц", "monthly_cost_limit_usd": "Лимит себестоимости",
-    "monthly_credit_limit": "Кредитов в месяц", "monthly_request_limit": "Запросов в месяц",
-    "request_credit_reserve": "Резерв кредитов", "markup_percent": "Наценка",
-    "role": "Роль", "status": "Статус", "source": "Канал",
+    "code": "Код тарифа",
+    "name": "Название",
+    "display_name": "Имя пользователя",
+    "monthly_price_usd": "Цена в месяц",
+    "monthly_cost_limit_usd": "Лимит себестоимости",
+    "monthly_credit_limit": "Кредитов в месяц",
+    "monthly_request_limit": "Запросов в месяц",
+    "request_credit_reserve": "Резерв кредитов",
+    "markup_percent": "Наценка",
+    "role": "Роль",
+    "status": "Статус",
+    "source": "Канал",
 }
 
 
@@ -30,11 +37,12 @@ async def _read_form(request: Request) -> dict[str, str]:
     if not form.get("csrf_token", "").isascii():
         raise HTTPException(status_code=403, detail="Недействительный защитный токен формы")
     # Только безопасные поля для повторного показа формы; не пароли и не ключи.
-    request.state.admin_form = {
-        key: value for key, value in form.items() if key in FIELD_LABELS
-    }
+    request.state.admin_form = {key: value for key, value in form.items() if key in FIELD_LABELS}
     request.state.admin_form["active"] = form.get("active", "").lower() in {
-        "on", "true", "1", "yes",
+        "on",
+        "true",
+        "1",
+        "yes",
     }
     return form
 
@@ -53,7 +61,8 @@ def _choice(form: dict[str, str], key: str, allowed: set[str]) -> str:
     value = form.get(key, "").strip().lower()
     if value not in allowed:
         raise HTTPException(
-            status_code=422, detail=f"{FIELD_LABELS.get(key, key)}: недопустимое значение",
+            status_code=422,
+            detail=f"{FIELD_LABELS.get(key, key)}: недопустимое значение",
         )
     return value
 
@@ -66,7 +75,8 @@ def _optional_int(form: dict[str, str], key: str) -> int | None:
         value = int(raw)
     except ValueError as exc:
         raise HTTPException(
-            status_code=422, detail=f"{FIELD_LABELS.get(key, key)}: нужно целое число",
+            status_code=422,
+            detail=f"{FIELD_LABELS.get(key, key)}: нужно целое число",
         ) from exc
     if not 0 <= value <= 2_147_483_647:
         raise HTTPException(
@@ -77,7 +87,10 @@ def _optional_int(form: dict[str, str], key: str) -> int | None:
 
 
 def _decimal_value(
-    form: dict[str, str], key: str, *, optional: bool = False,
+    form: dict[str, str],
+    key: str,
+    *,
+    optional: bool = False,
 ) -> Decimal | None:
     raw = form.get(key, "").strip().replace(",", ".")
     if not raw and optional:
@@ -86,7 +99,8 @@ def _decimal_value(
         value = Decimal(raw or "0")
     except InvalidOperation as exc:
         raise HTTPException(
-            status_code=422, detail=f"{FIELD_LABELS.get(key, key)}: нужно число",
+            status_code=422,
+            detail=f"{FIELD_LABELS.get(key, key)}: нужно число",
         ) from exc
     upper = Decimal("99999.99") if key == "markup_percent" else Decimal("9999999999")
     if not value.is_finite() or not 0 <= value <= upper:
@@ -97,23 +111,43 @@ def _decimal_value(
     return value
 
 
-def _plan_values(form: dict[str, str]) -> dict[str, object]:
+def _plan_values(
+    form: dict[str, str],
+    *,
+    existing: dict[str, object] | None = None,
+) -> dict[str, object]:
     code = _required_text(form, "code", max_length=64).lower()
     if not _PLAN_CODE_PATTERN.fullmatch(code):
         raise HTTPException(
             status_code=422,
             detail="Код тарифа: латинские буквы, цифры, дефис и подчёркивание. Например: test",
         )
-    return {
-        **({"billing_mode": _choice(form, "billing_mode", {"subscription", "payg"})}
-           if "billing_mode" in form else {}),
+    # Неотправленные disabled-поля не обнуляют сохранённую подписку. В PAYG
+    # их значения игнорируются и на сервере, а не только прячутся JavaScript.
+    defaults = {key: "" if value is None else str(value) for key, value in (existing or {}).items()}
+    values = {**defaults, **form}
+    mode = _choice(
+        {"billing_mode": values.get("billing_mode", "subscription")},
+        "billing_mode",
+        {"subscription", "payg"},
+    )
+    result: dict[str, object] = {
+        "billing_mode": mode,
         "code": code,
         "name": _required_text(form, "name", max_length=200),
-        "monthly_price_usd": _decimal_value(form, "monthly_price_usd"),
-        "monthly_cost_limit_usd": _decimal_value(form, "monthly_cost_limit_usd", optional=True),
-        "monthly_credit_limit": _optional_int(form, "monthly_credit_limit"),
-        "monthly_request_limit": _optional_int(form, "monthly_request_limit"),
-        "request_credit_reserve": _optional_int(form, "request_credit_reserve") or 0,
-        "markup_percent": _decimal_value(form, "markup_percent"),
+        "markup_percent": _decimal_value(values, "markup_percent"),
         "active": form.get("active", "").lower() in {"on", "true", "1", "yes"},
     }
+    if mode == "subscription":
+        result.update(
+            {
+                "monthly_price_usd": _decimal_value(values, "monthly_price_usd"),
+                "monthly_cost_limit_usd": _decimal_value(
+                    values, "monthly_cost_limit_usd", optional=True
+                ),
+                "monthly_credit_limit": _optional_int(values, "monthly_credit_limit"),
+                "monthly_request_limit": _optional_int(values, "monthly_request_limit"),
+                "request_credit_reserve": _optional_int(values, "request_credit_reserve") or 0,
+            }
+        )
+    return result

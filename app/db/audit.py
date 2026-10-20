@@ -24,6 +24,7 @@ ACTION_LABELS = {
     "telegram.invite_created": "Telegram: приглашение создано",
     "telegram.invite_used": "Telegram: приглашение активировано",
     "telegram.invite_revoked": "Telegram: приглашение отозвано",
+    "user.renamed": "Имя пользователя изменено",
     "user.created": "Пользователь создан",
     "user.archived": "Пользователь перемещён в архив",
     "user.restored": "Пользователь восстановлен",
@@ -48,6 +49,7 @@ PLAN_FIELDS = (
     "active",
 )
 _SAFE_FIELDS = set(PLAN_FIELDS) | {
+    "display_name",
     "before",
     "after",
     "role",

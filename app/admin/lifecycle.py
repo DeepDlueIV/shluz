@@ -32,10 +32,10 @@ def change_account_archive(session: Session, account_id: str, actor: str, archiv
     account = session.scalar(select(Account).where(Account.id == account_id).with_for_update())
     if account is None:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
-    if account.id == "bootstrap" or account.role != "user":
+    if account.id == "bootstrap" or account.role not in {"user", "admin"}:
         raise HTTPException(
             status_code=409,
-            detail="Технические и административные аккаунты нельзя архивировать",
+            detail="Служебные аккаунты защищены от архивирования",
         )
     target_status = "archived" if archive else "active"
     if account.status == target_status:

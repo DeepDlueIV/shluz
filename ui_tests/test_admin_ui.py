@@ -146,7 +146,7 @@ def test_navigation_and_layout(page, preview):
 def test_tooltip_hover_focus_escape_and_keyboard(page, preview):
     page.goto(preview[0].url + "/admin/plans")
     form = page.locator('form[action="/admin/plans"]')
-    form.locator("summary").click()
+    form.locator(".advanced-fields > summary").click()
     button = form.get_by_role("button", name="Справка: Резерв кредитов на запрос", exact=True)
     button.hover()
     tooltip = page.get_by_role("tooltip")
@@ -173,7 +173,7 @@ def test_mobile_help_fits_viewport(page, preview):
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(preview[0].url + "/admin/plans")
     form = page.locator('form[action="/admin/plans"]')
-    form.locator("summary").click()
+    form.locator(".advanced-fields > summary").click()
     form.get_by_role("button", name="Справка: Бюджет на модели", exact=True).click()
     tooltip = page.get_by_role("tooltip")
     expect(tooltip).to_be_visible()
@@ -218,6 +218,7 @@ def test_unnamed_key_and_copy(page, preview):
     server, _ = preview
     page.goto(server.url + "/admin/users")
     row = page.locator(f"#user-{server.alice_id}")
+    row.locator(".manual-access > summary").click()
     row.locator(".token-issuer > summary").click()
     row.locator('[name="source"]').select_option("telegram")
     row.get_by_role("button", name="Создать токен", exact=True).click()
@@ -239,7 +240,7 @@ def test_no_javascript_fallback(browser, preview):
         page.goto(server.url + "/admin/plans")
         expect(page.locator(".app-nav")).to_be_visible()
         form = page.locator('form[action="/admin/plans"]')
-        form.locator("summary").click()
+        form.locator(".advanced-fields > summary").click()
         button = form.get_by_role("button", name="Справка: Резерв кредитов на запрос")
         assert "Временная бронь" in button.get_attribute("title")
         expect(form.locator('[name="request_credit_reserve"]')).to_be_visible()
@@ -335,3 +336,106 @@ def test_wallet_units_and_channel_controls(page, preview):
     page.goto(server.url + "/admin/wallets")
     expect(page.get_by_role("heading", name="Кошельки", exact=True)).to_be_visible()
     capture(page, "wallets-mobile")
+
+
+def test_user_rename_archive_admin_and_compact_details(page, preview):
+    server, database = preview
+    from app.db.models import Identity
+
+    with database.session() as session:
+        account = Account(display_name="telegram DDIVV · UI", role="admin")
+        session.add(account)
+        session.flush()
+        account_id = account.id
+        session.add(Identity(account_id=account_id, provider="telegram", subject="2233445566"))
+    page.goto(server.url + "/admin/users")
+    expect(page.locator(".manual-create .create-account-form")).to_be_hidden()
+    row = page.locator("#user-" + account_id)
+    expect(row).to_contain_text("Telegram ID: 2233445566")
+    expect(row.locator(".token-issuer")).to_be_hidden()
+    page.locator("#user-search").fill("2233445566")
+    expect(row).to_be_visible()
+    expect(page.locator("[data-filter-count]")).to_contain_text("1")
+    row.locator(".rename-control > summary").click()
+    row.get_by_label("Имя в Shluz", exact=True).fill("Мой аккаунт")
+    row.get_by_role("button", name="Сохранить имя", exact=True).click()
+    expect(row.locator(".name-cell > strong")).to_have_text("Мой аккаунт")
+    capture(page, "users-compact-renamed")
+    row.locator(".account-options > summary").click()
+    row.locator(".archive-control > summary").click()
+    row.get_by_label("Подтверждаю действие", exact=True).check()
+    row.get_by_role("button", name="В архив", exact=True).click()
+    expect(page.locator("#user-" + account_id)).to_have_count(0)
+    page.get_by_role("link", name="Архив", exact=True).click()
+    row = page.locator("#user-" + account_id)
+    row.locator(".account-options > summary").click()
+    row.locator(".archive-control > summary").click()
+    row.get_by_label("Подтверждаю действие", exact=True).check()
+    row.get_by_role("button", name="Восстановить", exact=True).click()
+    expect(page.locator("#user-" + account_id)).to_be_visible()
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    capture(page, "users-compact-mobile")
+
+
+def test_payg_mode_hides_and_disables_unused_fields_without_affecting_other_forms(page, preview):
+    server, database = preview
+    with database.session() as session:
+        p = Plan(code="ui-modes", name="Переключение режимов", monthly_price_usd=Decimal("9"),
+                 monthly_request_limit=150, monthly_cost_limit_usd=Decimal("5"),
+                 monthly_credit_limit=800, request_credit_reserve=7)
+        session.add(p)
+        session.flush()
+        pid = p.id
+    page.goto(server.url + "/admin/plans")
+    row = page.locator("tbody > tr").filter(has_text="Переключение режимов")
+    row.locator(".management-cell > details").first.locator("summary").first.click()
+    form = row.locator(".plan-edit-form")
+    form.get_by_label("Способ оплаты", exact=True).select_option("payg")
+    for name in ["monthly_price_usd", "monthly_request_limit", "monthly_cost_limit_usd",
+                 "monthly_credit_limit", "request_credit_reserve"]:
+        expect(form.locator(f'[name="{name}"]')).to_be_hidden()
+        expect(form.locator(f'[name="{name}"]')).to_be_disabled()
+    expect(form.locator('[name="markup_percent"]')).to_be_visible()
+    # Creating another tariff is independent from changing this one.
+    create_form = page.locator('form[action="/admin/plans"]')
+    expect(create_form.locator('[name="monthly_price_usd"]')).to_be_visible()
+    form.locator('[name="markup_percent"]').fill("20")
+    form.get_by_role("button", name="Сохранить", exact=True).click()
+    with database.session() as session:
+        p = session.get(Plan, pid)
+        assert p.billing_mode == "payg" and p.monthly_price_usd == Decimal("9")
+        assert p.monthly_request_limit == 150 and p.request_credit_reserve == 7
+    page.locator('form[action="/admin/plans"]').get_by_label("Способ оплаты").select_option("payg")
+    capture(page, "plans-payg-desktop")
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    capture(page, "plans-payg-mobile")
+    page.set_viewport_size({"width": 1440, "height": 1000})
+    row = page.locator("tbody > tr").filter(has_text="Переключение режимов")
+    row.locator(".management-cell > details").first.locator("summary").first.click()
+    form = row.locator(".plan-edit-form")
+    form.get_by_label("Способ оплаты", exact=True).select_option("subscription")
+    expect(form.locator('[name="monthly_price_usd"]')).to_have_value("9")
+    expect(form.locator('[name="monthly_price_usd"]')).to_be_enabled()
+    expect(form.locator('[name="monthly_request_limit"]')).to_have_value("150")
+    form.get_by_role("button", name="Сохранить", exact=True).click()
+    with database.session() as session:
+        p = session.get(Plan, pid)
+        assert p.billing_mode == "subscription" and p.monthly_cost_limit_usd == Decimal("5")
+        assert p.monthly_credit_limit == 800 and p.request_credit_reserve == 7
+
+
+def test_new_payg_can_submit_with_invalid_hidden_subscription_field(page, preview):
+    page.goto(preview[0].url + "/admin/plans")
+    form = page.locator('form[action="/admin/plans"]')
+    form.get_by_label("Название тарифа", exact=True).fill("Оплата по запросам")
+    form.get_by_label("Код тарифа", exact=True).fill("ui-create-payg")
+    form.locator('[name="monthly_price_usd"]').fill("-9")
+    form.get_by_label("Способ оплаты", exact=True).select_option("payg")
+    form.locator('[name="markup_percent"]').fill("15")
+    form.get_by_role("button", name="Создать тариф", exact=True).click()
+    expect(page.locator("tbody")).to_contain_text("Оплата по запросам")
+    with preview[1].session() as session:
+        p = session.scalar(select(Plan).where(Plan.code == "ui-create-payg"))
+        assert p.billing_mode == "payg" and p.monthly_price_usd == 0

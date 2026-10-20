@@ -116,6 +116,25 @@
       if (counter) counter.textContent = query ? `Найдено: ${visible}` : "";
     });
   });
+  // У каждой формы свой режим. Disabled-поля не отправляются; сервер сохраняет
+  // параметры подписки отдельно, поэтому смена режима не стирает старые значения.
+  document.querySelectorAll("[data-plan-mode]").forEach(select => {
+    const form = select.closest("form");
+    if (!form) return;
+    const sections = [...form.querySelectorAll("[data-plan-section]")];
+    const sync = () => {
+      sections.forEach(section => {
+        const enabled = section.dataset.planSection === select.value;
+        section.hidden = !enabled;
+        if (section.tagName === "FIELDSET") section.disabled = !enabled;
+      });
+    };
+    select.addEventListener("change", sync);
+    form.addEventListener("reset", () => setTimeout(sync, 0));
+    addEventListener("pageshow", sync);
+    sync();
+  });
+
   function revealHash() {
     let id;
     try { id = decodeURIComponent(location.hash.slice(1)); } catch { return; }

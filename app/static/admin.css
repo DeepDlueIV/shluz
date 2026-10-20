@@ -261,3 +261,24 @@ tr:target { background: #243651; outline: 2px solid var(--accent); outline-offse
   .form-card { padding: 18px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }
+
+/* Редкие действия свернуты; переключение тарифа не скрывает реальные ограничения. */
+.plan-mode-group { min-width: 0; padding: 0; margin: 0; border: 0; }
+.mode-note { margin: 0 0 12px; padding: 12px 14px; border-left: 3px solid var(--border); background: var(--bg); border-radius: 6px; color: var(--muted); font-size: 13px; }
+.mode-note strong { display: block; color: var(--text); font-size: 14px; }
+.mode-note p { margin: 7px 0; }
+.mode-note small { display: block; line-height: 1.6; margin-top: 6px; }
+.plan-markup > .field { max-width: 380px; }
+.plan-markup > small { display: block; margin-top: 6px; }
+.account-options .account-details { padding-top: 8px; }
+.rename-control .compact-form { padding: 12px; }
+.rename-control .field-heading { flex-wrap: wrap; }
+.manual-access > .details-body { padding: 10px 0 0; }
+.manual-access .summary-note { margin-left: 4px; white-space: nowrap; }
+.manual-create > .form-card { border: 0; background: transparent; }
+.users-table .name-cell > strong { font-size: 15px; }
+.plan-edit-form .plan-mode-group .plan-form { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 600px) {
+  .manual-create > summary .summary-note { display: block; margin: 4px 0 0; }
+  .rename-control .compact-form { width: 100%; }
+}
