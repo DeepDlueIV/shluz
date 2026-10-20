@@ -80,6 +80,7 @@ class UsageService:
         input_chars: int = 0,
         requested_output_tokens: int | None = None,
         web_context=None,
+        uses_tools: bool = False,
     ) -> UsageReservation:
         resolved_now = now or datetime.now(UTC)
         expires_at = resolved_now + timedelta(seconds=self._settings.reservation_ttl_seconds)
@@ -121,6 +122,8 @@ class UsageService:
                     if input_chars > 200000:
                         raise product.InputTooLarge()
                 else:
+                    if uses_tools:
+                        raise product.DemoToolsNotAllowed()
                     if input_chars > config.demo_max_input_chars or (
                         requested_output_tokens is not None
                         and requested_output_tokens > config.demo_max_output_tokens

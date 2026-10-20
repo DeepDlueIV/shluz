@@ -16,6 +16,7 @@ from app.admin.diagnostics import router as diagnostics_router
 from app.admin.routes import router as admin_router
 from app.admin.telegram import router as telegram_admin_router
 from app.api.router import api_router
+from app.api.validation import api_validation_error
 from app.billing.admin import router as wallet_admin_router
 from app.config import Settings, get_settings
 from app.db.database import Database
@@ -33,7 +34,7 @@ from app.webaccess.admin import router as web_admin_router
 from app.webaccess.maintenance import cleanup, maintain
 from app.webaccess.perimeter import WebPerimeter
 from app.webaccess.routes import router as web_router
-from app.webaccess.routes import web_http_error, web_validation_error
+from app.webaccess.routes import web_http_error
 from app.webaccess.settings import WebSettings
 from app.webaccess.telegram_login import TelegramVerifier
 from app.webaccess.telegram_login import router as telegram_login_router
@@ -110,7 +111,7 @@ def create_app(
     app.state.database = resolved_database
     app.state.usage_service = UsageService(resolved_database, resolved_settings)
     app.add_exception_handler(HTTPException, web_http_error)
-    app.add_exception_handler(RequestValidationError, web_validation_error)
+    app.add_exception_handler(RequestValidationError, api_validation_error)
     install_observability(app)
     app.add_middleware(WebPerimeter, settings=resolved_web, database=resolved_database)
 

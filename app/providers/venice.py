@@ -5,6 +5,7 @@ from typing import Any
 
 import httpx
 
+from app.api.chat_types import ToolCall
 from app.config import Settings
 from app.providers.base import (
     ChatRequest,
@@ -16,6 +17,7 @@ from app.providers.base import (
     ProviderRateLimitError,
     StreamChunk,
 )
+from app.providers.tool_stream import ToolAccumulator
 from app.streaming.sse import SSEError, events
 
 
@@ -127,44 +129,81 @@ class VeniceProvider:
         return self._fetch_models(model_type="all")
 
     def chat_completion(self, request: ChatRequest) -> ChatResult:
-        response = self._request(
-            "POST",
-            "/chat/completions",
-            json={
-                "model": request.model,
-                "messages": [
-                    {"role": message.role, "content": message.content}
-                    for message in request.messages
-                ],
-                "stream": False,
-                **(
-                    {"max_completion_tokens": request.max_completion_tokens}
-                    if request.max_completion_tokens
-                    else {}
+        response = self._request("POST", "/chat/completions", json=request.wire(stream=False))
+        return self._chat_result(self._json(response), require_finish=request.uses_tools)
+
+    async def chat_completion_async(self, request: ChatRequest) -> ChatResult:
+        client = self._stream_client or httpx.AsyncClient(
+            timeout=httpx.Timeout(self._stream_timeout, connect=10), follow_redirects=False,
+        )
+        try:
+            response = await client.post(
+                self._stream_url, json=request.wire(stream=False),
+                headers={"Authorization": f"Bearer {self._api_key}", "Accept": "application/json"},
+                follow_redirects=False,
+            )
+            self._raise_for_status(response)
+            return self._chat_result(self._json(response), require_finish=request.uses_tools)
+        except httpx.RequestError as exc:
+            raise ProviderError("Venice is temporarily unreachable") from exc
+        finally:
+            if self._stream_client is None:
+                await client.aclose()
+
+    def _chat_result(self, payload: dict, *, require_finish=False) -> ChatResult:
+        try:
+            choices = payload.get("choices")
+            if not isinstance(choices, list) or len(choices) != 1:
+                raise ValueError("Expected one choice")
+            choice = choices[0]
+            if choice.get("index", 0) != 0:
+                raise ValueError("Invalid choice index")
+            message = choice["message"]
+            if not isinstance(message, dict) or set(message) - {
+                "role", "content", "tool_calls", "reasoning_content", "reasoning"
+            }:
+                raise ValueError("Unsupported assistant fields")
+            if message.get("role", "assistant") != "assistant":
+                raise ValueError("Invalid assistant role")
+            calls = message.get("tool_calls")
+            if calls is not None:
+                if not isinstance(calls, list) or len(calls) > 128:
+                    raise ValueError("Invalid tool calls")
+                calls = [ToolCall.model_validate(c).model_dump() for c in calls]
+                if len({c["id"] for c in calls}) != len(calls):
+                    raise ValueError("Duplicate tool IDs")
+            content = message.get("content")
+            if content is not None and not isinstance(content, str):
+                raise ValueError("Unsupported assistant content")
+            if content is None and not calls:
+                raise ValueError("Missing content/tool_calls")
+            finish = choice.get("finish_reason") or (None if calls or require_finish else "stop")
+            if finish not in {"stop", "length", "content_filter", "tool_calls"}:
+                raise ValueError("Unsupported finish reason")
+            if (finish == "tool_calls" and not calls) or (calls and finish == "stop"):
+                raise ValueError("Inconsistent finish reason")
+            reasoning = message.get("reasoning_content", message.get("reasoning"))
+            if reasoning is not None and not isinstance(reasoning, str):
+                raise ValueError("Unsupported reasoning")
+            usage, cost = payload.get("usage") or {}, payload.get("cost") or {}
+            if not isinstance(usage, dict) or not isinstance(cost, dict):
+                raise ValueError("Invalid accounting")
+            known = all(type(usage.get(k)) is int and 0 <= usage[k] <= 10000000
+                        for k in ("prompt_tokens", "completion_tokens"))
+            return ChatResult(
+                content=content, tool_calls=calls or None, finish_reason=finish,
+                reasoning_content=reasoning,
+                prompt_tokens=usage["prompt_tokens"] if known else 0,
+                completion_tokens=usage["completion_tokens"] if known else 0,
+                usage_known=known,
+                request_id=payload.get("id") if isinstance(payload.get("id"), str) else None,
+                cost_usd=(
+                    _decimal(cost.get("usd")) if _known_cost(cost.get("usd")) else Decimal("0")
                 ),
-            },
-        )
-        payload = self._json(response)
-        choices = payload.get("choices") or []
-        if not choices:
-            raise ProviderError("Venice returned an invalid chat response")
-
-        message = choices[0].get("message") or {}
-        content = message.get("content")
-        if not isinstance(content, str):
-            raise ProviderError("Venice returned an unsupported chat response")
-
-        usage = payload.get("usage") or {}
-        cost = payload.get("cost") or {}
-        return ChatResult(
-            content=content,
-            prompt_tokens=_int(usage.get("prompt_tokens")),
-            completion_tokens=_int(usage.get("completion_tokens")),
-            request_id=payload.get("id"),
-            cost_usd=_decimal(cost.get("usd")) if _known_cost(cost.get("usd")) else Decimal("0"),
-            cost_known=_known_cost(cost.get("usd")),
-            cost_diem=_decimal(cost.get("diem")),
-        )
+                cost_known=_known_cost(cost.get("usd")), cost_diem=_decimal(cost.get("diem")),
+            )
+        except (ValueError, TypeError, KeyError, AttributeError) as exc:
+            raise ProviderError("Venice returned an unsupported chat response") from exc
 
     async def chat_stream(self, request: ChatRequest):
         # Отдельная сессия запроса: отмена закрывает соединение, POST не повторяется.
@@ -178,20 +217,22 @@ class VeniceProvider:
                 "POST",
                 self._stream_url,
                 headers={"Authorization": f"Bearer {self._api_key}", "Accept": "text/event-stream"},
-                json={
-                    "model": request.model,
-                    "messages": [{"role": m.role, "content": m.content} for m in request.messages],
-                    "stream": True,
-                    "stream_options": {"include_usage": True},
-                    "max_completion_tokens": request.max_completion_tokens,
-                },
+                json=request.wire(stream=True),
             )
             response = await client.send(req, stream=True, follow_redirects=False)
             self._raise_for_status(response)
             if not response.headers.get("content-type", "").startswith("text/event-stream"):
                 raise ProviderError("Invalid upstream stream type")
+            tools = ToolAccumulator()
+            finished = None
             async for frame in events(response.aiter_bytes()):
                 if frame == "[DONE]":
+                    if request.uses_tools and finished is None:
+                        raise ProviderError("Agent stream ended without finish reason")
+                    if tools.calls and finished not in {"tool_calls", "length", "content_filter"}:
+                        raise ProviderError("Tool stream ended without valid finish reason")
+                    if finished == "tool_calls" and not tools.calls:
+                        raise ProviderError("Tool finish without calls")
                     yield StreamChunk(done=True)
                     return
                 data = json.loads(frame)
@@ -205,25 +246,49 @@ class VeniceProvider:
                     value = usage.get(name)
                     return value if type(value) is int and 0 <= value <= 10000000 else None
 
-                content, finish = "", None
+                content, finish, tool_deltas, reasoning, role = "", None, None, None, None
                 choices = data.get("choices") or []
-                if not isinstance(choices, list):
+                if not isinstance(choices, list) or len(choices) > 1:
                     raise ProviderError("Invalid upstream choices")
                 if choices:
                     choice = choices[0]
-                    if not isinstance(choice, dict):
+                    if not isinstance(choice, dict) or choice.get("index", 0) != 0:
                         raise ProviderError("Invalid upstream choice")
-                    delta = choice.get("delta") or {}
+                    delta = choice.get("delta")
+                    if delta is None:
+                        delta = {}
                     if not isinstance(delta, dict):
                         raise ProviderError("Invalid upstream delta")
-                    content = delta.get("content") or ""
+                    supported = {"role", "content", "tool_calls", "reasoning_content", "reasoning"}
+                    if set(delta) - supported:
+                        raise ProviderError("Unsupported upstream delta fields")
+                    role = delta.get("role")
+                    if role not in {None, "assistant"}:
+                        raise ProviderError("Unsupported upstream role")
+                    reasoning = delta.get("reasoning_content", delta.get("reasoning"))
+                    if reasoning is not None and not isinstance(reasoning, str):
+                        raise ProviderError("Unsupported upstream reasoning")
+                    if finished and any(
+                        delta.get(k)
+                        for k in ("content", "tool_calls", "reasoning_content", "reasoning")
+                    ):
+                        raise ProviderError("Content after finish")
+                    if delta.get("tool_calls") is not None:
+                        tool_deltas = tools.accept(delta["tool_calls"])
+                    content = delta.get("content")
+                    if content is None:
+                        content = ""
                     if not isinstance(content, str):
                         raise ProviderError("Unsupported upstream content")
                     finish = choice.get("finish_reason")
-                    if finish not in {None, "stop", "length", "content_filter"}:
+                    if finish not in {None, "stop", "length", "content_filter", "tool_calls"}:
                         raise ProviderError("Unsupported upstream finish")
+                    if finish is not None:
+                        if finished is not None:
+                            raise ProviderError("Duplicate finish")
+                        finished = finish
                 yield StreamChunk(
-                    content=content,
+                    content=content, tool_calls=tool_deltas, reasoning_content=reasoning, role=role,
                     finish_reason=finish,
                     request_id=data.get("id") if isinstance(data.get("id"), str) else None,
                     prompt_tokens=count("prompt_tokens"),
@@ -328,6 +393,7 @@ class VeniceProvider:
                     type=item.get("type") or spec.get("type"),
                     name=spec.get("name") or item.get("name"),
                     privacy=spec.get("privacy") or item.get("privacy"),
+                    tool_calling=(spec.get("capabilities") or {}).get("supportsFunctionCalling"),
                     input_price_usd=_price_usd(pricing.get("input")),
                     output_price_usd=_price_usd(pricing.get("output")),
                     unit_price_usd=_price_usd(

@@ -12,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.responses import StreamingResponse
 
 from app.providers.base import ChatResult, ProviderError
+from app.providers.tool_stream import ToolAccumulator
 
 
 def frame(data):
@@ -37,6 +38,8 @@ class StreamSession:
         )
         self.include_usage = include_usage
         self.parts = []
+        self.tools = ToolAccumulator()
+        self.reasoning = []
         self.chars = 0
         self.prompt = self.completion = self.cost = self.diem = None
         self.provider_id = None
@@ -53,10 +56,19 @@ class StreamSession:
         return await asyncio.wait_for(anext(self.iterator), min(remaining, self.idle_timeout))
 
     def accept(self, chunk):
+        if chunk.tool_calls:
+            self.observation.first_content()
+            self.tools.accept(chunk.tool_calls)
+        if chunk.reasoning_content:
+            self.observation.first_content()
+            self.reasoning.append(chunk.reasoning_content)
+            self.chars += len(chunk.reasoning_content)
+        if self.chars + self.tools.size > 200000:
+            raise ProviderError("Stream output limit")
         if chunk.content:
             self.observation.first_content()
             self.chars += len(chunk.content)
-            if self.chars > 200000:
+            if self.chars + self.tools.size > 200000:
                 raise ProviderError("Stream text limit")
             self.parts.append(chunk.content)
         if chunk.request_id:
@@ -74,7 +86,10 @@ class StreamSession:
 
     def result(self):
         return ChatResult(
-            content="".join(self.parts),
+            content="".join(self.parts) if self.parts or not self.tools.calls else None,
+            tool_calls=self.tools.complete() or None,
+            finish_reason=self.finish_reason,
+            reasoning_content="".join(self.reasoning) if self.reasoning else None,
             prompt_tokens=self.prompt or 0,
             completion_tokens=self.completion or 0,
             cost_usd=self.cost or Decimal("0"),
@@ -137,18 +152,19 @@ class StreamSession:
             chunk = first
             while True:
                 self.accept(chunk)
+                delta = {}
+                if chunk.role:
+                    delta["role"] = chunk.role
                 if chunk.content:
-                    yield frame(
-                        self.envelope(
-                            [
-                                {
-                                    "index": 0,
-                                    "delta": {"content": chunk.content},
-                                    "finish_reason": None,
-                                }
-                            ]
-                        )
-                    )
+                    delta["content"] = chunk.content
+                if chunk.tool_calls:
+                    delta["tool_calls"] = chunk.tool_calls
+                if chunk.reasoning_content is not None:
+                    delta["reasoning_content"] = chunk.reasoning_content
+                if delta:
+                    yield frame(self.envelope([
+                        {"index": 0, "delta": delta, "finish_reason": None}
+                    ]))
                 if chunk.done:
                     await self.settle(success=True)
                     yield frame(

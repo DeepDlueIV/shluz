@@ -1,3 +1,7 @@
+> Дополнение `desktop-tools-v1`: `/v1/chat/completions` поддерживает function tools
+> в JSON и `delta.tool_calls` в SSE. Контракт, ограничения и агентский цикл:
+> [desktop-agent-api.md](desktop-agent-api.md). Веб- и Telegram-клиенты не изменены.
+
 # Потоковые ответы, диагностика и безопасное обновление
 
 Реализация 19.10.2026. Относится к gateway и Telegram; каталог `web/` не изменяется.

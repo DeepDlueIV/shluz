@@ -1,8 +1,10 @@
 import asyncio
 import time
 import uuid
+from dataclasses import replace
 from typing import Annotated
 
+import anyio
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
@@ -23,11 +25,13 @@ from app.product.service import PolicyError
 from app.providers.base import (
     ChatMessage,
     ChatRequest,
+    ChatResult,
     ModelNotFoundError,
     ProviderAuthenticationError,
     ProviderError,
     ProviderInsufficientBalanceError,
     ProviderRateLimitError,
+    UnsupportedRequestError,
 )
 from app.providers.registry import ProviderRegistry
 from app.streaming.response import ManagedStreamResponse, StreamSession
@@ -64,6 +68,7 @@ def _error_response(
 @router.post(
     "/chat/completions",
     response_model=ChatCompletionResponseSchema,
+    response_model_exclude_unset=True,
     responses={
         200: {"content": {"text/event-stream": {"schema": {"type": "string"}}}},
         402: {"model": ErrorResponseSchema},
@@ -91,6 +96,23 @@ async def chat_completions(
             code="model_not_found",
         )
 
+    chat_request = ChatRequest(
+        model=payload.model,
+        messages=[ChatMessage(**m.wire()) for m in payload.messages],
+        options=payload.provider_options(),
+    )
+    try:
+        if payload.uses_tools:
+            info = next(m for m in registry.list_models() if m.id == payload.model)
+            if info.tool_calling is False:
+                raise UnsupportedRequestError("model_does_not_support_tools")
+        validate = getattr(provider, "validate_request", None)
+        if validate:
+            validate(chat_request)
+    except UnsupportedRequestError as exc:
+        return _error_response(status_code=400, message=str(exc),
+            error_type="invalid_request_error", param="tools", code="tools_unsupported")
+
     observation = request.app.state.telemetry.begin(
         provider.name,
         payload.model,
@@ -114,7 +136,8 @@ async def chat_completions(
             source=principal.source,
             provider=provider.name,
             model=payload.model,
-            input_chars=sum(len(m.content) for m in payload.messages),
+            input_chars=payload.input_chars,
+            uses_tools=payload.uses_tools,
             requested_output_tokens=payload.max_completion_tokens or payload.max_tokens,
         )
     except PolicyError as exc:
@@ -166,11 +189,7 @@ async def chat_completions(
             code="request_limit_exceeded",
         )
 
-    chat_request = ChatRequest(
-        model=payload.model,
-        max_completion_tokens=reservation.max_output_tokens,
-        messages=[ChatMessage(role=m.role, content=m.content) for m in payload.messages],
-    )
+    chat_request = replace(chat_request, max_completion_tokens=reservation.max_output_tokens)
     session = None
     try:
         if payload.stream or reservation.demo:
@@ -200,7 +219,7 @@ async def chat_completions(
                 chunk = await session.next()
             await session.close()
         else:
-            result = await run_in_threadpool(provider.chat_completion, chat_request)
+            result = await _json_completion(provider, chat_request, request)
     except ProviderAuthenticationError:
         await run_in_threadpool(
             usage_service.record_failure,
@@ -261,7 +280,8 @@ async def chat_completions(
             reservation,
             error_code="provider_error",
             timing=observation.timing(),
-            partial=session.result() if session else None,
+            partial=replace(session.result(), cost_known=False, usage_known=False) if session
+            else ChatResult("", cost_known=False, usage_known=False),
         )
         observation.finish("provider_error")
         if session:
@@ -280,7 +300,13 @@ async def chat_completions(
             await session.close()
             await session.settle(code="client_disconnected")
         else:
-            observation.finish("client_disconnected")
+            with anyio.CancelScope(shield=True):
+                await run_in_threadpool(
+                    usage_service.record_failure, reservation, error_code="client_disconnected",
+                    timing=observation.timing(),
+                    partial=ChatResult("", cost_known=False, usage_known=False),
+                )
+                observation.finish("client_disconnected")
         raise
 
     await run_in_threadpool(
@@ -295,18 +321,53 @@ async def chat_completions(
 
     return ChatCompletionResponseSchema(
         id=result.request_id or f"chatcmpl-{uuid.uuid4().hex}",
+        object="chat.completion",
         created=int(time.time()),
         model=payload.model,
         choices=[
             ChatChoiceSchema(
                 index=0,
-                message=AssistantMessageSchema(content=result.content),
-                finish_reason="stop",
+                message=AssistantMessageSchema(
+                    role="assistant", content=result.content,
+                    **({"tool_calls": result.tool_calls} if result.tool_calls else {}),
+                    **({"reasoning_content": result.reasoning_content}
+                       if result.reasoning_content is not None else {}),
+                ),
+                finish_reason=result.finish_reason,
             )
         ],
         usage=UsageSchema(
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,
             total_tokens=result.prompt_tokens + result.completion_tokens,
-        ),
+        ) if result.usage_known else None,
     )
+
+
+async def _json_completion(provider, chat_request, request):
+    """JSON Venice тоже отменяемый; долгий tool-вызов не переживает браузер/клиент."""
+    method = getattr(provider, "chat_completion_async", None)
+    if not callable(method):
+        # Совместимость синхронных сторонних адаптеров. Venice использует async ниже.
+        return await run_in_threadpool(provider.chat_completion, chat_request)
+
+    async def disconnected():
+        while True:
+            message = await request.receive()
+            if message["type"] == "http.disconnect":
+                return
+
+    task = asyncio.create_task(method(chat_request))
+    watcher = asyncio.create_task(disconnected())
+    try:
+        async with asyncio.timeout(min(request.app.state.settings.stream_timeout_seconds,
+                                       request.app.state.settings.reservation_ttl_seconds - 5)):
+            done, _ = await asyncio.wait({task, watcher}, return_when=asyncio.FIRST_COMPLETED)
+            if task in done:
+                return task.result()
+            raise asyncio.CancelledError()
+    finally:
+        task.cancel()
+        watcher.cancel()
+        with anyio.CancelScope(shield=True):
+            await asyncio.gather(task, watcher, return_exceptions=True)
