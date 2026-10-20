@@ -10,9 +10,10 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.auth import AuthenticatedPrincipal, require_api_token
 from app.api.dependencies import get_database
+from app.billing.service import snapshot
 from app.db.database import Database
-from app.db.models import Account, Identity, Plan, Subscription, UsageEvent
-from app.product.service import demo_allowance
+from app.db.models import Account, Identity, UsageEvent
+from app.product.service import active_subscription, demo_allowance
 
 router = APIRouter()
 Principal = Annotated[AuthenticatedPrincipal, Depends(require_api_token)]
@@ -50,24 +51,14 @@ def my_account(principal: Principal, database: Db, response: Response) -> dict:
         account = session.get(Account, principal.account_id)
         if account is None or account.status != "active":
             raise HTTPException(401, detail="Inactive account")
-        # Выбор тарифа совпадает с UsageService. Текущий шлюз считает общую квоту аккаунта.
-        row = session.execute(
-            select(Subscription, Plan)
-            .join(Plan, Plan.id == Subscription.plan_id)
-            .where(
-                Subscription.account_id == account.id,
-                Subscription.status == "active",
-                Subscription.starts_at <= now,
-                or_(Subscription.ends_at.is_(None), Subscription.ends_at > now),
-                Plan.active.is_(True),
-            )
-            .order_by(Subscription.starts_at.desc(), Subscription.created_at.desc())
-        ).first()
+        # Выбор тарифа и область квоты совпадают с UsageService.
+        row = active_subscription(session, account.id, now, principal.source)
         subscription, plan = row if row else (None, None)
         common = (
             UsageEvent.account_id == account.id,
             UsageEvent.created_at >= month_start,
-            UsageEvent.quota_kind != "demo",
+            UsageEvent.quota_kind == "monthly",
+            UsageEvent.quota_scope == (subscription.source if subscription else "*"),
         )
         success = UsageEvent.status.in_(["success", "interrupted"])
         pending = and_(UsageEvent.status == "pending", UsageEvent.reservation_expires_at > now)
@@ -110,12 +101,14 @@ def my_account(principal: Principal, database: Db, response: Response) -> dict:
                 "status": account.status,
             },
             "channel": principal.source,
+            "wallet": snapshot(session, account.id),
             "plan": {
                 "id": plan.id,
                 "kind": "standard",
+                "billing_mode": plan.billing_mode,
                 "code": plan.code,
                 "name": plan.name,
-                "scope": "account",
+                "scope": "account" if subscription.source == "*" else subscription.source,
                 "ends_at": ends_at.isoformat() if ends_at else None,
             }
             if plan
@@ -132,17 +125,25 @@ def my_account(principal: Principal, database: Db, response: Response) -> dict:
                 else None
             ),
             "allowance": {
-                "scope": "account",
-                "resets_at": None if demo else next_month.isoformat(),
+                "scope": subscription.source
+                if subscription and subscription.source != "*"
+                else "account",
+                "resets_at": None
+                if demo or (plan and plan.billing_mode == "payg")
+                else next_month.isoformat(),
                 "requests": demo
                 if demo
                 else _allowance(
-                    plan.monthly_request_limit if plan else None,
+                    plan.monthly_request_limit
+                    if plan and plan.billing_mode == "subscription"
+                    else None,
                     count(success),
                     count(pending),
                 ),
                 "credits": _allowance(
-                    plan.monthly_credit_limit if plan else None,
+                    plan.monthly_credit_limit
+                    if plan and plan.billing_mode == "subscription"
+                    else None,
                     total(UsageEvent.internal_credits, success),
                     total(UsageEvent.reserved_credits, pending_credits),
                 ),
@@ -199,3 +200,20 @@ def bind_telegram(
     except IntegrityError as exc:
         raise HTTPException(409, detail="Telegram identity is already bound") from exc
     return {"account_id": principal.account_id, "telegram_id": payload.telegram_id}
+
+
+@router.get("/me/wallet")
+def own_wallet(
+    principal: Principal, database: Db, response: Response, limit: int = 20, offset: int = 0
+) -> dict:
+    _personal(principal)
+    if not 1 <= limit <= 100 or not 0 <= offset <= 100000:
+        raise HTTPException(422, detail="Недопустимая страница")
+    from app.billing.service import history
+
+    response.headers["Cache-Control"] = "no-store"
+    with database.session() as session:
+        account = session.get(Account, principal.account_id)
+        if not account or account.status != "active":
+            raise HTTPException(401, detail="Inactive account")
+        return history(session, principal.account_id, limit, offset)

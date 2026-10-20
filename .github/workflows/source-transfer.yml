@@ -1,39 +1,41 @@
 name: Verified source object transfer
 on:
   push:
-    branches: [automation/verified-source-transfer-20261020]
+    branches: ['automation/verified-source-transfer-20261020']
+    paths: ['.github/workflows/source-transfer.yml', '_admin_transport/**']
 permissions:
   contents: write
 jobs:
   transfer:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Verify exact source and upload immutable blobs only
+      - name: Verify admin patch and upload immutable source blobs only
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           python - <<'PY'
           import base64, hashlib, json, os, pathlib, subprocess, urllib.request, zlib
           root = pathlib.Path.cwd()
-          base = '92c3b9e3dfaaf1be9e8132d43d6efb84e2073cdd'
-          expected = '4fde5bba5c1fb581c286ef3135adf210b95b16cb'
-          packed = b''.join((root / '_source_transport' / f'{i:02}.bin').read_bytes() for i in range(14))
+          base = '5db9cc291ebf6b4be070f1c9d6ee53bd9cea7832'
+          expected = 'd35857ac1a0a5655eed84c2fcd5e160107539095'
+          packed = b''.join((root / '_admin_transport' / f'{i:02}.bin').read_bytes() for i in range(8))
           patch = zlib.decompress(packed)
-          assert hashlib.sha256(patch).hexdigest() == 'f2905cc6e1387a7ba13075ed24989a4e3f1a83f6022ab458d204321c79076eea'
-          work = pathlib.Path(os.environ['RUNNER_TEMP']) / 'verified-source'
+          assert hashlib.sha256(patch).hexdigest() == 'b95e21879a15e1fc22ab81048c0163c30d3f7e429fe29e74be695adc63352dce'
+          work = pathlib.Path(os.environ['RUNNER_TEMP']) / 'verified-admin-source'
           subprocess.run(['git', 'worktree', 'add', '--detach', str(work), base], check=True)
-          def git(*args, **kwargs):
-              return subprocess.check_output(['git', *args], cwd=work, **kwargs)
+          def git(*args):
+              return subprocess.check_output(['git', *args], cwd=work)
           subprocess.run(['git', 'apply', '--index', '--whitespace=error-all', '-'], cwd=work, input=patch, check=True)
           assert git('write-tree').decode().strip() == expected, 'Source tree differs from tested tree'
           assert not git('diff', '--cached', '--diff-filter=D', '--name-only').strip(), 'Unexpected deletion'
           paths = git('diff', '--cached', '--name-only', '-z').decode().strip('\0').split('\0')
-          assert len(paths) == 43
+          assert len(paths) == 15
+          assert all(not p.startswith(('.github/', 'web/', 'telegram_bot/')) for p in paths)
           records = []
           for path in paths:
               entry = git('ls-files', '--stage', '--', path).decode().split()
@@ -41,9 +43,6 @@ jobs:
               assert mode in {'100644', '100755'}
               target = work / path
               assert target.is_file() and not target.is_symlink()
-              if path.startswith('.github/workflows/'):
-                  records.append({'path': path, 'mode': mode, 'sha': expected_blob, 'connector_write': True})
-                  continue
               data = target.read_bytes()
               assert hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest() == expected_blob
               request = urllib.request.Request(
@@ -58,10 +57,10 @@ jobs:
           result = {'base':base, 'tree':expected, 'entries':records}
           (root / 'verified-objects.json').write_text(json.dumps(result, indent=2))
           print('VERIFIED_OBJECTS=' + json.dumps(result, separators=(',', ':')))
-          print('Only immutable blobs uploaded. No application ref, secret or runtime changed.')
+          print('Only immutable source blobs uploaded. No application ref, secret or runtime changed.')
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: verified-source-objects
+          name: verified-admin-source-objects
           path: verified-objects.json
           retention-days: 1

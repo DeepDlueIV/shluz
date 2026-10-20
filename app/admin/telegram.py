@@ -35,6 +35,8 @@ def dashboard(request: Request, _: Admin):
                 .limit(1000)
             )
         )
+        active_ids = {r.id for r in rows if service.access_is_active(session, r)}
+        all_accounts = list(session.scalars(select(Account)))
         plans = list(session.scalars(select(Plan).where(Plan.active.is_(True)).order_by(Plan.name)))
         accounts = list(
             session.scalars(
@@ -61,9 +63,11 @@ def dashboard(request: Request, _: Admin):
         name="admin/telegram.html",
         context={
             "rows": rows,
+            "active_ids": active_ids,
+            "account_status": {a.id: a.status for a in all_accounts},
             "plans": plans,
             "accounts": accounts,
-            "account_names": {a.id: a.display_name for a in accounts},
+            "account_names": {a.id: a.display_name for a in all_accounts},
             "bot_username": bot.username if bot else None,
             "invitations": invitations,
             "csrf_token": _admin_csrf_token(_settings(request)),

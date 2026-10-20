@@ -52,7 +52,8 @@ def _require_admin(
     settings: Annotated[Settings, Depends(_settings)],
 ) -> str:
     username_ok = secrets.compare_digest(
-        credentials.username.encode("utf-8"), settings.admin_username.encode("utf-8"),
+        credentials.username.encode("utf-8"),
+        settings.admin_username.encode("utf-8"),
     )
     password_ok = secrets.compare_digest(
         credentials.password.encode("utf-8"),
@@ -60,7 +61,8 @@ def _require_admin(
     )
     if not (username_ok and password_ok):
         raise HTTPException(
-            status_code=401, detail="Неверные данные администратора",
+            status_code=401,
+            detail="Неверные данные администратора",
             headers={"WWW-Authenticate": "Basic"},
         )
     request.state.admin_actor = credentials.username
@@ -90,11 +92,17 @@ def _safe_tokens_by_account(database: Database) -> dict[str, tuple[dict[str, Any
     with database.session() as session:
         tokens = session.scalars(select(ApiToken).order_by(ApiToken.created_at, ApiToken.id))
         for token in tokens:
-            grouped.setdefault(token.account_id, []).append({
-                "id": token.id, "name": token.name, "source": token.source,
-                "prefix": token.token_prefix, "created_at": token.created_at,
-                "last_used_at": token.last_used_at, "revoked": token.revoked_at is not None,
-            })
+            grouped.setdefault(token.account_id, []).append(
+                {
+                    "id": token.id,
+                    "name": token.name,
+                    "source": token.source,
+                    "prefix": token.token_prefix,
+                    "created_at": token.created_at,
+                    "last_used_at": token.last_used_at,
+                    "revoked": token.revoked_at is not None,
+                }
+            )
     return {account_id: tuple(items) for account_id, items in grouped.items()}
 
 
@@ -116,12 +124,17 @@ def admin_dashboard(
         accounts = list_accounts_overview(session)
         usage = get_usage_summary(session, recent_limit=0)
     return templates.TemplateResponse(
-        request=request, name="admin/index.html", context={
-            "environment": settings.environment, "version": settings.service_version,
-            "model_count": model_count, "provider_names": registry.provider_names(),
+        request=request,
+        name="admin/index.html",
+        context={
+            "environment": settings.environment,
+            "version": settings.service_version,
+            "model_count": model_count,
+            "provider_names": registry.provider_names(),
             "model_warning": model_warning,
             "account_count": sum(account.id != "bootstrap" for account in accounts),
-            "usage_request_count": usage.request_count, "usage_cost_usd": usage.cost_usd,
+            "usage_request_count": usage.request_count,
+            "usage_cost_usd": usage.cost_usd,
             "database_info": database_info(settings.database_url.get_secret_value()),
             "credit_unit_usd": settings.credit_unit_usd,
         },
@@ -136,23 +149,38 @@ def users_dashboard(
     database: Annotated[Database, Depends(_database)],
 ) -> HTMLResponse:
     show_archived = request.query_params.get("archive") == "1"
+    show_guests = request.query_params.get("guests") == "1"
     with database.session() as session:
         accounts = [
-            account for account in list_accounts_overview(session)
+            account
+            for account in list_accounts_overview(session)
             if (account.status == "archived") == show_archived
+            and (account.role == "guest") == show_guests
         ]
-        plans = list(session.scalars(
-            select(Plan).where(Plan.active.is_(True)).order_by(Plan.name, Plan.code)
-        ))
+        plans = list(
+            session.scalars(
+                select(Plan).where(Plan.active.is_(True)).order_by(Plan.name, Plan.code)
+            )
+        )
     with database.session() as session:
         telegram_by_account = {
-            row.account_id: row for row in session.scalars(select(TelegramAdmission))
+            row.account_id: row
+            for row in session.scalars(select(TelegramAdmission))
             if row.account_id
         }
+        from app.telegram.service import access_is_active
+        active_telegram = {row.id for row in telegram_by_account.values()
+                           if access_is_active(session, row)}
     return templates.TemplateResponse(
-        request=request, name="admin/users.html", context={
+        request=request,
+        name="admin/users.html",
+        context={
             "telegram_by_account": telegram_by_account,
-            "accounts": accounts, "plans": plans, "show_archived": show_archived,
+            "active_telegram": active_telegram,
+            "show_guests": show_guests,
+            "accounts": accounts,
+            "plans": plans,
+            "show_archived": show_archived,
             "tokens_by_account": _safe_tokens_by_account(database),
             "csrf_token": _admin_csrf_token(settings),
         },
@@ -176,8 +204,12 @@ async def create_user(
         session.add(account)
         session.flush()
         record_admin_event(
-            session, actor=actor, action="user.created", target_type="account",
-            target_id=account.id, details={"role": role, "status": account_status},
+            session,
+            actor=actor,
+            action="user.created",
+            target_type="account",
+            target_id=account.id,
+            details={"role": role, "status": account_status},
         )
     return RedirectResponse(url="/admin/users", status_code=303)
 
@@ -195,32 +227,43 @@ async def assign_user_plan(
     plan_id = form.get("plan_id", "").strip()
     now = datetime.now(UTC)
     with database.session() as session:
-        account = session.scalar(
-            select(Account).where(Account.id == account_id).with_for_update()
-        )
+        account = session.scalar(select(Account).where(Account.id == account_id).with_for_update())
         if account is None:
             raise HTTPException(status_code=404, detail="Пользователь не найден")
         if account.status == "archived":
             raise HTTPException(
-                status_code=409, detail="Сначала восстановите пользователя из архива",
+                status_code=409,
+                detail="Сначала восстановите пользователя из архива",
             )
         if plan_id:
             plan = session.scalar(select(Plan).where(Plan.id == plan_id).with_for_update())
             if plan is None or not plan.active:
                 raise HTTPException(status_code=422, detail="Выбранный тариф недоступен")
         cancelled = 0
-        for subscription in session.scalars(select(Subscription).where(
-            Subscription.account_id == account_id, Subscription.status == "active",
-        )):
+        for subscription in session.scalars(
+            select(Subscription).where(
+                Subscription.account_id == account_id,
+                Subscription.status == "active",
+                Subscription.source == "*",
+            )
+        ):
             subscription.status = "cancelled"
             subscription.ends_at = now
             cancelled += 1
         if plan_id:
-            session.add(Subscription(
-                account_id=account_id, plan_id=plan_id, status="active", starts_at=now,
-            ))
+            session.add(
+                Subscription(
+                    account_id=account_id,
+                    plan_id=plan_id,
+                    status="active",
+                    starts_at=now,
+                )
+            )
         record_admin_event(
-            session, actor=actor, action="subscription.assigned", target_type="account",
+            session,
+            actor=actor,
+            action="subscription.assigned",
+            target_type="account",
             target_id=account_id,
             details={"plan_id": plan_id or None, "cancelled_subscriptions": cancelled},
         )
@@ -243,27 +286,39 @@ async def issue_user_token(
     name = _required_text(form, "name", max_length=200)
     raw_token = generate_api_token()
     with database.session() as session:
-        account = session.scalar(
-            select(Account).where(Account.id == account_id).with_for_update()
-        )
+        account = session.scalar(select(Account).where(Account.id == account_id).with_for_update())
         if account is None:
             raise HTTPException(status_code=404, detail="Пользователь не найден")
         if account.status != "active":
             raise HTTPException(status_code=409, detail="Выдача доступа требует активного аккаунта")
         token = create_api_token(
-            session, account_id=account.id, name=name, source=source, raw_token=raw_token,
+            session,
+            account_id=account.id,
+            name=name,
+            source=source,
+            raw_token=raw_token,
         )
         account_name = account.display_name
         token_prefix = token.token_prefix
         record_admin_event(
-            session, actor=actor, action="token.created", target_type="token",
-            target_id=token.id, details={"account_id": account_id, "source": source},
+            session,
+            actor=actor,
+            action="token.created",
+            target_type="token",
+            target_id=token.id,
+            details={"account_id": account_id, "source": source},
         )
     return templates.TemplateResponse(
-        request=request, name="admin/token_created.html", context={
-            "account_name": account_name, "token_name": name, "token_source": source,
-            "token_prefix": token_prefix, "raw_token": raw_token,
-        }, headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+        request=request,
+        name="admin/token_created.html",
+        context={
+            "account_name": account_name,
+            "token_name": name,
+            "token_source": source,
+            "token_prefix": token_prefix,
+            "raw_token": raw_token,
+        },
+        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
     )
 
 
@@ -285,8 +340,12 @@ async def revoke_user_token(
         revoke_api_token(session, token_id)
         if was_active:
             record_admin_event(
-                session, actor=actor, action="token.revoked", target_type="token",
-                target_id=token_id, details={"account_id": token.account_id},
+                session,
+                actor=actor,
+                action="token.revoked",
+                target_type="token",
+                target_id=token_id,
+                details={"account_id": token.account_id},
             )
     return RedirectResponse(url="/admin/users", status_code=303)
 
@@ -302,8 +361,11 @@ def plans_dashboard(
     with database.session() as session:
         plans = [plan for plan in list_plans_overview(session) if plan.active != show_archived]
     return templates.TemplateResponse(
-        request=request, name="admin/plans.html", context={
-            "plans": plans, "csrf_token": _admin_csrf_token(settings),
+        request=request,
+        name="admin/plans.html",
+        context={
+            "plans": plans,
+            "csrf_token": _admin_csrf_token(settings),
             "show_archived": show_archived,
         },
     )
@@ -327,8 +389,12 @@ async def create_plan(
             session.add(plan)
             session.flush()
             record_admin_event(
-                session, actor=actor, action="plan.created", target_type="plan",
-                target_id=plan.id, details={"after": plan_snapshot(plan)},
+                session,
+                actor=actor,
+                action="plan.created",
+                target_type="plan",
+                target_id=plan.id,
+                details={"after": plan_snapshot(plan)},
             )
     except IntegrityError as exc:
         raise HTTPException(status_code=409, detail="Тариф с таким кодом уже существует") from exc
@@ -351,9 +417,15 @@ async def update_plan(
             plan = session.scalar(select(Plan).where(Plan.id == plan_id).with_for_update())
             if plan is None:
                 raise HTTPException(status_code=404, detail="Тариф не найден")
-            if session.scalar(select(Plan).where(
-                Plan.code == values["code"], Plan.id != plan_id,
-            )) is not None:
+            if (
+                session.scalar(
+                    select(Plan).where(
+                        Plan.code == values["code"],
+                        Plan.id != plan_id,
+                    )
+                )
+                is not None
+            ):
                 raise HTTPException(status_code=409, detail="Тариф с таким кодом уже существует")
             if plan.active and not values["active"]:
                 ensure_plan_unused(session, plan_id)
@@ -362,8 +434,12 @@ async def update_plan(
                 setattr(plan, key, value)
             session.flush()
             record_admin_event(
-                session, actor=actor, action="plan.updated", target_type="plan",
-                target_id=plan.id, details={"before": before, "after": plan_snapshot(plan)},
+                session,
+                actor=actor,
+                action="plan.updated",
+                target_type="plan",
+                target_id=plan.id,
+                details={"before": before, "after": plan_snapshot(plan)},
             )
     except IntegrityError as exc:
         raise HTTPException(status_code=409, detail="Тариф с таким кодом уже существует") from exc
@@ -387,12 +463,16 @@ def usage_dashboard(
             row.id: f"/admin/users{'?archive=1' if row.status == 'archived' else ''}#user-{row.id}"
             for row in account_rows
         }
-        usage = replace(usage, by_account=tuple(
-            replace(row, label=account_names.get(row.key, "Неизвестный пользователь"))
-            for row in usage.by_account
-        ))
+        usage = replace(
+            usage,
+            by_account=tuple(
+                replace(row, label=account_names.get(row.key, "Неизвестный пользователь"))
+                for row in usage.by_account
+            ),
+        )
     return templates.TemplateResponse(
-        request=request, name="admin/usage.html",
+        request=request,
+        name="admin/usage.html",
         context={"usage": usage, "account_names": account_names, "account_urls": account_urls},
     )
 
@@ -420,10 +500,14 @@ def venice_dashboard(
         except (AttributeError, ProviderError):
             warnings.append("Состояние аккаунта Venice временно недоступно")
     return templates.TemplateResponse(
-        request=request, name="admin/provider.html", context={
+        request=request,
+        name="admin/provider.html",
+        context={
             "connected": provider is not None,
             "key_configured": _secret_is_configured(settings.venice_api_key),
-            "lookback": settings.venice_analytics_lookback, "models": models,
-            "snapshot": snapshot, "warnings": tuple(warnings),
+            "lookback": settings.venice_analytics_lookback,
+            "models": models,
+            "snapshot": snapshot,
+            "warnings": tuple(warnings),
         },
     )

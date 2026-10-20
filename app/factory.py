@@ -16,6 +16,7 @@ from app.admin.diagnostics import router as diagnostics_router
 from app.admin.routes import router as admin_router
 from app.admin.telegram import router as telegram_admin_router
 from app.api.router import api_router
+from app.billing.admin import router as wallet_admin_router
 from app.config import Settings, get_settings
 from app.db.database import Database
 from app.db.repositories import ensure_bootstrap_account
@@ -150,5 +151,6 @@ def create_app(
     app.include_router(telegram_router)
     app.include_router(telegram_admin_router)
     app.include_router(admin_router)
+    app.include_router(wallet_admin_router)
     app.include_router(auxiliary_router)
     return app

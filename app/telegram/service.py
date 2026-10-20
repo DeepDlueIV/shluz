@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import func, select, text
 
 from app.db.audit import record_admin_event
 from app.db.models import (
@@ -124,20 +124,12 @@ def _grant(session, row, *, plan_id=None, account_id=None, legacy_token_id=None)
     if plan_id:
         plan = _active_plan(session, plan_id)
         now = datetime.now(UTC)
-        current = session.scalar(
-            select(Subscription)
-            .join(Plan)
-            .where(
-                Subscription.account_id == account.id,
-                Subscription.status == "active",
-                Subscription.starts_at <= now,
-                or_(Subscription.ends_at.is_(None), Subscription.ends_at > now),
-                Plan.active.is_(True),
-            )
-        )
-        # Выдача доступа — не смена подписки. Уже назначенный тариф остаётся прежним.
+        from app.product.service import active_subscription
+
+        current = active_subscription(session, account.id, now, "telegram")
+        # Выдача доступа не заменяет действующий Telegram/общий тариф.
         if current is None:
-            session.add(Subscription(account_id=account.id, plan_id=plan.id))
+            session.add(Subscription(account_id=account.id, plan_id=plan.id, source="telegram"))
     row.account_id = account.id
     row.status = "approved"
     row.legacy_token_id = legacy_token_id
@@ -155,7 +147,7 @@ def connect(database, payload, *, pending_limit=500):
             )
             .with_for_update()
         )
-        if row is not None and row.status in {"blocked", "approved"}:
+        if row is not None and row.status in {"blocked", "approved", "archived"}:
             if row.status == "approved" and not access_is_active(session, row):
                 row.status = "blocked"
                 row.session_version += 1
@@ -246,7 +238,7 @@ def approve(database, admission_id, plan_id, *, actor, account_id=None):
         )
         if row is None:
             raise HTTPException(404, detail="Заявка не найдена")
-        if row.status == "approved":
+        if access_is_active(session, row):
             return
         _grant(session, row, plan_id=plan_id, account_id=account_id)
         record_admin_event(

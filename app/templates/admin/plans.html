@@ -19,15 +19,15 @@
 <div class="table-wrap section-block"><table class="plans-table"><thead><tr><th>Тариф</th><th>Цена в месяц {{ hint('price') }}</th><th>Лимиты {{ hint('requests') }}</th><th>Подписчиков</th><th>Управление</th></tr></thead><tbody>
 {% for plan in plans %}
 <tr><td><strong>{{ plan.name }}</strong>{{ badge('active' if plan.active else 'disabled') }}<details class="technical"><summary>Параметры учёта</summary><small>Код: <code>{{ plan.code }}</code> {{ hint('plan_code') }}</small><small>Резерв: {{ plan.request_credit_reserve | integer }} кредитов {{ hint('reserve') }}</small><small>Наценка: {{ plan.markup_percent | percent }}% {{ hint('markup') }}</small></details></td>
-<td>{{ amount(plan.monthly_price_usd) }}</td>
-<td><strong>{{ plan.monthly_request_limit | integer if plan.monthly_request_limit else 'Без лимита' }}{% if plan.monthly_request_limit %} {{ plan.monthly_request_limit | plural('запрос', 'запроса', 'запросов') }}{% endif %}</strong>
+<td>{{ "По использованию" if plan.billing_mode == "payg" else amount(plan.monthly_price_usd) }}</td>
+<td>{% if plan.billing_mode == "payg" %}<strong>Оплата из кошелька</strong><small>Пределы подписки не действуют</small>{% else %}<strong>{{ plan.monthly_request_limit | integer if plan.monthly_request_limit else 'Без лимита' }}{% if plan.monthly_request_limit %} {{ plan.monthly_request_limit | plural('запрос', 'запроса', 'запросов') }}{% endif %}</strong>
 {% if plan.monthly_cost_limit_usd %}<small>Бюджет: {{ amount(plan.monthly_cost_limit_usd) }} {{ hint('cost_limit') }}</small>{% endif %}
 {% if plan.monthly_credit_limit %}<small>Кредиты: {{ plan.monthly_credit_limit | integer }} {{ hint('credits') }}</small>{% endif %}
-{% if plan.request_credit_reserve %}<small class="muted">Есть резерв кредитов {{ hint('reserve') }}</small>{% endif %}</td>
+{% if plan.request_credit_reserve %}<small class="muted">Есть резерв кредитов {{ hint('reserve') }}</small>{% endif %}{% endif %}</td>
 <td>{{ plan.subscriber_count | integer }}</td>
 <td class="management-cell"><details {% if editing == plan.id %}open{% endif %}><summary>Изменить</summary>
 <form method="post" action="/admin/plans/{{ plan.id }}" class="compact-form plan-edit-form">
-{% set current = {'code': plan.code, 'name': plan.name, 'monthly_price_usd': plan.monthly_price_usd, 'monthly_cost_limit_usd': plan.monthly_cost_limit_usd, 'monthly_credit_limit': plan.monthly_credit_limit, 'monthly_request_limit': plan.monthly_request_limit, 'request_credit_reserve': plan.request_credit_reserve, 'markup_percent': plan.markup_percent, 'active': plan.active} %}
+{% set current = {'billing_mode': plan.billing_mode, 'code': plan.code, 'name': plan.name, 'monthly_price_usd': plan.monthly_price_usd, 'monthly_cost_limit_usd': plan.monthly_cost_limit_usd, 'monthly_credit_limit': plan.monthly_credit_limit, 'monthly_request_limit': plan.monthly_request_limit, 'request_credit_reserve': plan.request_credit_reserve, 'markup_percent': plan.markup_percent, 'active': plan.active} %}
 {{ plan_fields(submitted if editing == plan.id else current, csrf_token, 'plan-' ~ plan.id, editing == plan.id) }}<button type="submit">Сохранить</button></form></details>
 <details class="archive-control"><summary>{{ 'В архив' if plan.active else 'Восстановить' }}</summary><form method="post" action="/admin/plans/{{ plan.id }}/{{ 'archive' if plan.active else 'restore' }}" class="compact-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><p>История расходов сохранится. Тариф с действующими подписками сначала нужно заменить пользователям.</p><label class="checkbox-label"><input type="checkbox" name="confirm" value="yes" required> Подтверждаю действие</label><button type="submit" class="danger-button">{{ 'В архив' if plan.active else 'Восстановить' }}</button></form></details></td></tr>
 {% endfor %}</tbody></table></div>

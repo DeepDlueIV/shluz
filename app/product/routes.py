@@ -44,8 +44,13 @@ def plans(principal: Principal, database: Db, response: Response):
                 {
                     "id": plan.id,
                     "name": plan.name,
-                    "monthly_price_usd": format(plan.monthly_price_usd, ".2f"),
-                    "monthly_request_limit": plan.monthly_request_limit or None,
+                    "billing_mode": plan.billing_mode,
+                    "monthly_price_usd": format(plan.monthly_price_usd, ".2f")
+                    if plan.billing_mode == "subscription"
+                    else None,
+                    "monthly_request_limit": (plan.monthly_request_limit or None)
+                    if plan.billing_mode == "subscription"
+                    else None,
                     "models": sorted(permitted),
                 }
             )
@@ -123,6 +128,10 @@ def own_usage(
                     "duration_ms": event.duration_ms,
                     "first_token_ms": event.first_token_ms,
                     "charged_usd": format(event.billed_usd, "f") if known else None,
+                    "charged_credits": format(event.billed_usd * 100, "f") if known else None,
+                    "billing_mode": "payg"
+                    if event.quota_kind == "payg"
+                    else ("demo" if event.quota_kind == "demo" else "subscription"),
                     "charge_status": "known" if known else "unknown",
                     "created_at": (
                         event.created_at.replace(tzinfo=UTC)

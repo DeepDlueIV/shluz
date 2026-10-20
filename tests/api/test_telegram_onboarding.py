@@ -47,6 +47,7 @@ def auto_client(tmp_path):
     app = create_app(settings)
     # Этот набор продолжает проверять поддерживаемый режим закрытой беты.
     from app.db.models import ProductPolicy
+
     with app.state.database.session() as session:
         session.add(ProductPolicy(id="default", mode="closed"))
     try:
@@ -331,7 +332,8 @@ def test_archiving_then_restoring_does_not_revive_sessions(auto_client):
     with c.app.state.database.session() as s:
         change_account_archive(s, data["account_id"], "owner", False)
     assert c.get("/v1/me", headers=headers).status_code == 401
-    assert start(c).json()["state"] == "blocked"
+    # Новый вход разрешён после явного восстановления; прежняя сессия выше отозвана.
+    assert start(c).json()["state"] == "active"
 
 
 def test_session_expires(auto_client, monkeypatch):

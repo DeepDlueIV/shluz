@@ -7,6 +7,7 @@ from fastapi import HTTPException, Request
 _PLAN_CODE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _MAX_FORM_BYTES = 16_384
 FIELD_LABELS = {
+    "billing_mode": "Способ оплаты",
     "code": "Код тарифа", "name": "Название", "display_name": "Имя пользователя",
     "monthly_price_usd": "Цена в месяц", "monthly_cost_limit_usd": "Лимит себестоимости",
     "monthly_credit_limit": "Кредитов в месяц", "monthly_request_limit": "Запросов в месяц",
@@ -104,6 +105,8 @@ def _plan_values(form: dict[str, str]) -> dict[str, object]:
             detail="Код тарифа: латинские буквы, цифры, дефис и подчёркивание. Например: test",
         )
     return {
+        **({"billing_mode": _choice(form, "billing_mode", {"subscription", "payg"})}
+           if "billing_mode" in form else {}),
         "code": code,
         "name": _required_text(form, "name", max_length=200),
         "monthly_price_usd": _decimal_value(form, "monthly_price_usd"),

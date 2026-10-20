@@ -258,7 +258,9 @@ async def web_chat(payload: WebChat, request: Request):
             account = s.get(Account, browser.account_id)
             if not account or account.status != "active":
                 reject("access_unavailable", 401)
-        demo = not browser.account_id or not active_subscription(s, browser.account_id)
+        demo = not browser.account_id or not active_subscription(
+            s, browser.account_id, source="web"
+        )
         cfg = policy(s)
         if s.get(WebRequest, browser.id + ":" + str(payload.request_id)):
             reject("request_already_used", 409)
@@ -324,3 +326,18 @@ async def web_validation_error(request, exc):
         422,
         headers={"Cache-Control": "no-store"},
     )
+
+
+@router.get("/me/wallet")
+def web_wallet(
+    request: Request,
+    response: Response,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0, le=100000),
+):
+    from app.api.routes.me import own_wallet
+
+    db = request.app.state.database
+    with db.session() as session:
+        row = current_session(request, session)
+    return own_wallet(principal_for(row, db), db, response, limit, offset)

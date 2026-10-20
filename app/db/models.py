@@ -63,6 +63,7 @@ class Plan(Base):
     __tablename__ = "plans"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_new_id)
+    billing_mode: Mapped[str] = mapped_column(String(20), default="subscription")
     code: Mapped[str] = mapped_column(String(64), unique=True)
     name: Mapped[str] = mapped_column(String(200))
     monthly_price_usd: Mapped[Decimal] = mapped_column(
@@ -102,6 +103,7 @@ class Subscription(Base):
         ForeignKey("plans.id", ondelete="RESTRICT"),
         index=True,
     )
+    source: Mapped[str] = mapped_column(String(32), default="*")
     status: Mapped[str] = mapped_column(String(32), default="active")
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -127,6 +129,7 @@ class ApiToken(Base):
 
 class UsageEvent(Base):
     __tablename__ = "usage_events"
+    quota_scope: Mapped[str] = mapped_column(String(32), default="*")
     __table_args__ = (
         UniqueConstraint(
             "provider",

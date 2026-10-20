@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy.engine import make_url
 
 LABELS = {
+    "guest": "Гость сайта", "payg": "По использованию", "subscription": "Подписка",
     'user': 'Пользователь', 'admin': 'Администратор', 'service': 'Служебный',
     'account': 'Пользователь', 'plan': 'Тариф', 'token': 'Ключ доступа',
     'active': 'Активен', 'disabled': 'Заблокирован', 'archived': 'В архиве',
