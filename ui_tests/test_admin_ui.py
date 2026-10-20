@@ -406,7 +406,7 @@ def test_payg_mode_hides_and_disables_unused_fields_without_affecting_other_form
         p = session.get(Plan, pid)
         assert p.billing_mode == "payg" and p.monthly_price_usd == Decimal("9")
         assert p.monthly_request_limit == 150 and p.request_credit_reserve == 7
-    page.locator('form[action="/admin/plans"]').get_by_label("Способ оплаты").select_option("payg")
+    create_form.get_by_label("Способ оплаты", exact=True).select_option("payg")
     capture(page, "plans-payg-desktop")
     page.set_viewport_size({"width": 390, "height": 844})
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
