@@ -79,7 +79,6 @@ Create commits automatically after every logically complete unit of work. Each c
 - contain a descriptive commit message.
 
 Before committing, ensure relevant validation succeeds whenever practical.
-Never push without explicit permission.
 Never combine unrelated work into a single commit.
 
 ---
