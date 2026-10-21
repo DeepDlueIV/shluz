@@ -15,6 +15,9 @@ const home = () => page.goto(origin, { waitUntil: 'networkidle' });
 await home();
 await check('Globe trigger, dropdown flags and compact heading with logo', async () => {
   assert.equal(await page.locator('[data-language-globe]').count(), 1);
+  assert.equal((await page.getByRole('button', { name: 'Change language' }).innerText()).trim(), '');
+  assert.equal(await page.locator('[data-prompt-mode] form img').count(), 0);
+  assert.equal((await page.locator('[data-prompt-preview]').innerText()).trim(), 'Ask me anything, privately…');
   const font = await page.locator('h1').evaluate(el => parseFloat(getComputedStyle(el).fontSize));
   assert.ok(font >= 30 && font <= 52, `Heading size ${font}`);
   assert.equal(await page.locator('[data-hero-logo]').count(), 1);
@@ -29,7 +32,7 @@ await check('Globe trigger, dropdown flags and compact heading with logo', async
 await check('Suggestion preview fades and slides; native value stays untouched', async () => {
   await page.evaluate(() => {
     window.hintFrames = [];
-    const end = performance.now() + 600;
+    const end = performance.now() + 900;
     function sample() {
       for (const el of document.querySelectorAll('[data-prompt-preview] span')) {
         const s = getComputedStyle(el); window.hintFrames.push({ opacity: Number(s.opacity), x: s.transform });
@@ -39,14 +42,40 @@ await check('Suggestion preview fades and slides; native value stays untouched',
     requestAnimationFrame(sample);
   });
   await page.getByRole('button', { name: 'Write a story', exact: true }).hover();
-  await page.waitForTimeout(180);
+  await page.waitForTimeout(500);
   assert.match(await page.locator('[data-prompt-preview]').innerText(), /noir story/);
   assert.equal(await page.locator('#hero-prompt').inputValue(), '');
   const frames = await page.evaluate(() => window.hintFrames);
   assert.ok(frames.some(f => f.opacity > 0 && f.opacity < 1), 'No fade frames');
   assert.ok(frames.some(f => f.x !== 'none' && f.x !== 'matrix(1, 0, 0, 1, 0, 0)'), 'No slide frames');
-  await page.mouse.move(10, 200); await page.waitForTimeout(180);
-  assert.equal((await page.locator('[data-prompt-preview]').innerText()).trim(), 'Ask anything…');
+  await page.mouse.move(10, 200); await page.waitForTimeout(500);
+  assert.equal((await page.locator('[data-prompt-preview]').innerText()).trim(), 'Ask me anything, privately…');
+});
+await check('Rapid hint changes do not overlap or flash the default in chip gaps', async () => {
+  const story = page.getByRole('button', { name: 'Write a story', exact: true });
+  const code = page.getByRole('button', { name: 'Write code', exact: true });
+  await story.hover(); await page.waitForTimeout(500);
+  const a = await story.boundingBox(); const b = await code.boundingBox();
+  await page.mouse.move((a.x + a.width + b.x) / 2, a.y + a.height / 2);
+  await page.waitForTimeout(100);
+  assert.match(await page.locator('[data-prompt-preview]').innerText(), /noir story/);
+  await page.evaluate(() => {
+    window.hintCounts = [];
+    const end = performance.now() + 1500;
+    function sample() {
+      window.hintCounts.push(document.querySelectorAll('[data-prompt-preview] span').length);
+      if (performance.now() < end) requestAnimationFrame(sample);
+    }
+    requestAnimationFrame(sample);
+  });
+  await code.hover(); await page.waitForTimeout(70);
+  await story.hover(); await page.waitForTimeout(70);
+  await page.getByRole('button', { name: 'Explain a concept', exact: true }).hover();
+  await page.waitForTimeout(600);
+  assert.match(await page.locator('[data-prompt-preview]').innerText(), /language model/);
+  assert.ok((await page.evaluate(() => window.hintCounts)).every(n => n <= 1), 'Overlapping prompt hints');
+  assert.equal(await page.locator('#hero-prompt').inputValue(), '');
+  await page.mouse.move(10, 200); await page.waitForTimeout(500);
 });
 await check('Unified toolbar button expands and returns without losing text', async () => {
   await page.locator('#hero-prompt').fill('Preserve this draft');
@@ -56,7 +85,10 @@ await check('Unified toolbar button expands and returns without losing text', as
   assert.equal(await toggle.getAttribute('type'), 'button');
   assert.equal(await toggle.evaluate(el => getComputedStyle(el).borderTopWidth), '1px');
   const collapsed = await toggle.boundingBox();
-  await toggle.click(); await page.waitForTimeout(210);
+  await toggle.click(); await page.waitForTimeout(120);
+  const midway = await page.locator('[data-nav-area]').evaluate(el => Number(getComputedStyle(el).opacity));
+  assert.ok(midway > .01 && midway < .99, `Transition finished too early: ${midway}`);
+  await page.waitForTimeout(400);
   assert.equal(await panel.getAttribute('data-prompt-mode'), 'prompt');
   assert.equal(await page.locator('#hero-prompt').inputValue(), 'Preserve this draft');
   assert.equal(await page.locator('#hero-prompt').evaluate(el => el === document.activeElement), true);
@@ -66,16 +98,16 @@ await check('Unified toolbar button expands and returns without losing text', as
   assert.ok(open.x > collapsed.x + 400, 'Arrow did not move right');
   assert.ok(Math.abs(bounds.x + bounds.width - open.x - open.width) < 18);
   await page.screenshot({ path: 'test-results/toolbar-expanded.png' });
-  await toggle.click(); await page.waitForTimeout(210);
+  await toggle.click(); await page.waitForTimeout(500);
   assert.equal(await panel.getAttribute('data-prompt-mode'), 'navigation');
   assert.ok(await page.locator('[data-nav-area]').evaluate(el => Number(getComputedStyle(el).opacity) > .99));
   assert.equal(await page.locator('#hero-prompt').inputValue(), 'Preserve this draft');
   await page.screenshot({ path: 'test-results/toolbar-navigation.png' });
-  await toggle.evaluate(el => { for (let i=0;i<7;i++) el.click(); }); await page.waitForTimeout(220);
+  await toggle.evaluate(el => { for (let i=0;i<7;i++) el.click(); }); await page.waitForTimeout(500);
   assert.equal(await panel.getAttribute('data-prompt-mode'), 'prompt');
-  await page.locator('#hero-prompt').press('Escape'); await page.waitForTimeout(180);
+  await page.locator('#hero-prompt').press('Escape'); await page.waitForTimeout(500);
   assert.equal(await panel.getAttribute('data-prompt-mode'), 'navigation');
-  await toggle.click(); await page.waitForTimeout(200);
+  await toggle.click(); await page.waitForTimeout(500);
   await page.locator('#hero-prompt').press('Enter');
   await page.waitForURL(url => /^\/app\/?$/.test(url.pathname));
   assert.match(await page.locator('body').innerText(), /Preserve this draft/);
@@ -98,10 +130,10 @@ await check('Mobile toolbar preserves draft and fits screen', async () => {
   assert.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   await p.screenshot({ path: 'test-results/mobile-refined.png' });
   await p.evaluate(() => window.scrollTo({ top: 1000, behavior: 'instant' })); await p.waitForTimeout(250);
-  await p.locator('[data-prompt-toggle]').click(); await p.waitForTimeout(200);
+  await p.locator('[data-prompt-toggle]').click(); await p.waitForTimeout(500);
   await p.locator('#hero-prompt').fill('Mobile draft');
-  await p.locator('[data-prompt-toggle]').click(); await p.waitForTimeout(200);
-  await p.locator('[data-prompt-toggle]').click(); await p.waitForTimeout(200);
+  await p.locator('[data-prompt-toggle]').click(); await p.waitForTimeout(500);
+  await p.locator('[data-prompt-toggle]').click(); await p.waitForTimeout(500);
   assert.equal(await p.locator('#hero-prompt').inputValue(), 'Mobile draft');
   assert.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   await p.screenshot({ path: 'test-results/mobile-toolbar.png' }); await mobile.close();

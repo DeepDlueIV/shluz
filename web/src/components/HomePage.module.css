@@ -21,23 +21,21 @@
 .glassPanel[data-docked="true"] { background: #26272a85; box-shadow: 0 9px 40px #0002; }
 .glassPanel:focus-within { border-color: #dde0ed66; }
 .composer { flex-shrink: 0; display: flex; align-items: center; min-width: 0; height: 100%; }
-.composerMark { flex-shrink: 0; background: transparent; border: 0; padding: 10px 12px 10px 9px; color: #ddd; opacity: .75; transition: opacity .2s; }
-.composerMark:hover { opacity: 1; }
-.composerMark img { width: 27px; height: 24px; object-fit: contain; }
 .promptWorkspace { position: relative; flex: 1; min-width: 0; height: 100%; }
-.promptWorkspace input { position: absolute; inset: 0; width: 100%; height: 100%; min-width: 0; background: transparent; border: 0; border-radius: 0; outline: 0; box-shadow: none; appearance: none; -webkit-appearance: none; color: #f6f4f1; font-size: 13px; padding: 0 54px 0 3px; text-overflow: ellipsis; }
+.promptWorkspace input { position: absolute; inset: 0; width: 100%; height: 100%; min-width: 0; background: transparent; border: 0; border-radius: 0; outline: 0; box-shadow: none; appearance: none; -webkit-appearance: none; color: #f6f4f1; font-size: 13px; padding: 0 54px 0 16px; text-overflow: ellipsis; opacity: 1; transition: opacity 200ms ease; }
 .promptWorkspace input:focus-visible { outline: none; }
-.promptWorkspace[data-navigation="true"] input { visibility: hidden; pointer-events: none; }
-.promptPreview { position: absolute; inset: 0 55px 0 3px; display: flex; align-items: center; overflow: hidden; pointer-events: none; color: #aaa9a8; font-size: 13px; }
+.promptWorkspace[data-navigation="true"] input { opacity: 0; pointer-events: none; }
+.promptWorkspace[data-navigation="true"] .promptPreview { opacity: 0; }
+.promptPreview { position: absolute; inset: 0 55px 0 16px; display: flex; align-items: center; overflow: hidden; pointer-events: none; color: #aaa9a8; font-size: 13px; opacity: 1; transition: opacity 200ms ease; }
 .promptPreview span { position: absolute; left: 0; right: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sendButton { position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 43px; height: 43px; border-radius: 50%; display: grid; place-items: center; border: 0; background: #f0eee7; color: #17191b; transition: color .15s,background .15s; }
 .sendButton:disabled { background: #ffffff14; color: #a2a2a2; cursor: default; }
 .sendButton:not(:disabled):hover { background: #fff; }
-.promptToggle { position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 100%; height: 46px; display: flex; align-items: center; padding: 0 2px 0 12px; background: transparent; border: 1px solid #ffffff20; border-radius: 24px; transition: width 160ms cubic-bezier(.2,.8,.2,1),border-color 120ms; color: #c4c4c4; }
+.promptToggle { position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 100%; height: 46px; display: flex; align-items: center; padding: 0 2px 0 12px; background: transparent; border: 1px solid #ffffff20; border-radius: 24px; transition: width 400ms cubic-bezier(.4,0,.2,1),border-color 200ms; color: #c4c4c4; }
 .promptToggle:hover { border-color: #ffffff40; }
 .promptToggle[data-expanded="true"] { width: 43px; padding: 0; border-color: transparent; }
-.toggleCaption { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; font-size: 12px; opacity: 1; transition: opacity 90ms; }
-.promptToggle[data-expanded="true"] .toggleCaption { opacity: 0; width: 0; flex-basis: 0; }
+.toggleCaption { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; font-size: 12px; opacity: 1; transition: opacity 180ms ease; }
+.promptToggle[data-expanded="true"] .toggleCaption { opacity: 0; }
 .toggleArrow { flex: 0 0 39px; width: 39px; height: 39px; display: grid; place-items: center; border-radius: 50%; background: #ffffff08; color: #bcbcbc; }
 .promptToggle:hover .toggleArrow { background: #ffffff14; color: #fff; }
 .navArea { flex-shrink: 0; overflow: hidden; height: 100%; display: flex; align-items: center; }
@@ -79,12 +77,11 @@
   .heroMark { width: 34px; height: 29px; margin-bottom: 14px; }
   .composerAnchor { width: calc(100% - 30px); height: 64px; margin-top: 30px; }
   .glassPanel { height: 64px; padding: 7px 10px; }
-  .composerMark { padding: 8px 9px 8px 4px; } .composerMark img { width: 24px; height: 21px; }
   .promptWorkspace input,.promptPreview { font-size: 16px; }
   .sendButton { width: 39px; height: 39px; } .promptToggle { height: 43px; }
   .suggestions { margin-top: 13px; padding: 0 26px; } .chipRow { gap: 6px; max-width: 410px; margin: 0 auto; } .chipRow button { font-size: 9px; padding: 7px 9px; }
   .scrollHint { bottom: 38px; gap: 12px; } .poster,.video { object-position: 50% 20%; opacity: .7; }
   .videoShade { background: linear-gradient(180deg,#0c0d0f30,#0c0d0f30 25%,#0c0d0f60 60%,#0c0d0f 100%); }
 }
-@media(prefers-reduced-motion:reduce) { .scrollHint svg { animation: none; } }
+@media(prefers-reduced-motion:reduce) { .scrollHint svg { animation: none; } .promptToggle { transition-duration: 50ms; } .toggleCaption,.promptWorkspace input,.promptPreview { transition-duration: 0ms; } }
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) { .glassPanel { background: #2a2b2ff2; } }
