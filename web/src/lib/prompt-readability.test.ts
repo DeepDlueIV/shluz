@@ -4,13 +4,14 @@ import test from 'node:test';
 import { getPromptSuggestions } from './prompt-suggestions.ts';
 const source = (file: string) => readFileSync(new URL(file, import.meta.url), 'utf8');
 
-test('Suggestion chips have readable white semibold text and actual backdrop blur', () => {
+test('Suggestion chips keep readable text with the original transparent surface', () => {
   const css = source('../components/PromptSuggestions.module.css');
   assert.match(css, /color:\s*#fff(?:;|\s)/);
   assert.match(css, /font-weight:\s*600/);
   assert.match(css, /font-size:\s*13px/);
-  assert.match(css, /backdrop-filter:\s*blur\(16px\)/);
-  assert.match(css, /-webkit-backdrop-filter:\s*blur\(16px\)/);
+  assert.match(css, /background:\s*#1a1b1d35/);
+  assert.match(css, /background:\s*#ffffff0b/);
+  assert.doesNotMatch(css, /backdrop-filter|box-shadow/);
 });
 test('Compact suggestion rows keep one-line labels and a shared intrinsic width', () => {
   const css = source('../components/PromptSuggestions.module.css');
@@ -38,11 +39,12 @@ test('All display examples retain detailed full prompts in both languages', () =
 });
 test('Interactive motion is noticeable even when the OS reduces ambient animation', () => {
   const home = source('../components/HomePage.tsx');
+  const preview = source('../components/PromptPreview.tsx');
   const more = source('../components/PromptSuggestions.tsx');
   const language = source('../components/LanguageSwitcher.module.css');
   assert.match(home, /duration:\s*0\.8/);
-  assert.match(home, /duration:\s*0\.5/);
-  assert.match(home, /x:\s*-20/);
+  assert.match(preview, /duration:\s*0\.5/);
+  assert.match(preview, /x\.set\(-20\)/);
   assert.doesNotMatch(more, /useReducedMotion/);
   assert.match(more, /duration:\s*0\.5/);
   assert.match(language, /translateY\(-14px\)/);

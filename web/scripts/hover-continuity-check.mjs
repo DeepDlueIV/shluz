@@ -42,6 +42,15 @@ await check('One stable preview layer survives rapid hover changes and re-entry'
     await hover('drm'); await page.waitForTimeout(1200);
   });
   assert.ok(frames.every(f => f.nodes.length === 1), 'The preview disappears or overlaps during a transition');
+  let falling = false;
+  for (let i = 1; i < frames.length; i++) {
+    const a = frames[i - 1].nodes[0], b = frames[i].nodes[0];
+    if (a.text !== b.text || b.opacity < .05) falling = false;
+    else if (b.opacity < a.opacity - .002) falling = true;
+    else if (falling && b.opacity > a.opacity + .002 && a.opacity > .1) {
+      assert.fail('An outgoing preview becomes visible again before the fade finishes');
+    }
+  }
   const identities = new Set(frames.flatMap(f => f.nodes.map(n => n.node)));
   assert.equal(identities.size, 1, `Text was replaced ${identities.size - 1} times instead of reusing the animation layer`);
   const jumps = frames.slice(1).filter((f, i) => {
