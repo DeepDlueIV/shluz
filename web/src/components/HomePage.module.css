@@ -83,3 +83,4 @@
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) { .glassPanel { background: #2a2b2ff2; } }
 
 .suggestions[aria-hidden="true"] { visibility: hidden; }
+@media(max-width:700px) { .hero:has([data-more-prompts][aria-expanded="true"]) .scrollHint { visibility: hidden; } }

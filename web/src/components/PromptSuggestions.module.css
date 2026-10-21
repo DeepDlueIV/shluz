@@ -14,3 +14,4 @@
 @media(max-width:900px) { .region { padding-inline: 0; } .region button { padding: 8px; font-size: 9px; } }
 @media(max-width:700px) { .primary,.additional { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; } .region button { min-height: 44px; font-size: 10px; } .primary .more { grid-column: 1 / -1; justify-self: center; min-width: 94px; } }
 @media(prefers-reduced-motion:reduce) { .more svg { transition: none; } }
+@media(max-width:700px) { .disclosure { max-height: min(280px,30svh); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; } }

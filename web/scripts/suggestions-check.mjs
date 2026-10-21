@@ -72,8 +72,9 @@ await check('Mobile tap opens extras, fills prompt, and does not overflow', asyn
   assert.equal(await p.locator('[data-additional-prompts] button').count(), 10);
   assert.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   await p.screenshot({ path: 'test-results/more-mobile.png', fullPage: false });
-  await p.locator('[data-suggestion="passwords"]').tap();
-  assert.match(await p.locator('#hero-prompt').inputValue(), /local password-audit/);
+  assert.equal(await p.locator('a[href="#models"]').first().isVisible(), false);
+  await p.locator('[data-suggestion="religion"]').tap();
+  assert.match(await p.locator('#hero-prompt').inputValue(), /Critically examine religious taboos/);
   await mobile.close();
 });
 await check('Russian translations retain the same suggestion identities', async () => {

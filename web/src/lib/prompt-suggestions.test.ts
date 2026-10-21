@@ -40,3 +40,9 @@ test('Suggestions: preview is clipped without truncating the actual prompt value
   assert.match(css, /max-width:\s*min\(100%,\s*52ch\)/);
   assert.match(css, /text-overflow:\s*ellipsis/);
 });
+test('Suggestions: mobile disclosure scrolls within its shared hover region', () => {
+  const css = read('../components/PromptSuggestions.module.css');
+  assert.match(css, /overflow-y:\s*auto/);
+  assert.match(css, /overscroll-behavior:\s*contain/);
+  assert.match(read('../components/HomePage.module.css'), /:has\(\[data-more-prompts\]\[aria-expanded="true"\]\) \.scrollHint/);
+});
