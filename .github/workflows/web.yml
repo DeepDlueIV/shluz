@@ -1,0 +1,48 @@
+name: Website checks
+
+on:
+  push:
+    paths: ['web/**', '.github/workflows/web.yml']
+  pull_request:
+    paths: ['web/**', '.github/workflows/web.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  website:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: web
+    env:
+      NEXT_PUBLIC_GATEWAY_ENABLED: 'false'
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Build isolated visual preview
+        run: NOCLIP_STATIC_EXPORT=1 npm run build
+      - name: Package review materials
+        if: always()
+        working-directory: .
+        run: tar --exclude='web/node_modules' --exclude='web/.next' --exclude='web/*.tsbuildinfo' -czf web-review.tar.gz web
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-review
+          path: web-review.tar.gz
+          retention-days: 2
