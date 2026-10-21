@@ -3,6 +3,9 @@ name: Telegram menu regression
 on:
   push:
     branches: [feat/telegram-menu-simplification]
+  pull_request:
+    branches: [implementation/telegram-beta-complete]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,7 +31,7 @@ jobs:
         if: always()
         run: |
           python - <<'PY'
-          import importlib.util, pathlib, shutil, subprocess, zipfile
+          import importlib.util, pathlib, shutil
           target = pathlib.Path('/tmp/offline-test-deps')
           target.mkdir()
           for package in ('aiogram', 'magic_filter'):
