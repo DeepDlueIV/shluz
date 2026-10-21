@@ -1,14 +1,22 @@
 name: Web checks
+
 on:
   push:
-    paths: ['web/**', '.github/workflows/web-check.yml']
+    paths:
+      - 'web/**'
+      - '.github/workflows/web-check.yml'
   pull_request:
-    paths: ['web/**', '.github/workflows/web-check.yml']
+    paths:
+      - 'web/**'
+      - '.github/workflows/web-check.yml'
+
 permissions:
-  contents: write
+  contents: read
+
 concurrency:
   group: web-${{ github.ref }}
   cancel-in-progress: true
+
 jobs:
   web:
     runs-on: ubuntu-24.04
@@ -18,18 +26,6 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
-      - name: Import pinned brand assets on the review branch
-        if: (github.ref == 'refs/heads/fix/web-hero-toolbar-20261021' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/web-hero-toolbar-20261021')) && hashFiles('web/scripts/prepare-brand-assets.py') != ''
-        run: |
-          python3 scripts/prepare-brand-assets.py
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add public/media/models public/licenses/lobe-icons-MIT.txt src/components/LandingSections.tsx src/components/LandingSections.module.css scripts/browser-check.mjs
-          git rm scripts/prepare-brand-assets.py
-          git commit -m 'assets(web): restore mapped model marks and clean provider references'
-          git push origin HEAD:fix/web-hero-toolbar-20261021
       - name: Archive source for review
         run: tar -czf ../web-source.tar.gz .
       - uses: actions/upload-artifact@v4
