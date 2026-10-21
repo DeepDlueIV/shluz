@@ -21,7 +21,7 @@ jobs:
         with:
           ref: ${{ github.head_ref || github.ref_name }}
       - name: Import pinned brand assets on the review branch
-        if: github.ref == 'refs/heads/fix/web-hero-toolbar-20261021' && hashFiles('web/scripts/prepare-brand-assets.py') != ''
+        if: (github.ref == 'refs/heads/fix/web-hero-toolbar-20261021' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/web-hero-toolbar-20261021')) && hashFiles('web/scripts/prepare-brand-assets.py') != ''
         run: |
           python3 scripts/prepare-brand-assets.py
           git config user.name 'github-actions[bot]'
