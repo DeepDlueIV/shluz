@@ -216,7 +216,7 @@ def test_gateway_never_retries_ambiguous_post_and_keeps_tokens_separate():
         (401, {"detail": "secret value"}, "unauthorized"),
         (402, {"error": {"code": "credit_limit_exceeded"}}, "credit_limit_exceeded"),
         (429, {"error": {"code": "provider_rate_limit"}}, "provider_rate_limit"),
-        (503, {"error": {"code": "provider_balance_exhausted"}}, "provider_unavailable"),
+        (503, {"error": {"code": "provider_balance_exhausted"}}, "provider_balance_exhausted"),
         (200, {"choices": []}, "invalid_response"),
         (502, {"error": {"code": ["secret-upstream-value"]}}, "provider_unavailable"),
         (429, {"error": {"code": {"unexpected": "secret"}}}, "rate_limit"),
