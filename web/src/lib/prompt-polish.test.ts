@@ -20,8 +20,10 @@ test("Prompt is logo-free with a private invitation in both locales", () => {
 });
 
 test("Hint transitions are sequential and slower; pointer gaps do not reset them", () => {
-  assert.match(home, /mode="wait"/);
-  assert.match(home, /duration: 0\.5/);
+  const preview = readFileSync(new URL("../components/PromptPreview.tsx", import.meta.url), "utf8");
+  assert.match(home, /<PromptPreview text=\{previewText\}/);
+  assert.doesNotMatch(preview, /key=|AnimatePresence/);
+  assert.match(preview, /duration: 0\.5/);
   const suggestions = readFileSync(new URL("../components/PromptSuggestions.tsx", import.meta.url), "utf8");
   assert.match(suggestions, /onPointerLeave/);
   assert.match(suggestions, /onPreview\(''\)/);

@@ -87,7 +87,7 @@ await check('Russian translations retain the same suggestion identities', async 
   await page.screenshot({ path: 'test-results/more-ru.png' });
 });
 await check('No runtime errors or unsolicited model requests', () => { assert.deepEqual(errors, []); assert.deepEqual(requests, []); });
-await check('Compact glass chips: white semibold text, single-line labels and equal row widths', async () => {
+await check('Transparent chips: white semibold text, single-line labels and equal row widths', async () => {
   await page.evaluate(() => localStorage.removeItem('noclip.locale'));
   await home();
   const before = await page.locator('[data-primary-suggestions]').boundingBox();
@@ -99,12 +99,13 @@ await check('Compact glass chips: white semibold text, single-line labels and eq
   assert.ok(Math.abs(extra.width - after.width) < 1 && Math.abs(extra.x - after.x) < 1);
   const chips = await page.locator('[data-suggestion]').evaluateAll(nodes => nodes.map(el => {
     const s = getComputedStyle(el), label = getComputedStyle(el.querySelector('span'));
-    return { color: s.color, weight: s.fontWeight, font: parseFloat(s.fontSize), blur: s.backdropFilter, height: el.getBoundingClientRect().height, whiteSpace: label.whiteSpace };
+    return { color: s.color, weight: s.fontWeight, font: parseFloat(s.fontSize), blur: s.backdropFilter, background: s.backgroundColor, height: el.getBoundingClientRect().height, whiteSpace: label.whiteSpace };
   }));
   for (const chip of chips) {
     assert.equal(chip.color, 'rgb(255, 255, 255)');
     assert.ok(Number(chip.weight) >= 600 && chip.font >= 13);
-    assert.ok(chip.blur.includes('blur(16px)'));
+    assert.equal(chip.blur, 'none');
+    assert.equal(chip.background, 'rgba(26, 27, 29, 0.208)');
     assert.equal(chip.whiteSpace, 'nowrap'); assert.equal(chip.height, chips[0].height);
   }
   await page.screenshot({ path: 'test-results/readable-desktop.png' });

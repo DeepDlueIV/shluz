@@ -2,10 +2,10 @@
 .primary,.additional { display: grid; gap: 6px; }
 .primary { grid-template-columns: repeat(4,minmax(0,max-content)) max-content; }
 .additional { grid-template-columns: repeat(5,minmax(0,1fr)); padding-top: 8px; }
-.region button { min-width: 0; height: 40px; display: flex; justify-content: center; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid #ffffff38; border-radius: 22px; background: rgba(20,21,24,.62); color: #fff; font: inherit; font-size: 13px; font-weight: 600; line-height: 1.3; text-align: left; -webkit-backdrop-filter: blur(16px) saturate(120%); backdrop-filter: blur(16px) saturate(120%); box-shadow: inset 0 1px 0 #ffffff08; transition: background 220ms,color 220ms,border-color 220ms,box-shadow 220ms; }
+.region button { min-width: 0; height: 40px; display: flex; justify-content: center; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid #ffffff1f; border-radius: 22px; background: #1a1b1d35; color: #fff; font: inherit; font-size: 13px; font-weight: 600; line-height: 1.3; text-align: left; transition: background 220ms,color 220ms,border-color 220ms; }
 .region button svg { flex-shrink: 0; }
 .region button span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.region button:hover,.region button:focus-visible { color: #fff; background: rgba(56,58,64,.76); border-color: #ffffff70; box-shadow: inset 0 1px 0 #ffffff14,0 3px 18px #0002; }
+.region button:hover,.region button:focus-visible { color: #fff; background: #ffffff0b; border-color: #ffffff40; }
 .region button:focus-visible { outline: 2px solid #b7bfff; outline-offset: 3px; }
 .region .more { white-space: nowrap; padding-inline: 12px; }
 .more svg { transition: transform 500ms cubic-bezier(.4,0,.2,1); transition-duration: 500ms !important; }
@@ -19,7 +19,4 @@
   .region button { height: 44px; font-size: 12px; padding-inline: 9px; }
   .primary .more { grid-column: 1 / -1; justify-self: center; min-width: 94px; }
   .disclosure { max-height: min(280px,30svh); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
-}
-@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
-  .region button { background: #202125; }
 }

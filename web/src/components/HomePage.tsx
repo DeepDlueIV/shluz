@@ -11,6 +11,7 @@ import LanguageSwitcher from "./LanguageSwitcher";
 import { useSitePreferences } from "./SitePreferences";
 import { getPromptSuggestions } from "../lib/prompt-suggestions";
 import PromptSuggestions from "./PromptSuggestions";
+import PromptPreview from "./PromptPreview";
 
 
 const navLinks = [
@@ -212,12 +213,7 @@ export default function HomePage() {
             }}
             autoComplete="off" spellCheck enterKeyHint="send" aria-describedby="prompt-guidance" />
           {!draft && <div className={styles.promptPreview} aria-hidden="true" data-prompt-preview>
-            <AnimatePresence initial={false} mode="wait">
-              <motion.span key={previewText} initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 14, transition: { duration: 0.22, ease: "easeIn" } }}
-                transition={{ duration: 0.5, ease: "easeOut" }}>{previewText}</motion.span>
-            </AnimatePresence>
+            <PromptPreview text={previewText} />
           </div>}
           {docked ? <button ref={toggleRef} data-prompt-toggle type="button" className={styles.promptToggle}
             data-expanded={expanded} aria-expanded={expanded} aria-controls="hero-prompt"
