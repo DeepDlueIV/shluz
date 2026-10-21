@@ -1,0 +1,96 @@
+name: Verify Telegram source objects
+
+on:
+  pull_request:
+    branches: [implementation/telegram-beta-complete]
+    paths: [.github/workflows/telegram-ui-prepare.yml]
+  push:
+    branches: [feat/telegram-menu-simplification]
+    paths: [.github/workflows/telegram-ui-prepare.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Reconstruct exact tested workspace
+        env:
+          TRANSFER_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import base64, hashlib, json, lzma, os, pathlib, subprocess, urllib.request
+          base = 'f6858bbd201c17f5abbd57ed0d02492c39983134'
+          repo = 'https://api.github.com/repos/DeepDlueIV/shluz'
+          headers = {'Authorization': 'Bearer ' + os.environ['TRANSFER_TOKEN'], 'Accept': 'application/vnd.github+json', 'User-Agent': 'NoClip-verified-source-transfer'}
+          chunks = []
+          for sha, expected in [('2e44aa22a2fd8f382cafae896caa4eff151cec8a','2e44aa22a2fd8f382cafae896caa4eff151cec8a'), ('a2da6c9361ef4d5f35e5c1655960ccfa307cdc61','a2da6c9361ef4d5f35e5c1655960ccfa307cdc61'), ('31243beec86d66bf78c9125d8087cf89dde5d807','716a6ea510ae5df7c6895ffce73891e148670321')]:
+              with urllib.request.urlopen(urllib.request.Request(repo + '/git/blobs/' + sha, headers=headers), timeout=30) as response:
+                  part = base64.b64decode(json.load(response)['content'])
+              if sha == '31243beec86d66bf78c9125d8087cf89dde5d807':
+                  # Repair the single transport transcription character, then verify canonical bytes.
+                  part = part.replace(b'K9AU2O9+6xTJ11SBx4U4PqB', b'K9AU2O9+6xTJ11SBx4U8PqB')
+              assert hashlib.sha1(f'blob {len(part)}\0'.encode() + part).hexdigest() == expected
+              chunks.append(part)
+          compressed = base64.b64decode(b''.join(chunks), validate=True)
+          assert hashlib.sha256(compressed).hexdigest() == '0f25976a0107fffceae8ee71bc69b4fda577488a9e5be78c06ab5170edf53036'
+          patch = lzma.decompress(compressed)
+          assert hashlib.sha256(patch).hexdigest() == '58c8b0e7ead8f8494158991cef7b301f3046f0557fcc727f229fcc7730257b28'
+          path = pathlib.Path('/tmp/telegram-ui.patch'); path.write_bytes(patch)
+          subprocess.run(['git','worktree','add','--detach','/tmp/verified-source',base], check=True)
+          subprocess.run(['git','apply','--index',str(path)], cwd='/tmp/verified-source', check=True)
+          actual = subprocess.check_output(['git','write-tree'], cwd='/tmp/verified-source').decode().strip()
+          assert actual == '8521ecca3e22deee663b5e6cca92ed097cd86812', actual
+          print('Exact application source tree verified:', actual)
+          PY
+      - name: Install and verify actual source
+        working-directory: /tmp/verified-source
+        run: |
+          python -m pip install -e ".[dev]"
+          ruff check .
+          pytest -q | tee /tmp/telegram-source-tests.log
+      - name: Upload immutable source objects only
+        env:
+          TRANSFER_TOKEN: ${{ github.token }}
+        working-directory: /tmp/verified-source
+        run: |
+          python - <<'PY'
+          import base64, hashlib, json, os, pathlib, subprocess, urllib.request
+          root = pathlib.Path.cwd()
+          base = 'f6858bbd201c17f5abbd57ed0d02492c39983134'
+          repo = 'https://api.github.com/repos/DeepDlueIV/shluz'
+          headers = {'Authorization': 'Bearer ' + os.environ['TRANSFER_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json', 'User-Agent': 'NoClip-verified-source-transfer'}
+          def post(path, data):
+              request = urllib.request.Request(repo + path, data=json.dumps(data).encode(), headers=headers, method='POST')
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+          paths = subprocess.check_output(['git','diff','--cached','--name-only',base]).decode().splitlines()
+          tree = []
+          for path in paths:
+              data = (root / path).read_bytes()
+              expected = hashlib.sha1(f'blob {len(data)}\0'.encode() + data).hexdigest()
+              result = post('/git/blobs', {'encoding':'base64', 'content':base64.b64encode(data).decode()})
+              assert result['sha'] == expected
+              tree.append({'path':path, 'mode':'100644', 'type':'blob', 'sha':expected})
+          result = post('/git/trees', {'base_tree':'710dd7102c2f5be2d46fb36e491d8dac11d2cd9b', 'tree':tree})
+          assert result['sha'] == '8521ecca3e22deee663b5e6cca92ed097cd86812'
+          out = pathlib.Path('/tmp/verified-telegram'); out.mkdir()
+          (out/'objects.json').write_text(json.dumps({'base':base,'tree':result['sha'],'entries':tree},indent=2))
+          (out/'tests.log').write_bytes(pathlib.Path('/tmp/telegram-source-tests.log').read_bytes())
+          subprocess.run(['git','archive','--format=zip','--prefix=shluz/',result['sha'],'-o',str(out/'source.zip')],check=True)
+          print('Published immutable source tree:', result['sha'])
+          print('No branch refs, releases, live databases or provider settings changed.')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-telegram-ui-source
+          path: /tmp/verified-telegram/
+          retention-days: 3
