@@ -60,7 +60,7 @@ class ClosedAccessMiddleware(BaseMiddleware):
                 if callback:
                     with suppress(TelegramAPIError):
                         await callback.answer()
-                await self.controller.delivery.say(message, ERROR_TEXT[exc.code])
+                await self.controller.delivery.screen(message, ERROR_TEXT[exc.code])
                 return None
             if admission["state"] != "active":
                 if callback:
@@ -95,7 +95,7 @@ class ClosedAccessMiddleware(BaseMiddleware):
             if callback:
                 await callback.answer("Доступ к закрытой бете не выдан.", show_alert=True)
             else:
-                await self.controller.delivery.say(
+                await self.controller.delivery.screen(
                     message,
                     "🔒 <b>Закрытое тестирование Shluz</b>\n\n"
                     f"Ваш Telegram ID: <code>{sender.id}</code>\n"
@@ -114,9 +114,9 @@ class ClosedAccessMiddleware(BaseMiddleware):
         try:
             return await handler(event, data)
         except GatewayError as exc:
-            await self.controller.delivery.say(message, ERROR_TEXT[exc.code], ui.back())
+            await self.controller.delivery.screen(message, ERROR_TEXT[exc.code], ui.back())
         except DialogLimit:
-            await self.controller.delivery.say(
+            await self.controller.delivery.screen(
                 message,
                 "🗂 Достигнут лимит диалогов. Удалите ненужный через «Настройки диалога».",
                 ui.back(),
@@ -125,7 +125,7 @@ class ClosedAccessMiddleware(BaseMiddleware):
             # Не логируем тело сообщения, токены, URL запроса или traceback с секретами.
             logger.warning("Ошибка обработки Telegram: %s", type(exc).__name__)
             with suppress(TelegramAPIError):
-                await self.controller.delivery.say(
+                await self.controller.delivery.screen(
                     message,
                     "⚠️ Не удалось выполнить действие. Откройте главное меню кнопкой ниже.",
                     ui.back(),
@@ -144,7 +144,7 @@ class Controller:
         sleep=asyncio.sleep,
     ) -> None:
         self.settings, self.access, self.store, self.gateway = settings, access, store, gateway
-        self.delivery = Delivery(max_parts=settings.max_text_parts, sleep=sleep)
+        self.delivery = Delivery(max_parts=settings.max_text_parts, sleep=sleep, store=store)
         self.jobs: dict[int, asyncio.Task] = {}
         self.job_ids: dict[int, str] = {}
         self.last_request: dict[int, float] = {}
@@ -189,7 +189,7 @@ class Controller:
         self.confirmations.clear(user_id)
         text = message.text
         if text is None or not text.strip():
-            await self.delivery.say(
+            await self.delivery.screen(
                 message,
                 "📝 Пока поддерживаются только текстовые сообщения. "
                 "Файлы, фото и голосовые модели не отправляются.",
@@ -241,7 +241,7 @@ class Controller:
             )
             return
         if len(text) > self.settings.max_input_chars:
-            await self.delivery.say(
+            await self.delivery.screen(
                 message,
                 "📏 Сообщение слишком большое. Разделите его на несколько более коротких запросов.",
                 ui.back(),
@@ -532,19 +532,19 @@ class Controller:
         user_id = sender.id
         text = message.text if text is None else text
         if user_id in self.jobs:
-            await self.delivery.say(
+            await self.delivery.screen(
                 message,
                 "⏳ Ответ уже готовится. Дождитесь его или нажмите «Остановить ожидание».",
                 ui.cancel_controls(self.job_ids.get(user_id)),
             )
             return
         if len(self.jobs) >= self.settings.max_parallel_requests:
-            await self.delivery.say(
+            await self.delivery.screen(
                 message, "⏳ Сейчас все места обработки заняты. Попробуйте чуть позже.", ui.back()
             )
             return
         if time.monotonic() - self.last_request.get(user_id, 0) < self.settings.cooldown_seconds:
-            await self.delivery.say(
+            await self.delivery.screen(
                 message, "⏳ Слишком быстро. Подождите пару секунд перед новым запросом.", ui.back()
             )
             return

@@ -5,7 +5,8 @@ import html
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
-from typing import Any
+from typing import TYPE_CHECKING, Any
+from weakref import WeakValueDictionary
 
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramRetryAfter
 from aiogram.types import BufferedInputFile, LinkPreviewOptions, Message
@@ -13,14 +14,23 @@ from aiogram.types import BufferedInputFile, LinkPreviewOptions, Message
 from telegram_bot import ui
 from telegram_bot.presentation import render_answer, split_text
 
+if TYPE_CHECKING:
+    from telegram_bot.storage import Store
+
 NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
 
 
 class Delivery:
-    def __init__(self, *, max_parts: int = 6, sleep=asyncio.sleep) -> None:
+    def __init__(
+        self, *, max_parts: int = 6, sleep=asyncio.sleep, store: "Store | None" = None
+    ) -> None:
         self.max_parts = max_parts
         self.sleep = sleep
-        self.screen_ids: dict[int, int] = {}
+        self.store = store
+        self.screen_ids: dict[tuple[int, int], int] = {}
+        self.screen_locks: WeakValueDictionary[tuple[int, int], asyncio.Lock] = (
+            WeakValueDictionary()
+        )
 
     async def call(self, operation: Callable[[], Awaitable[Any]]) -> Any:
         for attempt in range(2):
@@ -43,18 +53,54 @@ class Delivery:
         )
 
     async def screen(self, message: Message, text: str, markup=None):
-        # Редактируем только известный экран меню, никогда пользовательский текст/ответ модели.
-        if (
-            message.from_user
-            and message.from_user.is_bot
-            and self.screen_ids.get(message.chat.id) == message.message_id
-        ):
-            sent = await self.edit(message, message, text, markup, plain_text=text)
-        else:
-            sent = await self.say(message, text, markup)
-        if isinstance(sent, Message):
-            self.screen_ids[message.chat.id] = sent.message_id
-        return sent
+        """Одна панель на личный чат: источник кнопки не становится целью редактирования."""
+        key = (message.bot.id, message.chat.id)
+        lock = self.screen_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            panel_id = self.store.screen_id(*key) if self.store else self.screen_ids.get(key)
+            if panel_id is not None:
+                try:
+                    sent = await self.call(
+                        lambda: message.bot.edit_message_text(
+                            text,
+                            chat_id=message.chat.id,
+                            message_id=panel_id,
+                            parse_mode="HTML",
+                            reply_markup=markup,
+                            link_preview_options=NO_PREVIEW,
+                        )
+                    )
+                except TelegramBadRequest as exc:
+                    reason = exc.message.lower()
+                    if "message is not modified" in reason:
+                        sent = message.model_copy(
+                            update={"message_id": panel_id, "text": text, "reply_markup": markup}
+                        )
+                    elif any(
+                        reason_part in reason
+                        for reason_part in (
+                            "message to edit not found",
+                            "message can't be edited",
+                        )
+                    ):
+                        # Заменяем только заведомо недоступную панель, не ответы или сообщения.
+                        # Сетевой сбой/неверный HTML сюда не попадают: новая копия их не исправит.
+                        with suppress(TelegramAPIError):
+                            await self.call(
+                                lambda: message.bot.edit_message_reply_markup(
+                                    chat_id=message.chat.id, message_id=panel_id, reply_markup=None
+                                )
+                            )
+                        sent = await self.say(message, text, markup)
+                    else:
+                        raise
+            else:
+                sent = await self.say(message, text, markup)
+            if isinstance(sent, Message):
+                self.screen_ids[key] = sent.message_id
+                if self.store:
+                    self.store.set_screen_id(*key, sent.message_id)
+            return sent
 
     async def edit(
         self,
