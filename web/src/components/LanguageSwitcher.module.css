@@ -7,3 +7,9 @@
 .option:hover,.option:focus-visible { background: #ffffff12; }
 .check { margin-left: auto; width: 14px; }
 @media (max-width: 420px) { .trigger { gap: 5px; padding: 8px; } .flag { width: 20px; height: 14px; } }
+
+/* Не размонтируем меню сразу: закрытие тоже имеет fade и движение вверх. */
+.menu { opacity: 0; transform: translateY(-14px); visibility: hidden; pointer-events: none; transition-property: opacity,transform,visibility; transition-duration: 380ms,450ms,0s !important; transition-timing-function: ease,cubic-bezier(.4,0,.2,1),linear; transition-delay: 0s,0s,450ms; }
+.menu[data-open="true"] { opacity: 1; transform: translateY(0); visibility: visible; pointer-events: auto; transition-delay: 0s; }
+.trigger [data-language-chevron] { transition: transform 450ms cubic-bezier(.4,0,.2,1); transition-duration: 450ms !important; }
+.trigger[aria-expanded="true"] [data-language-chevron] { transform: rotate(180deg); }

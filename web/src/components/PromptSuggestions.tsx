@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import type { PromptSuggestion } from '../lib/prompt-suggestions';
 import styles from './PromptSuggestions.module.css';
 
@@ -31,7 +31,7 @@ function SuggestionIcon({ name }: { name: string }) {
     building: <><path d="M4 22V3h12v19M16 10h4v12M8 7h4M8 11h4M8 15h4M9 22v-3h2v3" /></>,
     book: <><path d="M12 5c-3-2-6-2-10-1v15c4-1 7-1 10 1 3-2 6-2 10-1V4c-4-1-7-1-10 1Zm0 0v15" /></>,
   };
-  return <svg data-suggestion-icon width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+  return <svg data-suggestion-icon width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
 
 export default function PromptSuggestions({ primary, additional, enabled, moreLabel, onPreview, onChoose }: Props) {
@@ -41,7 +41,6 @@ export default function PromptSuggestions({ primary, additional, enabled, moreLa
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const focusExtra = useRef(false);
   const pointerInside = useRef(false);
-  const reduced = useReducedMotion();
   const expanded = open && enabled;
 
   function cancelClose() {
@@ -59,7 +58,7 @@ export default function PromptSuggestions({ primary, additional, enabled, moreLa
   }, [expanded]);
 
   function choice(item: PromptSuggestion, first = false) {
-    return <button key={item.id} type="button" data-suggestion={item.id}
+    return <button key={item.id} type="button" data-suggestion={item.id} title={item.label} aria-label={item.label}
       ref={first ? firstExtraRef : undefined} tabIndex={enabled ? 0 : -1}
       onPointerEnter={event => { if (event.pointerType !== 'touch' && enabled) onPreview(item.id); }}
       onFocus={() => { if (enabled) onPreview(item.id); }}
@@ -89,10 +88,10 @@ export default function PromptSuggestions({ primary, additional, enabled, moreLa
     </div>
     <AnimatePresence initial={false}>
       {expanded && <motion.div id="additional-prompts" className={styles.disclosure} data-additional-prompts
-        initial={{ height: 0, opacity: 0, y: reduced ? 0 : -10 }}
+        initial={{ height: 0, opacity: 0, y: -18 }}
         animate={{ height: 'auto', opacity: 1, y: 0 }}
-        exit={{ height: 0, opacity: 0, y: reduced ? 0 : -8 }}
-        transition={{ duration: reduced ? 0 : 0.32, ease: [0.4, 0, 0.2, 1] }}>
+        exit={{ height: 0, opacity: 0, y: -14 }}
+        transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}>
         <div className={styles.additional}>{additional.map((item, index) => choice(item, index === 0))}</div>
       </motion.div>}
     </AnimatePresence>

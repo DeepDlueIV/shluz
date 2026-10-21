@@ -21,7 +21,7 @@ test("Prompt is logo-free with a private invitation in both locales", () => {
 
 test("Hint transitions are sequential and slower; pointer gaps do not reset them", () => {
   assert.match(home, /mode="wait"/);
-  assert.match(home, /duration: reduceMotion \? 0 : 0\.24/);
+  assert.match(home, /duration: 0\.5/);
   const suggestions = readFileSync(new URL("../components/PromptSuggestions.tsx", import.meta.url), "utf8");
   assert.match(suggestions, /onPointerLeave/);
   assert.match(suggestions, /onPreview\(''\)/);
@@ -29,7 +29,7 @@ test("Hint transitions are sequential and slower; pointer gaps do not reset them
   assert.doesNotMatch(buttons, /onMouseLeave|onPointerLeave/);
 });
 
-test("Toolbar animation and button share a calm 400ms transition", () => {
-  assert.match(home, /duration: reduceMotion \? 0\.05 : 0\.4/);
-  assert.match(css, /width 400ms cubic-bezier\(\.4,0,\.2,1\)/);
+test("Toolbar animation and button share a calm 800ms transition", () => {
+  assert.match(home, /duration: 0\.8/);
+  assert.match(css, /width 800ms cubic-bezier\(\.4,0,\.2,1\)/);
 });
