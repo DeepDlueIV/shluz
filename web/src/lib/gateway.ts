@@ -9,16 +9,16 @@ export type GuestSession = {
 export type GatewayMessage = { code: string; title: string; message: string };
 
 const unavailable = {
-  title: "Демо пока недоступно",
-  message: "Демонстрация временно недоступна. Ваш запрос сохранён.",
+  title: "Demo unavailable",
+  message: "The demo is not connected yet. Your prompt remains in this tab.",
 };
 const sessionExpired = {
-  title: "Обновите страницу",
-  message: "Сессия завершилась. Скопируйте вопрос перед обновлением страницы и отправьте его снова, когда будете готовы.",
+  title: "Refresh the page",
+  message: "Your session has expired. Copy your prompt before refreshing, then submit it again when ready.",
 };
 const verificationFailed = {
-  title: "Проверка не завершена",
-  message: "Не удалось подтвердить проверку. Вопрос сохранён. Вы можете отправить его ещё раз вручную.",
+  title: "Verification incomplete",
+  message: "Browser verification failed. Your prompt remains here. You can try submitting it again manually.",
 };
 const messages: Record<string, Omit<GatewayMessage, "code">> = {
   web_not_configured: unavailable,
@@ -28,8 +28,8 @@ const messages: Record<string, Omit<GatewayMessage, "code">> = {
   demo_temporarily_unavailable: unavailable,
   invalid_response: unavailable,
   demo_exhausted: {
-    title: "Демо исчерпано",
-    message: "Лимит пробного доступа исчерпан. Для продолжения понадобится постоянный аккаунт.",
+    title: "Demo limit reached",
+    message: "The demo quota is used up. A permanent account is required to continue.",
   },
   session_required: sessionExpired,
   session_expired: sessionExpired,
@@ -37,10 +37,55 @@ const messages: Record<string, Omit<GatewayMessage, "code">> = {
   csrf_rejected: sessionExpired,
   origin_rejected: unavailable,
   cross_site_rejected: unavailable,
-  access_unavailable: { title: "Доступ ограничен", message: "Сейчас этот аккаунт не может отправлять запросы. Ваш вопрос сохранён." },
+  access_unavailable: { title: "Access restricted", message: "This account cannot send requests right now. Your prompt remains here." },
   verification_required: verificationFailed,
   verification_failed: verificationFailed,
   verification_reused: verificationFailed,
+  verification_unavailable: { title: "Verification unavailable", message: "Check your connection and allow browser verification. Your prompt remains here." },
+  input_too_large: { title: "Prompt too long", message: "Shorten the prompt to the displayed character limit, then submit it again." },
+  body_too_large: { title: "Prompt too long", message: "Shorten the prompt: its size exceeds the demo limit." },
+  empty_prompt: { title: "Enter a prompt", message: "Type your question or task." },
+  invalid_request: { title: "Prompt not sent", message: "Check your prompt and try submitting it manually." },
+  too_many_requests: { title: "Too many requests", message: "Too many attempts. Wait before trying again." },
+  demo_busy: { title: "Demo busy", message: "Try again later. Your prompt remains here." },
+  request_already_used: { title: "Request already submitted", message: "This request has already been used. It was not submitted a second time." },
+  stream_interrupted: { title: "Response interrupted", message: "The connection ended before the response completed. Received text is preserved. The request may have counted toward your quota; no automatic retry was made." },
+  network_error: { title: "Connection failed", message: "Check your internet connection. Your prompt remains here; the request will not be retried automatically." },
+};
+
+const unavailableRu = {
+  title: "Демо пока недоступно",
+  message: "Демонстрация временно недоступна. Ваш запрос сохранён.",
+};
+const sessionExpiredRu = {
+  title: "Обновите страницу",
+  message: "Сессия завершилась. Скопируйте вопрос перед обновлением страницы и отправьте его снова, когда будете готовы.",
+};
+const verificationFailedRu = {
+  title: "Проверка не завершена",
+  message: "Не удалось подтвердить проверку. Вопрос сохранён. Вы можете отправить его ещё раз вручную.",
+};
+const messagesRu: Record<string, Omit<GatewayMessage, "code">> = {
+  web_not_configured: unavailableRu,
+  demo_closed: unavailableRu,
+  model_not_allowed: unavailableRu,
+  model_selection_unavailable: unavailableRu,
+  demo_temporarily_unavailable: unavailableRu,
+  invalid_response: unavailableRu,
+  demo_exhausted: {
+    title: "Демо исчерпано",
+    message: "Лимит пробного доступа исчерпан. Для продолжения понадобится постоянный аккаунт.",
+  },
+  session_required: sessionExpiredRu,
+  session_expired: sessionExpiredRu,
+  session_changed: sessionExpiredRu,
+  csrf_rejected: sessionExpiredRu,
+  origin_rejected: unavailableRu,
+  cross_site_rejected: unavailableRu,
+  access_unavailable: { title: "Доступ ограничен", message: "Сейчас этот аккаунт не может отправлять запросы. Ваш вопрос сохранён." },
+  verification_required: verificationFailedRu,
+  verification_failed: verificationFailedRu,
+  verification_reused: verificationFailedRu,
   verification_unavailable: { title: "Не удалось загрузить проверку", message: "Проверьте подключение к интернету и разрешите проверку браузера. Ваш вопрос сохранён." },
   input_too_large: { title: "Слишком длинный вопрос", message: "Сократите вопрос до указанного числа символов и отправьте его снова." },
   body_too_large: { title: "Слишком длинный вопрос", message: "Сократите вопрос: его размер превышает допустимый для демонстрации." },
@@ -65,9 +110,11 @@ export class GatewayError extends Error {
   }
 }
 
-export function getGatewayMessage(error: unknown): GatewayMessage {
+export function getGatewayMessage(error: unknown, locale: "en" | "ru" = "en"): GatewayMessage {
   const code = error instanceof GatewayError ? error.code : "network_error";
-  return { code, ...(messages[code] ?? unavailable) };
+  const catalog = locale === "ru" ? messagesRu : messages;
+  const fallback = locale === "ru" ? unavailableRu : unavailable;
+  return { code, ...(catalog[code] ?? fallback) };
 }
 
 function record(value: unknown): value is Record<string, unknown> {

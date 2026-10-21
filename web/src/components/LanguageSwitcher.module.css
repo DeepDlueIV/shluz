@@ -1,0 +1,9 @@
+.root { position: relative; flex-shrink: 0; }
+.trigger { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 8px 11px; background: rgba(20,21,24,.4); border: 1px solid #ffffff30; border-radius: 24px; color: #f4f0e8; font-size: 12px; }
+.trigger:hover { background: #ffffff14; }
+.flag { flex-shrink: 0; border-radius: 2px; overflow: hidden; }
+.menu { position: absolute; top: calc(100% + 10px); right: 0; min-width: 170px; padding: 5px; background: #1b1d22f5; border: 1px solid #ffffff25; border-radius: 14px; box-shadow: 0 14px 36px #0006; backdrop-filter: blur(20px); z-index: 80; }
+.option { width: 100%; display: flex; align-items: center; gap: 12px; min-height: 43px; padding: 10px; border: 0; border-radius: 9px; background: transparent; color: #f4f0e8; font-size: 13px; text-align: left; }
+.option:hover,.option:focus-visible { background: #ffffff12; }
+.check { margin-left: auto; width: 14px; }
+@media (max-width: 420px) { .trigger { gap: 5px; padding: 8px; } .flag { width: 20px; height: 14px; } }

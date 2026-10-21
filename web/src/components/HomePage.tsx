@@ -5,21 +5,25 @@ import { AnimatePresence, motion, useMotionValueEvent, useReducedMotion, useScro
 import { useGuestJourney } from "./GuestJourney";
 import LandingSections from "./LandingSections";
 import styles from "./HomePage.module.css";
+import presentation from "./Presentation.module.css";
+import HeroVideo from "./HeroVideo";
+import LanguageSwitcher from "./LanguageSwitcher";
+import { useSitePreferences, type Translate } from "./SitePreferences";
 
-const examples = [
-  { label: "Поговорить откровенно", prompt: "Давай обсудим сложную тему без нравоучений. Как научиться отстаивать своё мнение, когда все вокруг с ним не согласны?", icon: "chat" },
-  { label: "Придумать историю", prompt: "Придумай начало атмосферного нуарного рассказа: город, в котором никто не может лгать, и человек, который научился.", icon: "spark" },
-  { label: "Написать код", prompt: "Помоги создать минималистичный сайт-портфолио с красивой типографикой и плавными анимациями. Начни с плана и структуры.", icon: "code" },
-  { label: "Удиви меня", prompt: "Расскажи неожиданную идею о мире, которая заставит меня посмотреть на привычные вещи по-другому.", icon: "dice" },
-] as const;
+const getExamples = (t: Translate) => [
+  { id: "chat", label: t("Discuss a topic", "Обсудить тему"), prompt: t("Discuss a controversial topic from different perspectives, without moralizing. How can I defend my opinion when everyone around me disagrees?", "Обсуди спорную тему с разных сторон, без нравоучений. Как отстаивать своё мнение, когда окружающие с ним не согласны?"), icon: "chat" },
+  { id: "story", label: t("Write a story", "Написать историю"), prompt: t("Write the opening of a noir story about a city where nobody can lie, and one person who learns how.", "Напиши начало нуарного рассказа о городе, в котором никто не может лгать, и человеке, который научился."), icon: "spark" },
+  { id: "code", label: t("Write code", "Написать код"), prompt: t("Help me build a minimal portfolio website with responsive typography. Start with the file structure and implementation plan.", "Помоги создать минималистичный сайт-портфолио с адаптивной типографикой. Начни со структуры файлов и плана реализации."), icon: "code" },
+  { id: "explain", label: t("Explain a concept", "Объяснить понятие"), prompt: t("Explain how a language model generates an answer. Use one concrete example and distinguish facts from common misconceptions.", "Объясни, как языковая модель создаёт ответ. Используй конкретный пример и отдели факты от распространённых заблуждений."), icon: "dice" },
+];
 
 const navLinks = [
-  { label: "About", href: "#about" },
-  { label: "Features", href: "#features" },
-  { label: "Token", soon: true },
-  { label: "Pricing", href: "#pricing" },
-  { label: "Resources", href: "#developers" },
-  { label: "Store", soon: true },
+  { label: "About", labelRu: "О проекте", href: "#about" },
+  { label: "Features", labelRu: "Возможности", href: "#features" },
+  { label: "Token", labelRu: "Токен", soon: true },
+  { label: "Pricing", labelRu: "Тарифы", href: "#pricing" },
+  { label: "Resources", labelRu: "Ресурсы", href: "#developers" },
+  { label: "Store", labelRu: "Магазин", soon: true },
 ] as const;
 
 function Icon({ name, size = 18 }: { name: string; size?: number }) {
@@ -37,50 +41,10 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] || paths.spark}</svg>;
 }
 
-function HeroVideo() {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const reduceMotion = useReducedMotion();
-  const [mobile, setMobile] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    const query = window.matchMedia("(max-width: 700px)");
-    const update = () => setMobile(query.matches);
-    update();
-    query.addEventListener("change", update);
-    return () => query.removeEventListener("change", update);
-  }, []);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || mobile === null || reduceMotion) return;
-    const visibility = () => {
-      const visible = !document.hidden && video.getBoundingClientRect().bottom > 0;
-      if (visible) void video.play().catch(() => {});
-      else video.pause();
-    };
-    const observer = new IntersectionObserver(visibility, { threshold: 0 });
-    observer.observe(video);
-    document.addEventListener("visibilitychange", visibility);
-    visibility();
-    return () => { observer.disconnect(); document.removeEventListener("visibilitychange", visibility); };
-  }, [mobile, reduceMotion]);
-
-  return <div className={styles.heroMedia} aria-hidden="true">
-    <picture>
-      <source media="(max-width: 700px)" srcSet="/media/hero-poster-mobile.webp" />
-      <img className={styles.poster} src="/media/hero-poster.webp" alt="" fetchPriority="high" />
-    </picture>
-    {mobile !== null && !reduceMotion && <video key={mobile ? "mobile" : "desktop"} ref={videoRef}
-      className={styles.video} autoPlay muted loop playsInline preload="auto"
-      poster={mobile ? "/media/hero-poster-mobile.webp" : "/media/hero-poster.webp"}>
-      <source src={mobile ? "/media/hero-mobile.mp4" : "/media/hero-desktop.mp4"} type="video/mp4" />
-    </video>}
-    <div className={styles.videoShade} />
-  </div>;
-}
-
 export default function HomePage() {
   const { openPrompt, openChat } = useGuestJourney();
+  const { t } = useSitePreferences();
+  const examples = getExamples(t);
   const { scrollY } = useScroll();
   const reduceMotion = useReducedMotion();
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -126,7 +90,7 @@ export default function HomePage() {
     window.addEventListener("resize", measure);
     void document.fonts.ready.then(measure);
     return () => { resize.disconnect(); window.removeEventListener("resize", measure); };
-  }, []);
+  }, [t]);
 
   useMotionValueEvent(progress, "change", value => {
     const next = value > 0.88;
@@ -160,36 +124,34 @@ export default function HomePage() {
     else inputRef.current?.focus();
   };
 
-  const renderNav = (mobile = false) => <nav aria-label={mobile ? "Навигация на мобильном экране" : "Основная навигация"} className={mobile ? styles.menuLinks : styles.navLinks}>
+  const renderNav = (mobile = false) => <nav aria-label={mobile ? t("Mobile navigation", "Навигация на мобильном экране") : t("Main navigation", "Основная навигация")} className={mobile ? styles.menuLinks : styles.navLinks}>
     {navLinks.map(item => "href" in item
-      ? <a key={item.label} href={item.href} tabIndex={docked ? 0 : -1} onClick={() => setMobileMenu(false)}>{item.label}</a>
-      : <button key={item.label} type="button" className={styles.soonLink} tabIndex={docked ? 0 : -1}
-          onClick={() => showNotice(item.label, "Этот раздел пока не открыт. Сейчас можно познакомиться с возможностями NoClip.")}>{item.label}<span className={styles.soonDot} aria-label="Скоро" /></button>)}
+      ? <a key={t(item.label, item.labelRu)} href={item.href} tabIndex={docked ? 0 : -1} onClick={() => setMobileMenu(false)}>{t(item.label, item.labelRu)}</a>
+      : <button key={t(item.label, item.labelRu)} type="button" className={styles.soonLink} tabIndex={docked ? 0 : -1}
+          onClick={() => showNotice(t(item.label, item.labelRu), t("This section is not available in the preview.", "Этот раздел пока не открыт. Сейчас можно познакомиться с возможностями NoClip."))}>{t(item.label, item.labelRu)}<span className={styles.soonDot} aria-label={t("Coming soon", "Скоро")} /></button>)}
     <button type="button" className={styles.loginLink} tabIndex={docked ? 0 : -1}
-      onClick={() => showNotice("Вход в NoClip", "Вход в личный аккаунт пока недоступен. Вы можете продолжить знакомство с NoClip и попробовать гостевой запрос.")}>Log in <Icon name="right" size={14} /></button>
+      onClick={() => showNotice(t("Log in to NoClip", "Вход в NoClip"), t("Account sign-in is not available in this preview. You can still open the guest chat.", "Вход в личный аккаунт пока недоступен. Вы можете продолжить знакомство с NoClip и попробовать гостевой запрос."))}>{t("Log in", "Войти")} <Icon name="right" size={14} /></button>
   </nav>;
 
   return <main className={styles.page}>
-    <a className={styles.skipLink} href="#features">Перейти к возможностям</a>
-    <section id="home" className={styles.hero} aria-labelledby="hero-title">
+    <a className={styles.skipLink} href="#features">{t("Skip to features", "Перейти к возможностям")}</a>
+    <section id="home" className={`${styles.hero} ${presentation.heroSection}`} aria-labelledby="hero-title">
       <HeroVideo />
       <header className={styles.header}>
-        <a href="#home" className={styles.wordmark} aria-label="NoClip — на главную">
+        <a href="#home" className={styles.wordmark} aria-label={t("NoClip home", "NoClip — на главную")}>
           <img src="/media/noclip-mark.png" width="38" height="32" alt="" />
           <span>NoClip</span>
         </a>
-        <button className={styles.headerLogin} onClick={() => showNotice("Вход в NoClip", "Вход в личный аккаунт пока недоступен. Вы можете продолжить знакомство с NoClip и попробовать гостевой запрос.")}>Войти <Icon name="right" size={15} /></button>
+        <div className={presentation.headerActions}><LanguageSwitcher /><button className={styles.headerLogin} onClick={() => showNotice(t("Log in to NoClip", "Вход в NoClip"), t("Account sign-in is not available in this preview. You can still open the guest chat.", "Вход в личный аккаунт пока недоступен. Вы можете продолжить знакомство с NoClip и попробовать гостевой запрос."))}>{t("Log in", "Войти")} <Icon name="right" size={15} /></button></div>
       </header>
-      <div className={styles.heroContent}>
+      <div className={`${styles.heroContent} ${presentation.heroContent}`}>
         <motion.div className={styles.heroCopy} style={{ opacity: titleOpacity, y: titleY }}>
-          <div className={styles.eyebrow}><span /> YOUR MIND. YOUR RULES.</div>
-          <h1 id="hero-title">Спросите<br /><em>о чём угодно.</em></h1>
-          <p>Меньше ограничений. Больше возможностей.</p>
+          <h1 id="hero-title">{t("Ask anything", "Спросите о чём угодно")}</h1>
         </motion.div>
         <div ref={anchorRef} className={styles.composerAnchor} />
-        <motion.div className={styles.suggestions} style={{ opacity: chipOpacity, pointerEvents: suggestionsVisible ? "auto" : "none" }} aria-label="Примеры запросов" aria-hidden={!suggestionsVisible || !!draft}>
+        <motion.div className={styles.suggestions} style={{ opacity: chipOpacity, pointerEvents: suggestionsVisible ? "auto" : "none" }} aria-label={t("Example prompts", "Примеры запросов")} aria-hidden={!suggestionsVisible || !!draft}>
           <div className={styles.chipRow} style={{ visibility: draft ? "hidden" : "visible" }}>
-            {examples.map(example => <button key={example.label} type="button"
+            {examples.map(example => <button key={example.id} type="button"
               tabIndex={suggestionsVisible && !draft ? 0 : -1}
               onMouseEnter={() => !draft && setPreview(example.prompt)}
               onMouseLeave={() => setPreview("")}
@@ -199,34 +161,32 @@ export default function HomePage() {
               <Icon name={example.icon} size={14} /><span>{example.label}</span>
             </button>)}
           </div>
-          <p className={styles.heroNote}>Начните с вопроса. Остальное — за вашим воображением.</p>
         </motion.div>
       </div>
-      <a className={styles.scrollHint} href="#models"><span>Откройте больше</span><Icon name="down" size={19} /></a>
-      <div className={styles.heroIndex} aria-hidden="true"><span>NOCLIP</span><span>01 — EXPLORE</span></div>
+      <a className={styles.scrollHint} href="#models" aria-label={t("View models", "Смотреть модели")}><Icon name="down" size={19} /></a>
     </section>
 
     <motion.div className={styles.glassPanel} data-docked={docked} data-ready={metrics.ready}
-      style={{ top, width, borderRadius: radius }} aria-label={docked ? "Ввод и навигация" : "Поле запроса"}>
+      style={{ top, width, borderRadius: radius }} aria-label={docked ? t("Prompt and navigation", "Ввод и навигация") : t("Prompt", "Поле запроса")}>
       <motion.form onSubmit={submit} className={styles.composer} style={{ width: formWidth }}>
-        <button type="button" className={styles.composerMark} onClick={focusComposer} aria-label="Вернуться к началу">
+        <button type="button" className={styles.composerMark} onClick={focusComposer} aria-label={t("Back to top", "Вернуться к началу")}>
           <img src="/media/noclip-mark.png" width="30" height="26" alt="" />
         </button>
-        <label htmlFor="hero-prompt" className="sr-only">Ваш вопрос для NoClip</label>
+        <label htmlFor="hero-prompt" className="sr-only">{t("Your prompt for NoClip", "Ваш вопрос для NoClip")}</label>
         <input ref={inputRef} id="hero-prompt" name="prompt" value={draft}
           onChange={event => { setDraft(event.target.value); setPreview(""); }}
           onKeyDown={event => { if (event.key === "Enter" && event.nativeEvent.isComposing) event.preventDefault(); }}
-          autoComplete="off" spellCheck placeholder={preview || (docked ? "Задайте вопрос…" : "Что вы хотите исследовать?")}
+          autoComplete="off" spellCheck placeholder={preview || (docked ? t("Ask anything…", "Задайте вопрос…") : t("Ask anything…", "Что вы хотите исследовать?"))}
           aria-describedby="prompt-guidance" />
-        <button type="submit" className={styles.sendButton} disabled={!draft.trim()} aria-label="Отправить запрос"><Icon name="arrow" size={21} /></button>
+        <button type="submit" className={styles.sendButton} disabled={!draft.trim()} aria-label={t("Send prompt", "Отправить запрос")}><Icon name="arrow" size={21} /></button>
       </motion.form>
       <motion.div className={styles.navArea} style={{ width: navWidth, opacity: navOpacity, pointerEvents: docked ? "auto" : "none" }} aria-hidden={!docked}>
         {metrics.mobile
-          ? <button className={styles.menuButton} type="button" onClick={() => setMobileMenu(!mobileMenu)} aria-expanded={mobileMenu} aria-controls="mobile-navigation" aria-label={mobileMenu ? "Закрыть меню" : "Открыть меню"} tabIndex={docked ? 0 : -1}><Icon name={mobileMenu ? "close" : "menu"} size={21} /></button>
+          ? <button className={styles.menuButton} type="button" onClick={() => setMobileMenu(!mobileMenu)} aria-expanded={mobileMenu} aria-controls="mobile-navigation" aria-label={mobileMenu ? t("Close menu", "Закрыть меню") : t("Open menu", "Открыть меню")} tabIndex={docked ? 0 : -1}><Icon name={mobileMenu ? "close" : "menu"} size={21} /></button>
           : renderNav()}
       </motion.div>
     </motion.div>
-    <span id="prompt-guidance" className="sr-only">После отправки вы перейдёте в гостевой чат. Регистрация для первого запроса не требуется.</span>
+    <span id="prompt-guidance" className="sr-only">{t("Submitting a prompt opens the guest chat. No registration is required for the initial demo.", "После отправки вы перейдёте в гостевой чат. Регистрация для первого запроса не требуется.")}</span>
 
     <AnimatePresence>
       {mobileMenu && docked && <motion.div id="mobile-navigation" className={styles.mobileMenu}
@@ -241,10 +201,10 @@ export default function HomePage() {
       if (event.target === event.currentTarget) dialogRef.current?.close();
     }}>
       <div className={styles.noticeInner}>
-        <button className={styles.dialogClose} onClick={() => dialogRef.current?.close()} aria-label="Закрыть"><Icon name="close" /></button>
+        <button className={styles.dialogClose} onClick={() => dialogRef.current?.close()} aria-label={t("Close", "Закрыть")}><Icon name="close" /></button>
         <img src="/media/noclip-mark.png" width="42" height="36" alt="" />
         <h2 id="notice-title">{notice.title}</h2><p id="notice-body">{notice.body}</p>
-        <button className={styles.dialogAction} onClick={() => { dialogRef.current?.close(); focusComposer(); }}>К своему вопросу <Icon name="right" size={16} /></button>
+        <button className={styles.dialogAction} onClick={() => { dialogRef.current?.close(); focusComposer(); }}>{t("Back to your prompt", "К своему вопросу")} <Icon name="right" size={16} /></button>
       </div>
     </dialog>
   </main>;
