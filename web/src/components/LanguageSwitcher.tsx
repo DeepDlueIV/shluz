@@ -39,7 +39,7 @@ export default function LanguageSwitcher() {
   return <div ref={root} className={styles.root} onKeyDown={keys}>
     <button ref={trigger} type="button" className={styles.trigger} aria-label={t("Change language", "Выбрать язык")}
       aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen(!open)}>
-      <svg data-language-globe width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true"><circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18M5 7h14M5 17h14" /></svg><span>{locale.toUpperCase()}</span>
+      <svg data-language-globe width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true"><circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18M5 7h14M5 17h14" /></svg>
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="m3 4.5 3 3 3-3" stroke="currentColor" strokeWidth="1.3" /></svg>
     </button>
     {open && <div id={id} role="menu" aria-label={t("Language", "Язык")} className={styles.menu}>

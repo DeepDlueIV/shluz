@@ -75,7 +75,8 @@ export default function HomePage() {
   const navX = useTransform(expansion, [0, 1], [0, metrics.navWidth]);
   const navigationMode = docked && !expanded;
   const navInteractive = navigationMode;
-  const previewText = examples.find(example => example.id === preview)?.prompt || t("Ask anything…", "Задайте вопрос…");
+  const promptInvitation = t("Ask me anything, privately…", "Спросите о чём угодно — приватно…");
+  const previewText = examples.find(example => example.id === preview)?.prompt || promptInvitation;
   const titleOpacity = useTransform(scrollY, [0, Math.max(250, metrics.top * 0.66)], [1, 0]);
   const titleY = useTransform(scrollY, [0, metrics.top], [0, reduceMotion ? 0 : -65]);
   const chipOpacity = useTransform(progress, [0, 0.35], [1, 0]);
@@ -112,7 +113,7 @@ export default function HomePage() {
 
   useEffect(() => {
     const controls = animate(expansion, docked && expanded ? 1 : 0, {
-      duration: reduceMotion ? 0.05 : 0.16, ease: [0.2, 0.8, 0.2, 1],
+      duration: reduceMotion ? 0.05 : 0.4, ease: [0.4, 0, 0.2, 1],
     });
     return () => controls.stop();
   }, [docked, expanded, expansion, reduceMotion]);
@@ -178,13 +179,13 @@ export default function HomePage() {
         </motion.div>
         <div ref={anchorRef} className={styles.composerAnchor} />
         <motion.div className={styles.suggestions} style={{ opacity: chipOpacity, pointerEvents: suggestionsVisible ? "auto" : "none" }} aria-label={t("Example prompts", "Примеры запросов")} aria-hidden={!suggestionsVisible || !!draft}>
-          <div className={styles.chipRow} style={{ visibility: draft ? "hidden" : "visible" }}>
+          <div className={styles.chipRow} style={{ visibility: draft ? "hidden" : "visible" }}
+            onMouseLeave={() => setPreview("")}
+            onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setPreview(""); }}>
             {examples.map(example => <button key={example.id} type="button"
               tabIndex={suggestionsVisible && !draft ? 0 : -1}
               onMouseEnter={() => !draft && setPreview(example.id)}
-              onMouseLeave={() => setPreview("")}
               onFocus={() => !draft && setPreview(example.id)}
-              onBlur={() => setPreview("")}
               onClick={() => { setDraft(example.prompt); setPreview(""); inputRef.current?.focus(); }}>
               <Icon name={example.icon} size={14} /><span>{example.label}</span>
             </button>)}
@@ -198,9 +199,6 @@ export default function HomePage() {
       data-prompt-mode={!docked ? "hero" : expanded ? "prompt" : "navigation"}
       style={{ top, width, borderRadius: radius }} aria-label={docked ? t("Prompt and navigation", "Ввод и навигация") : t("Prompt", "Поле запроса")}>
       <motion.form onSubmit={submit} className={styles.composer} style={{ width: formWidth }}>
-        <button type="button" className={styles.composerMark} onClick={focusComposer} aria-label={t("Back to top", "Вернуться к началу")}>
-          <img src="/media/noclip-mark.png" width="30" height="26" alt="" />
-        </button>
         <div className={styles.promptWorkspace} data-navigation={navigationMode}>
           <label htmlFor="hero-prompt" className="sr-only">{t("Your prompt for NoClip", "Ваш вопрос для NoClip")}</label>
           <input ref={inputRef} id="hero-prompt" name="prompt" value={draft}
@@ -213,11 +211,12 @@ export default function HomePage() {
               }
             }}
             autoComplete="off" spellCheck enterKeyHint="send" aria-describedby="prompt-guidance" />
-          {!draft && !navigationMode && <div className={styles.promptPreview} aria-hidden="true" data-prompt-preview>
-            <AnimatePresence initial={false} mode="sync">
-              <motion.span key={previewText} initial={{ opacity: 0, x: reduceMotion ? 0 : -10 }}
-                animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: reduceMotion ? 0 : 10 }}
-                transition={{ duration: 0.12, ease: "easeOut" }}>{previewText}</motion.span>
+          {!draft && <div className={styles.promptPreview} aria-hidden="true" data-prompt-preview>
+            <AnimatePresence initial={false} mode="wait">
+              <motion.span key={previewText} initial={{ opacity: 0, x: reduceMotion ? 0 : -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: reduceMotion ? 0 : 6, transition: { duration: reduceMotion ? 0 : 0.16, ease: "easeIn" } }}
+                transition={{ duration: reduceMotion ? 0 : 0.24, ease: "easeOut" }}>{previewText}</motion.span>
             </AnimatePresence>
           </div>}
           {docked ? <button ref={toggleRef} data-prompt-toggle type="button" className={styles.promptToggle}
@@ -225,7 +224,7 @@ export default function HomePage() {
             aria-label={expanded ? t("Collapse prompt", "Свернуть ввод") : t("Expand prompt", "Развернуть ввод")}
             title={expanded ? t("Collapse prompt · Enter to send", "Свернуть ввод · Enter — отправить") : t("Expand prompt", "Развернуть ввод")}
             onClick={togglePrompt}>
-            <span className={styles.toggleCaption}>{t("Ask anything…", "Задайте вопрос…")}</span>
+            <span className={styles.toggleCaption}>{promptInvitation}</span>
             <span className={styles.toggleArrow}><Icon name="arrow" size={21} /></span>
           </button> : <button type="submit" className={styles.sendButton} disabled={!draft.trim()}
             aria-label={t("Send prompt", "Отправить запрос")}><Icon name="arrow" size={21} /></button>}
