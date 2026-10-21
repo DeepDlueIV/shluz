@@ -45,6 +45,7 @@ await check('Language menu, Russian translation, persistence and no prompt loss'
   assert.equal(await page.locator('html').getAttribute('lang'), 'ru');
   assert.equal((await page.locator('h1').innerText()).replace(/\s+/g, ' ').trim(), 'Спросите о чём угодно');
   assert.equal(await page.locator('#hero-prompt').inputValue(), 'Keep this prompt');
+  await page.screenshot({ path: 'test-results/desktop-ru.png' });
   await page.reload({ waitUntil: 'networkidle' });
   await page.waitForFunction(() => document.documentElement.lang === 'ru');
   await page.getByRole('button', { name: 'Выбрать язык' }).click();
@@ -61,6 +62,7 @@ await check('Complete reference list; rows move in opposite directions while hov
   await page.waitForTimeout(600);
   assert.ok(await position('right') > right, 'Top row should move right');
   assert.ok(await position('left') < left, 'Bottom row should move left');
+  await page.screenshot({ path: 'test-results/models.png' });
 });
 await check('Docked bar still blurs content', async () => {
   await page.locator('#models').scrollIntoViewIfNeeded();
@@ -75,10 +77,11 @@ await check('Guest route is English and does not send requests when disabled', a
   await page.goto(origin, { waitUntil: 'networkidle' });
   await page.locator('#hero-prompt').fill('My local draft');
   await page.getByRole('button', { name: 'Send prompt', exact: true }).click();
-  await page.waitForURL('**/app/');
+  await page.waitForURL(url => /^\/app\/?$/.test(url.pathname));
   assert.ok((await page.locator('body').innerText()).includes('My local draft'));
   assert.ok((await page.locator('body').innerText()).includes('Demo unavailable'));
   assert.equal(requests.length, 0);
+  await page.screenshot({ path: 'test-results/chat-en.png' });
 });
 await check('No hydration or JavaScript errors', async () => assert.deepEqual(pageErrors, []));
 await check('Mobile layout and language menu', async () => {

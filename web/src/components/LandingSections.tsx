@@ -3,6 +3,9 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import styles from "./LandingSections.module.css";
+import presentation from "./Presentation.module.css";
+import { useSitePreferences, type Translate } from "./SitePreferences";
+import { modelRows, modelCatalogSource } from "../lib/model-catalog";
 
 type LandingSectionsProps = {
   onPrompt: (prompt: string) => void;
@@ -11,62 +14,23 @@ type LandingSectionsProps = {
 
 type FeatureKind = "text" | "image" | "video" | "audio" | "code";
 
-const features: {
-  kind: FeatureKind;
-  label: string;
-  title: string;
-  description: string;
-  prompt: string;
-  action: string;
-}[] = [
-  {
-    kind: "text",
-    label: "Текст и диалог",
-    title: "У каждой мысли\nесть продолжение.",
-    description:
-      "Обсудите сложную тему, найдите неожиданный сюжет или доведите черновик до ясного текста. Вы выбираете, куда пойдёт разговор.",
-    prompt: "Придумай начало романа о городе, в котором однажды исчезли все зеркала. Сделай его атмосферным и немного загадочным.",
-    action: "Начать разговор",
-  },
-  {
-    kind: "image",
-    label: "Изображения",
-    title: "Дайте форму\nсвоему воображению.",
-    description:
-      "От первой идеи до точного визуального направления. Исследуйте образы, собирайте настроение и находите свой язык.",
-    prompt: "Помоги придумать визуальную концепцию: скульптура из тонких металлических колец, мягкий свет, спокойное пространство. Предложи три художественных направления.",
-    action: "Придумать образ",
-  },
-  {
-    kind: "video",
-    label: "Видео",
-    title: "История\nприходит в движение.",
-    description:
-      "Продумайте сцену, ритм и настроение будущего ролика. Превратите короткую мысль в историю, которую хочется увидеть.",
-    prompt: "Помоги написать сценарий атмосферного 15-секундного ролика о любопытстве. Нужны три сцены, движение камеры и короткий текст за кадром.",
-    action: "Найти свою историю",
-  },
-  {
-    kind: "audio",
-    label: "Аудио",
-    title: "У ваших идей\nпоявляется голос.",
-    description:
-      "Найдите нужную интонацию для текста, подготовьте подкаст или придумайте звуковой образ. Начните с того, что хотите сказать.",
-    prompt: "Напиши короткое письмо себе в будущее для спокойного голосового прочтения. Тёплый тон, без пафоса, примерно на 30 секунд.",
-    action: "Начать с голоса",
-  },
-  {
-    kind: "code",
-    label: "Код",
-    title: "От «а что, если»\nдо первой версии.",
-    description:
-      "Разберите задачу, исследуйте подходы и соберите работающий прототип. Хорошие вопросы помогают писать хороший код.",
-    prompt: "Помоги написать на TypeScript небольшую анимацию орбиты на canvas. Объясни структуру и добавь поддержку prefers-reduced-motion.",
-    action: "Разобрать задачу",
-  },
+const getFeatures = (t: Translate): { kind: FeatureKind; label: string; title: string; description: string; prompt: string; action: string }[] => [
+  { kind: "text", label: t("Text", "Текст"), title: t("Text chat", "Текстовый чат"),
+    description: t("Ask questions, edit a draft or compare different explanations.", "Задавайте вопросы, редактируйте текст и сравнивайте объяснения."),
+    prompt: t("Explain async and await in JavaScript with a small working example.", "Объясни async и await в JavaScript на небольшом рабочем примере."), action: t("Open chat", "Открыть чат") },
+  { kind: "image", label: t("Images", "Изображения"), title: t("Image concepts", "Концепции изображений"),
+    description: t("Describe a composition, lighting and style. Prepare a prompt for image generation.", "Опишите композицию, освещение и стиль. Подготовьте промпт для генерации изображения."),
+    prompt: t("Write three image prompts for a sculpture made of metal rings, with soft lighting and a neutral background.", "Напиши три промпта для изображения скульптуры из металлических колец, с мягким освещением на нейтральном фоне."), action: t("Write an image prompt", "Составить промпт") },
+  { kind: "video", label: t("Video", "Видео"), title: t("Video storyboards", "Раскадровки видео"),
+    description: t("Plan scenes, camera movement and timing before generating or filming a video.", "Спланируйте сцены, движение камеры и длительность до генерации или съёмки ролика."),
+    prompt: t("Create a three-scene storyboard for a 15-second video about particles passing through a wall. Specify the camera movement and timing.", "Создай раскадровку из трёх сцен для 15-секундного ролика: частицы проходят сквозь стену. Укажи движение камеры и длительность сцен."), action: t("Create a storyboard", "Составить раскадровку") },
+  { kind: "audio", label: t("Audio", "Аудио"), title: t("Audio scripts", "Сценарии аудио"),
+    description: t("Prepare a voiceover, podcast script or music brief.", "Подготовьте закадровый текст, сценарий подкаста или описание музыки."),
+    prompt: t("Write a 30-second voiceover explaining what an AI coding agent can do. Use plain language and avoid marketing slogans.", "Напиши 30-секундный закадровый текст о возможностях AI-агента для программирования. Без рекламных лозунгов, простым языком."), action: t("Write a script", "Написать сценарий") },
+  { kind: "code", label: t("Code", "Код"), title: t("Code assistance", "Помощь с кодом"),
+    description: t("Break down a task, write code, explain an error or review an implementation.", "Разберите задачу, напишите код, объясните ошибку или проверьте реализацию."),
+    prompt: t("Write a small TypeScript canvas animation and include support for prefers-reduced-motion.", "Напиши небольшую canvas-анимацию на TypeScript с поддержкой prefers-reduced-motion."), action: t("Start coding", "Перейти к коду") },
 ];
-
-const modelNames = ["Venice", "Qwen", "DeepSeek", "Llama", "Mistral"];
 
 const apiExample = `curl "$NOCLIP_GATEWAY_URL/v1/chat/completions" \\
   -H "Authorization: Bearer $NOCLIP_TOKEN" \\
@@ -76,7 +40,7 @@ const apiExample = `curl "$NOCLIP_GATEWAY_URL/v1/chat/completions" \\
     "messages": [
       {
         "role": "user",
-        "content": "Начнём с идеи"
+        "content": "Hello"
       }
     ]
   }'`;
@@ -93,50 +57,30 @@ function Arrow({ diagonal = false }: { diagonal?: boolean }) {
   );
 }
 
-function ModelMark({ index }: { index: number }) {
-  return (
-    <svg viewBox="0 0 40 40" fill="none" aria-hidden="true" className={styles.modelMark}>
-      {index % 5 === 0 && <><path d="m5 10 15 24L35 10M12 10l8 13 8-13" stroke="currentColor" strokeWidth="2" /><path d="M5 10h30" stroke="currentColor" strokeWidth="2" /></>}
-      {index % 5 === 1 && <><path d="m20 4 4.7 9.4L35 15l-7.5 7.3L29.3 33 20 28l-9.3 5 1.8-10.7L5 15l10.3-1.6L20 4Z" stroke="currentColor" strokeWidth="1.6" /><path d="m12 23 16-10M15 32l7-27" stroke="currentColor" strokeWidth="1.2" /></>}
-      {index % 5 === 2 && <path d="M4 18c6 2 9-5 15-4 5 1 7 6 12 7l6-5c0 10-8 17-17 15C10 30 6 24 4 18Zm9-9 4 5m9-7-3 8" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />}
-      {index % 5 === 3 && <path d="M3 26C5 9 10 7 16 17l8 12c6 9 13 1 12-7C35 9 30 8 25 16L14 29C7 36 2 31 3 26Z" stroke="currentColor" strokeWidth="2.3" />}
-      {index % 5 === 4 && <><path d="M6 29V11h7l7 10 7-10h7v18h-7V20l-7 10-7-10v9H6Z" fill="currentColor" /><path d="M6 33h28" stroke="currentColor" strokeWidth="2" /></>}
-    </svg>
-  );
-}
-
-function ModelStrip({ reverse = false }: { reverse?: boolean }) {
-  const names = reverse ? [...modelNames].reverse() : modelNames;
-  return (
-    <div className={styles.marquee} aria-hidden={reverse || undefined}>
-      <div className={`${styles.marqueeTrack} ${reverse ? styles.marqueeReverse : ""}`}>
-        {[0, 1, 2].map((copy) => (
-          <div className={styles.marqueeGroup} key={copy} aria-hidden={copy > 0 || undefined}>
-            {names.map((name) => (
-              <div className={styles.modelWord} key={name}>
-                <ModelMark index={modelNames.indexOf(name)} />
-                <span>{name}</span>
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
+function ModelStrip({ row }: { row: 0 | 1 }) {
+  const direction = row === 0 ? "right" : "left";
+  return <div className={styles.marquee}>
+    <div data-marquee={direction} className={`${styles.marqueeTrack} ${row === 0 ? styles.marqueeReverse : ""}`}>
+      {[0, 1].map(copy => <div className={styles.marqueeGroup} key={copy} aria-hidden={copy === 1 || undefined}>
+        {modelRows[row].map(name => <div className={styles.modelWord} key={name} data-model-name={copy === 0 ? name : undefined}><span>{name}</span></div>)}
+      </div>)}
     </div>
-  );
+  </div>;
 }
 
 function TextDemo() {
+  const { t } = useSitePreferences();
   return (
     <div className={`${styles.demo} ${styles.textDemo}`}>
-      <div className={styles.demoTopline}><span className={styles.demoDot} />Пример диалога<span>Текст</span></div>
+      <div className={styles.demoTopline}><span className={styles.demoDot} />{t("Example conversation", "Пример диалога")}<span>{t("Text", "Текст")}</span></div>
       <div className={styles.demoConversation}>
-        <div className={styles.userMessage}>Как начать роман о городе, в котором исчезли все зеркала?</div>
+        <div className={styles.userMessage}>{t("What does async/await do in JavaScript?", "Что делает async/await в JavaScript?")}</div>
         <div className={styles.answerMark}>n<span>↗</span></div>
-        <p className={styles.answerText}>В то утро город впервые проснулся, не зная, как он выглядит.</p>
-        <p className={styles.answerDetail}>Люди поправляли воротники по памяти и учились узнавать себя в глазах друг друга.</p>
+        <p className={styles.answerText}>{t("It lets you write asynchronous operations in a sequential style.", "Позволяет записывать асинхронные операции в последовательном стиле.")}</p>
+        <p className={styles.answerDetail}>{t("An async function returns a Promise. await pauses that function until the Promise settles.", "Функция async возвращает Promise. await приостанавливает эту функцию до завершения Promise.")}</p>
         <span className={styles.textCursor} aria-hidden="true" />
       </div>
-      <div className={styles.demoInput}><span>А что было дальше?</span><span className={styles.smallSend}><Arrow /></span></div>
+      <div className={styles.demoInput}><span>{t("Show an example", "Покажи пример")}</span><span className={styles.smallSend}><Arrow /></span></div>
     </div>
   );
 }
@@ -161,11 +105,12 @@ const sculptureRings = Array.from({ length: 76 }, (_, ringIndex) => {
 }).sort((a, b) => a.depth - b.depth);
 
 function ImageDemo() {
+  const { t } = useSitePreferences();
   const id = useId().replaceAll(":", "");
   return (
     <div className={`${styles.demo} ${styles.imageDemo}`}>
-      <div className={styles.imageLabel}><span>Этюд № 01</span><span>Визуальный пример</span></div>
-      <svg className={styles.sculpture} viewBox="0 0 600 540" role="img" aria-label="Абстрактная скульптура из тонких металлических колец">
+      <div className={styles.imageLabel}><span>{t("Visual example", "Визуальный пример")}</span></div>
+      <svg className={styles.sculpture} viewBox="0 0 600 540" role="img" aria-label={t("Abstract sculpture made of metal rings", "Абстрактная скульптура из тонких металлических колец")}>
         <defs>
           <linearGradient id={`${id}-metal`} x1="0" x2="1" y1="0" y2="1"><stop stopColor="#68645f" /><stop offset=".24" stopColor="#e1d9cb" /><stop offset=".44" stopColor="#1e2024" /><stop offset=".68" stopColor="#77766f" /><stop offset="1" stopColor="#252729" /></linearGradient>
           <filter id={`${id}-shadow`}><feGaussianBlur stdDeviation="13" /></filter>
@@ -173,12 +118,12 @@ function ImageDemo() {
         <ellipse cx="300" cy="424" rx="153" ry="16" fill="#232528" opacity=".2" filter={`url(#${id}-shadow)`} />
         {sculptureRings.map((ring) => <polyline key={ring.index} points={ring.points} fill="none" stroke={`url(#${id}-metal)`} strokeWidth="2.15" strokeLinejoin="round" />)}
       </svg>
-      <div className={styles.imageFoot}><span>Форма следует за мыслью.</span><span>↗</span></div>
     </div>
   );
 }
 
 function VideoDemo({ active }: { active: boolean }) {
+  const { t } = useSitePreferences();
   const videoRef = useRef<HTMLVideoElement>(null);
   const reducedMotion = useReducedMotion();
 
@@ -191,47 +136,48 @@ function VideoDemo({ active }: { active: boolean }) {
 
   return (
     <div className={`${styles.demo} ${styles.videoDemo}`}>
-      <video ref={videoRef} className={styles.sceneVideo} poster="/media/hero-poster.webp" preload="none" muted loop playsInline controls aria-label="Визуальный пример видео">
+      <video ref={videoRef} className={styles.sceneVideo} poster="/media/hero-poster.webp" preload="none" muted loop playsInline controls aria-label={t("Video example", "Визуальный пример видео")}>
         <source src="/media/hero-desktop.mp4" type="video/mp4" />
       </video>
-      <div className={styles.videoCaption}><span className={styles.liveSquare} />Визуальный пример</div>
-      <div className={styles.videoOverline}>В каждом кадре —<br />новая возможность.</div>
+      <div className={styles.videoCaption}><span className={styles.liveSquare} />{t("Visual example", "Визуальный пример")}</div>
     </div>
   );
 }
 
 function AudioDemo() {
+  const { t } = useSitePreferences();
   const [playing, setPlaying] = useState(false);
   return (
     <div className={`${styles.demo} ${styles.audioDemo} ${playing ? styles.audioPlaying : ""}`}>
-      <div className={styles.demoTopline}><span className={styles.demoDot} />Пример аудио<span>Голос</span></div>
-      <div className={styles.audioTitle}>Слова, которые<br /><em>звучат по-вашему.</em></div>
+      <div className={styles.demoTopline}><span className={styles.demoDot} />{t("Audio preview", "Пример аудио")}<span>{t("Voice", "Голос")}</span></div>
+      <div className={styles.audioTitle}>{t("Audio waveform", "Звуковая волна")}</div>
       <div className={styles.waveform} aria-hidden="true">
         {Array.from({ length: 64 }, (_, i) => (
           <span key={i} className={styles.waveBar} style={{ "--bar-height": `${16 + Math.abs(Math.sin(i * 0.46) * Math.cos(i * 0.17)) * 94}px`, "--bar-delay": `${(i % 9) * -0.13}s` } as CSSProperties} />
         ))}
       </div>
       <div className={styles.audioControls}>
-        <button type="button" className={styles.playButton} onClick={() => setPlaying(!playing)} aria-pressed={playing} aria-label={playing ? "Остановить визуализацию" : "Запустить визуализацию без звука"}>
+        <button type="button" className={styles.playButton} onClick={() => setPlaying(!playing)} aria-pressed={playing} aria-label={playing ? t("Stop visualization", "Остановить визуализацию") : t("Play silent visualization", "Запустить визуализацию без звука")}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{playing ? <path d="M6 4h4v16H6zm8 0h4v16h-4z" /> : <path d="m8 4 12 8-12 8V4Z" />}</svg>
         </button>
-        <div><strong>Письмо себе в будущее</strong><span>Визуальный пример без звука</span></div>
-        <span className={styles.audioStatus} aria-live="polite">{playing ? "Идёт анимация" : "Нажмите play"}</span>
+        <div><strong>{t("Sample waveform", "Пример волны")}</strong><span>{t("Visualization only — no audio", "Визуализация без звука")}</span></div>
+        <span className={styles.audioStatus} aria-live="polite">{playing ? t("Animating", "Идёт анимация") : t("Play", "Нажмите play")}</span>
       </div>
     </div>
   );
 }
 
 function CodeDemo() {
+  const { t } = useSitePreferences();
   return (
     <div className={`${styles.demo} ${styles.codeDemo}`}>
-      <div className={styles.codeTopline}><div className={styles.windowDots}><i /><i /><i /></div><span>Пример кода</span><span>TS</span></div>
+      <div className={styles.codeTopline}><div className={styles.windowDots}><i /><i /><i /></div><span>{t("Code example", "Пример кода")}</span><span>TS</span></div>
       <div className={styles.editorTabs}><span>◈ &nbsp; orbit.ts</span><span>style.css</span></div>
       <div className={styles.editorBody}>
         <div className={styles.lineNumbers} aria-hidden="true">01<br />02<br />03<br />04<br />05<br />06<br />07<br />08<br />09<br />10<br />11<br />12<br />13</div>
-        <pre><code><span className={styles.codeMuted}>{"// Любая идея начинается с движения\n"}</span><span className={styles.codePurple}>const</span>{" canvas = document."}<span className={styles.codeBlue}>querySelector</span>{"(\n  "}<span className={styles.codeGreen}>{"'canvas'"}</span>{"\n);\n"}<span className={styles.codePurple}>const</span>{" ctx = canvas?."}<span className={styles.codeBlue}>getContext</span>{"("}<span className={styles.codeGreen}>{"'2d'"}</span>{");\n\n"}<span className={styles.codePurple}>if</span>{" (ctx) {\n  ctx.fillStyle = "}<span className={styles.codeGreen}>{"'#899bff'"}</span>{";\n  ctx."}<span className={styles.codeBlue}>beginPath</span>{"();\n  ctx."}<span className={styles.codeBlue}>arc</span>{"(240, 160, 64, 0, Math.PI * 2);\n  ctx."}<span className={styles.codeBlue}>fill</span>{"();\n}\n"}</code></pre>
+        <pre><code><span className={styles.codeMuted}>{"// Draw a circle on a canvas\n"}</span><span className={styles.codePurple}>const</span>{" canvas = document."}<span className={styles.codeBlue}>querySelector</span>{"(\n  "}<span className={styles.codeGreen}>{"'canvas'"}</span>{"\n);\n"}<span className={styles.codePurple}>const</span>{" ctx = canvas?."}<span className={styles.codeBlue}>getContext</span>{"("}<span className={styles.codeGreen}>{"'2d'"}</span>{");\n\n"}<span className={styles.codePurple}>if</span>{" (ctx) {\n  ctx.fillStyle = "}<span className={styles.codeGreen}>{"'#899bff'"}</span>{";\n  ctx."}<span className={styles.codeBlue}>beginPath</span>{"();\n  ctx."}<span className={styles.codeBlue}>arc</span>{"(240, 160, 64, 0, Math.PI * 2);\n  ctx."}<span className={styles.codeBlue}>fill</span>{"();\n}\n"}</code></pre>
       </div>
-      <div className={styles.editorTerminal}><span>ТЕРМИНАЛ</span><p><span>↳</span> От идеи к первой версии<span className={styles.terminalCursor} /></p></div>
+      <div className={styles.editorTerminal}><span>{t("TERMINAL", "ТЕРМИНАЛ")}</span><p><span>↳</span> {t("Example code — not executed", "Пример кода — не выполняется")}<span className={styles.terminalCursor} /></p></div>
     </div>
   );
 }
@@ -245,6 +191,8 @@ function FeatureMedia({ kind, active = false }: { kind: FeatureKind; active?: bo
 }
 
 function FeatureStory({ onPrompt }: Pick<LandingSectionsProps, "onPrompt">) {
+  const { t } = useSitePreferences();
+  const features = getFeatures(t);
   const [active, setActive] = useState(0);
   const [useSticky, setUseSticky] = useState(false);
   const sceneRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -297,7 +245,7 @@ function FeatureStory({ onPrompt }: Pick<LandingSectionsProps, "onPrompt">) {
       <div className={styles.sceneMarkers} aria-hidden="true">{features.map((feature, index) => <div key={feature.kind} className={styles.sceneMarker} data-scene={index} ref={(node) => { sceneRefs.current[index] = node; }} />)}</div>
       <div className={styles.storySticky}>
         <div className={styles.storyText}>
-          <div className={styles.sceneNavigation} aria-label="Демонстрации возможностей">
+          <div className={styles.sceneNavigation} aria-label={t("Feature demonstrations", "Демонстрации возможностей")}>
             {features.map((feature, index) => <button type="button" key={feature.kind} aria-label={feature.label} aria-current={index === active ? "step" : undefined} className={index === active ? styles.sceneNavActive : ""} onClick={() => sceneRefs.current[index]?.scrollIntoView({ behavior: "smooth", block: "center" })}><span>0{index + 1}</span></button>)}
           </div>
           <AnimatePresence mode="wait" initial={false}>
@@ -307,7 +255,6 @@ function FeatureStory({ onPrompt }: Pick<LandingSectionsProps, "onPrompt">) {
               <button type="button" className={styles.textButton} onClick={() => onPrompt(current.prompt)}>{current.action}<Arrow /></button>
             </motion.div>
           </AnimatePresence>
-          <span className={styles.scrollHint}><span />Продолжайте исследовать</span>
         </div>
         <div className={styles.storyMedia}>
           <AnimatePresence mode="wait" initial={false}>
@@ -322,6 +269,7 @@ function FeatureStory({ onPrompt }: Pick<LandingSectionsProps, "onPrompt">) {
 }
 
 function ApiExample() {
+  const { t } = useSitePreferences();
   const [copyState, setCopyState] = useState<"idle" | "done" | "error">("idle");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
@@ -339,66 +287,61 @@ function ApiExample() {
 
   return (
     <div className={styles.apiCode}>
-      <div className={styles.apiCodeHeader}><span>Пример запроса<span className={styles.language}>cURL</span></span><button type="button" onClick={copy} aria-label="Скопировать пример запроса"><svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="6" y="6" width="10" height="11" rx="1.5" stroke="currentColor" /><path d="M12 6V3H3v11h3" stroke="currentColor" /></svg><span aria-live="polite">{copyState === "done" ? "Скопировано" : copyState === "error" ? "Не скопировано" : "Копировать"}</span></button></div>
-      <pre><code><span className={styles.codePurple}>curl</span>{" "}<span className={styles.codeGreen}>{'"$NOCLIP_GATEWAY_URL/v1/chat/completions"'}</span>{" \\\n  -H "}<span className={styles.codeGreen}>{'"Authorization: Bearer $NOCLIP_TOKEN"'}</span>{" \\\n  -H "}<span className={styles.codeGreen}>{'"Content-Type: application/json"'}</span>{" \\\n  -d '{\n    "}<span className={styles.codeBlue}>{'"model"'}</span>{': "MODEL_ID",\n    '}<span className={styles.codeBlue}>{'"messages"'}</span>{': [\n      {\n        '}<span className={styles.codeBlue}>{'"role"'}</span>{': "user",\n        '}<span className={styles.codeBlue}>{'"content"'}</span>{': "Начнём с идеи"\n      }\n    ]\n  }\''}</code></pre>
-      <div className={styles.apiCodeFoot}><span className={styles.demoDot} />Один формат. Простое подключение.</div>
+      <div className={styles.apiCodeHeader}><span>{t("Request example", "Пример запроса")}<span className={styles.language}>cURL</span></span><button type="button" onClick={copy} aria-label={t("Copy request example", "Скопировать пример запроса")}><svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="6" y="6" width="10" height="11" rx="1.5" stroke="currentColor" /><path d="M12 6V3H3v11h3" stroke="currentColor" /></svg><span aria-live="polite">{copyState === "done" ? t("Copied", "Скопировано") : copyState === "error" ? t("Copy failed", "Не скопировано") : t("Copy", "Копировать")}</span></button></div>
+      <pre><code><span className={styles.codePurple}>curl</span>{" "}<span className={styles.codeGreen}>{'"$NOCLIP_GATEWAY_URL/v1/chat/completions"'}</span>{" \\\n  -H "}<span className={styles.codeGreen}>{'"Authorization: Bearer $NOCLIP_TOKEN"'}</span>{" \\\n  -H "}<span className={styles.codeGreen}>{'"Content-Type: application/json"'}</span>{" \\\n  -d '{\n    "}<span className={styles.codeBlue}>{'"model"'}</span>{': "MODEL_ID",\n    '}<span className={styles.codeBlue}>{'"messages"'}</span>{': [\n      {\n        '}<span className={styles.codeBlue}>{'"role"'}</span>{': "user",\n        '}<span className={styles.codeBlue}>{'"content"'}</span>{': "Hello"\n      }\n    ]\n  }\''}</code></pre>
     </div>
   );
 }
 
 export default function LandingSections({ onPrompt, onOpenChat }: LandingSectionsProps) {
-  return (
-    <div className={styles.sections}>
-      <section id="models" className={`${styles.models} ${styles.anchorSection}`}>
-        <div className={`${styles.container} ${styles.modelsIntro}`}>
-          <div><p className={styles.eyebrow}>Модели</p><h2 className={styles.sectionTitle}>Разные модели.<br /><em>Одна свобода.</em></h2></div>
-          <p className={styles.sectionDescription}>У каждого подхода — свой характер.<br />Находите тот, что подходит вашей идее.</p>
+  const { t } = useSitePreferences();
+  return <div className={styles.sections}>
+    <section id="models" className={`${styles.models} ${styles.anchorSection}`}>
+      <div className={`${styles.container} ${styles.modelsIntro}`}>
+        <h2 className={styles.sectionTitle}>{t("Models & providers", "Модели и провайдеры")}</h2>
+        <p className={styles.sectionDescription}>{t("From the Venice catalog. Availability in NoClip is configured separately.", "Из каталога Venice. Доступность в NoClip настраивается отдельно.")}</p>
+      </div>
+      <div className={`${styles.modelStrips} ${presentation.modelStrips}`} data-model-strips><ModelStrip row={0} /><ModelStrip row={1} /></div>
+      <div className={presentation.catalogLink}><a href={modelCatalogSource} target="_blank" rel="noreferrer">{t("View the Venice model catalog", "Каталог моделей Venice")} ↗</a></div>
+    </section>
+    <section id="features" className={`${styles.features} ${styles.anchorSection}`}>
+      <div className={styles.container}>
+        <div className={styles.featureHeading}><h2 className={styles.sectionTitle}>{t("Chat, writing and code", "Общение, тексты и код")}</h2></div>
+        <FeatureStory onPrompt={onPrompt} />
+      </div>
+    </section>
+    <section id="pricing" className={`${styles.pricing} ${styles.anchorSection}`}>
+      <div className={styles.container}>
+        <div className={styles.pricingHeading}><h2 className={styles.sectionTitle}>{t("Access options", "Варианты доступа")}</h2><p className={styles.sectionDescription}>{t("Plans and prices will be published before launch.", "Тарифы и цены будут опубликованы до запуска.")}</p></div>
+        <div className={styles.plans}>
+          <article className={styles.plan}><h3>{t("Guest preview", "Гостевой просмотр")}</h3><p className={styles.planDescription}>{t("Explore the interface without creating an account.", "Посмотрите интерфейс без создания аккаунта.")}</p><ul><li>{t("Homepage and chat interface", "Главная страница и интерфейс чата")}</li><li>{t("Example prompts", "Примеры промптов")}</li></ul><button type="button" className={styles.primaryButton} onClick={onOpenChat}>{t("Open chat", "Открыть чат")}<Arrow /></button></article>
+          <article className={`${styles.plan} ${styles.personalPlan}`}><h3>{t("Personal account", "Личный аккаунт")}</h3><p className={styles.planDescription}>{t("A shared account for NoClip clients. Registration is not enabled in this preview.", "Общий аккаунт для клиентов NoClip. Регистрация пока не включена в этой версии.")}</p><ul><li>{t("Model access and quotas", "Доступ к моделям и квоты")}</li><li>{t("Usage tracking", "Учёт использования")}</li></ul><button type="button" className={styles.outlineButton} onClick={onOpenChat}>{t("Preview the interface", "Посмотреть интерфейс")}<Arrow /></button></article>
+          <article className={styles.plan}><h3>{t("Developer API", "API для разработчиков")}</h3><p className={styles.planDescription}>{t("Connect applications through the NoClip gateway.", "Подключайте приложения через шлюз NoClip.")}</p><ul><li>Chat Completions API</li><li>{t("Server-side access control", "Контроль доступа на сервере")}</li></ul><a className={styles.outlineButton} href="#developers">{t("Request example", "Пример запроса")}<Arrow /></a></article>
         </div>
-        <div className={styles.modelStrips}><ModelStrip /><ModelStrip reverse /></div>
-        <p className={styles.modelDisclaimer}>Примеры семейств в экосистеме ИИ.<br className={styles.mobileBreak} /> Доступность моделей зависит от выбранного доступа.</p>
-      </section>
-
-      <section id="features" className={`${styles.features} ${styles.anchorSection}`}>
-        <div className={styles.container}>
-          <div className={styles.featureHeading}><p className={styles.eyebrow}>От мысли к результату</p><h2 className={styles.sectionTitle}>Возможности,<br /><span>которые не заканчиваются ответом.</span></h2><p className={styles.featureIntro}>Пять направлений для любопытства. Один повод начать.</p></div>
-          <FeatureStory onPrompt={onPrompt} />
-        </div>
-      </section>
-
-      <section id="pricing" className={`${styles.pricing} ${styles.anchorSection}`}>
-        <div className={styles.container}>
-          <div className={styles.pricingHeading}><div><p className={styles.eyebrow}>На ваших условиях</p><h2 className={styles.sectionTitle}>Свой темп.<br /><em>Свой доступ.</em></h2></div><p className={styles.sectionDescription}>Для первой идеи, личного проекта<br />или чего-то значительно большего.</p></div>
-          <div className={styles.plans}>
-            <article className={styles.plan}><div className={styles.planLabel}><span>01</span>Знакомство</div><h3>Попробовать</h3><p className={styles.planDescription}>Начните с вопроса.<br />Посмотрите, куда он вас приведёт.</p><ul><li>Первое знакомство с интерфейсом</li><li>Готовые идеи для разговора</li><li>Демонстрация возможностей</li></ul><button type="button" className={styles.primaryButton} onClick={onOpenChat}>Открыть демо<Arrow /></button></article>
-            <article className={`${styles.plan} ${styles.personalPlan}`}><div className={styles.planLabel}><span>02</span>Для себя</div><h3>Личный доступ</h3><p className={styles.planDescription}>Пространство для ваших мыслей,<br />задач и ежедневных открытий.</p><ul><li>Общий аккаунт для инструментов</li><li>Выбор подходящих моделей</li><li>Понятные условия доступа</li></ul><button type="button" className={styles.outlineButton} onClick={onOpenChat}>Попробовать демо<Arrow /></button></article>
-            <article className={styles.plan}><div className={styles.planLabel}><span>03</span>Для продукта</div><h3>Для разработчиков</h3><p className={styles.planDescription}>Ваши приложения и автоматизации.<br />Знакомый способ подключения.</p><ul><li>Единый шлюз для запросов</li><li>Формат Chat Completions</li><li>Условия и лимиты до старта</li></ul><a className={styles.outlineButton} href="#developers">Пример подключения<Arrow /></a></article>
-          </div>
-          <p className={styles.accessNote}>Состав доступа и лимиты уточняются перед запуском.</p>
-        </div>
-      </section>
-
-      <section id="developers" className={`${styles.developers} ${styles.anchorSection}`}>
-        <div className={`${styles.container} ${styles.developerGrid}`}>
-          <div className={styles.developerCopy}><p className={styles.eyebrow}>Создано для создателей</p><h2 className={styles.sectionTitle}>Ваш продукт.<br /><em>Наш общий язык.</em></h2><p>Подключайте модели через единый шлюз. Формат запросов знаком тем, кто уже работает с Chat Completions.</p><a className={styles.textButton} href="#models">Исследовать модели<Arrow diagonal /></a><div className={styles.apiNote}><span>Небольшая настройка — и можно начать.</span>URL шлюза и токен задаются в окружении. MODEL_ID — идентификатор модели из вашего доступа.</div></div>
-          <ApiExample />
-        </div>
-      </section>
-
-      <section id="about" className={`${styles.about} ${styles.anchorSection}`}>
-        <div className={styles.container}><p className={styles.eyebrow}>В основе NoClip</p><h2 className={styles.aboutTitle}>Меньше лишнего.<br /><em>Больше пространства.</em></h2><div className={styles.principles}>
-          <article><span className={styles.principleNumber}>01 /</span><h3>Общий аккаунт</h3><p>Одна точка входа для работы с инструментами и управления доступом.</p></article>
-          <article><span className={styles.principleNumber}>02 /</span><h3>Прозрачные лимиты</h3><p>Понятные условия использования. Состав доступа и ограничения уточняются до начала работы.</p></article>
-          <article><span className={styles.principleNumber}>03 /</span><h3>Выбор инструмента</h3><p>Разным задачам подходят разные модели. Выбирайте подход к каждой новой идее.</p></article>
-        </div></div>
-      </section>
-
-      <section className={styles.closing}>
-        <div className={styles.container}><span className={styles.closingLabel}>Любопытству всегда есть куда расти.</span><h2>Начните<br /><em>со своего вопроса.</em></h2><button type="button" className={styles.primaryButton} onClick={() => onPrompt("Помоги посмотреть на привычную задачу с новой стороны. Начни с трёх неожиданных вопросов, которые помогут найти интересную идею.")}>Начать разговор<Arrow diagonal /></button><span className={styles.closingNote}>Следующая идея — ваша.</span></div>
-      </section>
-
-      <footer className={styles.footer}>
-        <div className={styles.container}><div className={styles.footerMain}><div className={styles.footerBrand}><div><img src="/media/noclip-mark.png" alt="" width="36" height="36" /><span>NoClip</span></div><p>Пространство для ваших идей.</p></div><nav className={styles.footerColumn} aria-label="Продукт"><h3>Продукт</h3><a href="#models">Модели</a><a href="#features">Возможности</a><a href="#pricing">Доступ</a></nav><nav className={styles.footerColumn} aria-label="Разработчикам"><h3>Разработчикам</h3><a href="#developers">API</a><a href="#models">Семейства моделей</a></nav><nav className={styles.footerColumn} aria-label="О NoClip"><h3>NoClip</h3><a href="#about">О проекте</a><button type="button" onClick={onOpenChat}>Начать разговор<Arrow diagonal /></button></nav></div><div className={styles.footerBottom}><span>© {new Date().getFullYear()} NoClip</span><span>Меньше рамок. Больше возможностей.</span><a href="#models" aria-label="Вернуться к разделу моделей"><Arrow diagonal /></a></div></div>
-      </footer>
-    </div>
-  );
+      </div>
+    </section>
+    <section id="developers" className={`${styles.developers} ${styles.anchorSection}`}>
+      <div className={`${styles.container} ${styles.developerGrid}`}>
+        <div className={styles.developerCopy}><h2 className={styles.sectionTitle}>{t("One API for your applications", "Единый API для приложений")}</h2><p>{t("Send requests through the gateway using the Chat Completions format.", "Отправляйте запросы через шлюз в формате Chat Completions.")}</p><div className={styles.apiNote}>{t("Set the gateway URL and token in your server environment. Use a MODEL_ID allowed for your account.", "Задайте URL шлюза и токен в серверном окружении. Используйте MODEL_ID, разрешённый вашему аккаунту.")}</div></div>
+        <ApiExample />
+      </div>
+    </section>
+    <section id="about" className={`${styles.about} ${styles.anchorSection}`}>
+      <div className={styles.container}><h2 className={styles.aboutTitle}>{t("How NoClip works", "Как устроен NoClip")}</h2><div className={styles.principles}>
+        <article><h3>{t("Shared access", "Общий доступ")}</h3><p>{t("The website, Telegram bot and desktop client use the same gateway.", "Сайт, Telegram-бот и десктопный клиент используют общий шлюз.")}</p></article>
+        <article><h3>{t("Server-side limits", "Лимиты на сервере")}</h3><p>{t("The gateway checks permissions and quotas before sending a request.", "Шлюз проверяет права и квоты перед отправкой запроса.")}</p></article>
+        <article><h3>{t("Model selection", "Выбор модели")}</h3><p>{t("Available models depend on the account and the client being used.", "Доступные модели зависят от аккаунта и используемого клиента.")}</p></article>
+      </div></div>
+    </section>
+    <section className={styles.closing}><div className={styles.container}><h2>{t("Try NoClip", "Попробуйте NoClip")}</h2><button type="button" className={styles.primaryButton} onClick={onOpenChat}>{t("Open chat", "Открыть чат")}<Arrow diagonal /></button></div></section>
+    <footer className={styles.footer}><div className={styles.container}>
+      <div className={styles.footerMain}>
+        <div className={styles.footerBrand}><div><img src="/media/noclip-mark.png" alt="" width="36" height="36" /><span>NoClip</span></div></div>
+        <nav className={styles.footerColumn} aria-label={t("Product", "Продукт")}><h3>{t("Product", "Продукт")}</h3><a href="#models">{t("Models", "Модели")}</a><a href="#features">{t("Features", "Возможности")}</a><a href="#pricing">{t("Access", "Доступ")}</a></nav>
+        <nav className={styles.footerColumn} aria-label={t("Developers", "Разработчикам")}><h3>{t("Developers", "Разработчикам")}</h3><a href="#developers">API</a><a href="#models">{t("Model catalog", "Каталог моделей")}</a></nav>
+        <nav className={styles.footerColumn} aria-label="NoClip"><h3>NoClip</h3><a href="#about">{t("About", "О проекте")}</a><button type="button" onClick={onOpenChat}>{t("Open chat", "Открыть чат")}<Arrow diagonal /></button></nav>
+      </div>
+      <div className={styles.footerBottom}><span>© {new Date().getFullYear()} NoClip</span><a href="#home">{t("Back to top", "Наверх")} ↑</a></div>
+    </div></footer>
+  </div>;
 }

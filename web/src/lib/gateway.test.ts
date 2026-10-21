@@ -107,7 +107,7 @@ test("chat: 503 web_not_configured даёт честное сообщение и
     streamGuestCompletion({ prompt: "Вопрос", requestId: "id", csrfToken: "csrf", turnstileToken: "token", signal: new AbortController().signal, onText: () => {} }, fetcher),
     (error: unknown) => {
       const message = getGatewayMessage(error);
-      return message.code === "web_not_configured" && message.message === "Демонстрация временно недоступна. Ваш запрос сохранён.";
+      return message.code === "web_not_configured" && message.message === "The demo is not connected yet. Your prompt remains in this tab.";
     },
   );
   assert.equal(calls, 1);
@@ -128,7 +128,7 @@ test("session: читает действующий DTO, cookie session не по
 
 test("ошибки: исчерпание демо объясняет необходимость постоянного аккаунта", () => {
   const message = getGatewayMessage(new GatewayError("demo_exhausted", 429));
-  assert.equal(message.title, "Демо исчерпано");
-  assert.match(message.message, /постоянный аккаунт/);
-  assert.doesNotMatch(message.message, /успешно зарегистр/);
+  assert.equal(message.title, "Demo limit reached");
+  assert.match(message.message, /permanent account/);
+  assert.doesNotMatch(message.message, /successfully registered/);
 });
