@@ -435,12 +435,12 @@ def callback_value(session, prefix):
     return None
 
 
-def test_owner_answer_file_targets_original_after_switching_dialog(client, tmp_path):
+def test_legacy_answer_file_targets_original_after_switching_dialog(client, tmp_path):
     async def scenario():
         ctrl, dp, bot, session = environment(client, tmp_path)
         await dp.feed_update(bot, incoming(1, "original question"))
-        file_action = callback_value(session, "answer:")
-        assert file_action, "Each answer needs its own file button"
+        # Старые сообщения сохраняют callback, новые кнопки экспорта не создаются.
+        file_action = f"answer:{ctrl.store.latest_turn(100)['id']}"
         await dp.feed_update(bot, incoming(2, "/new"))
         await dp.feed_update(bot, incoming(3, "new question"))
         await dp.feed_update(bot, incoming(4, callback=file_action))
@@ -453,7 +453,7 @@ def test_owner_answer_file_targets_original_after_switching_dialog(client, tmp_p
     asyncio.run(scenario())
 
 
-def test_owner_retry_requires_one_time_confirmation_and_clean_context(client, tmp_path):
+def test_legacy_retry_requires_one_time_confirmation_and_clean_context(client, tmp_path):
     async def scenario():
         ctrl, dp, bot, session = environment(client, tmp_path)
         original_chat = ctrl.gateway.chat
@@ -466,8 +466,8 @@ def test_owner_retry_requires_one_time_confirmation_and_clean_context(client, tm
         ctrl.gateway.chat = spy
         await dp.feed_update(bot, incoming(1, "first"))
         await dp.feed_update(bot, incoming(2, "second"))
-        retry = callback_value(session, "retry:")
-        assert retry
+        # Кнопка убрана из новых ответов; старый callback остаётся защищённым.
+        retry = f"retry:{ctrl.store.latest_turn(100)['id']}"
         await dp.feed_update(bot, incoming(3, callback=retry))
         assert count_usage(client) == 2
         assert "новый запрос" in session.texts().lower()
@@ -515,8 +515,8 @@ def test_owner_rename_feedback_support_and_stats_do_not_spend(client, tmp_path):
     async def scenario():
         ctrl, dp, bot, session = environment(client, tmp_path)
         await dp.feed_update(bot, incoming(1, "original"))
-        vote = callback_value(session, "up:")
-        assert vote
+        # Ранее отправленная кнопка оценки остаётся совместимой.
+        vote = f"up:{ctrl.store.latest_turn(100)['id']}"
         await dp.feed_update(bot, incoming(2, callback=vote))
         await dp.feed_update(bot, incoming(3, "/rename Мой проект"))
         assert ctrl.store.dialogs(100)[0]["title"] == "Мой проект"

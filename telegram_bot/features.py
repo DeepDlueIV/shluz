@@ -99,7 +99,8 @@ async def handle_action(
             await delivery.screen(
                 message,
                 "⚠️ Последний запрос не завершён или его результат не подтверждён. "
-                "Автоповтора нет. Проверьте /plan; сохранённые ответы доступны через /export.",
+                "Автоповтора нет. Проверьте «Аккаунт и лимиты»; история доступна "
+                "в «Настройках диалога» → «Экспорт».",
                 ui.back(),
             )
         else:
@@ -113,7 +114,7 @@ async def handle_action(
         turn = store.turn_for(user_id, value)
         if not turn or turn["status"] != "complete":
             await delivery.screen(
-                message, "Ответ удалён или недоступен. Откройте /history.", ui.back()
+                message, "Ответ удалён или недоступен. Откройте «Диалоги».", ui.back()
             )
         else:
             await delivery.answer_file(message, turn["assistant_content"], turn["id"])
@@ -147,7 +148,7 @@ async def handle_action(
         turn = store.retry_source(user_id, target) if target else None
         if not turn or update_id is None:
             await delivery.screen(
-                message, "Подтверждение устарело. Откройте /retry заново.", ui.back()
+                message, "Подтверждение устарело. Откройте главное меню.", ui.back()
             )
         else:
             await controller.generate(
@@ -161,11 +162,16 @@ async def handle_action(
             )
     elif action == "rename":
         if not value.strip():
+            now = time.monotonic()
+            controller.rename_targets = {
+                uid: item for uid, item in controller.rename_targets.items() if item[1] > now
+            }
+            controller.rename_targets[user_id] = (local["active_dialog"], now + 120)
             await delivery.screen(
                 message,
-                "✏️ Напишите <code>/rename Название диалога</code> (до 60 символов).\n"
-                "Название не отправляется модели и не расходует квоту.",
-                ui.back(),
+                "✏️ Отправьте новое название следующим сообщением (до 60 символов).\n"
+                "Это название, не запрос модели.\nМожно отменить кнопкой ниже.",
+                ui.keyboard([[("Отмена", "rename_cancel")]]),
             )
         else:
             try:
@@ -182,11 +188,9 @@ async def handle_action(
         nonce = controller.confirmations.issue(user_id, "forget")
         await delivery.screen(
             message,
-            "<b>🗑 Удалить ВСЕ ваши диалоги на сервере бота?</b>\n\n"
-            "Будут удалены тексты, названия и оценки ответов. Восстановить их из бота нельзя. "
-            "Аккаунт, настройки, привязка доступа, защита от повторов и учёт расходов сохранятся. "
-            "Сообщения в Telegram, данные поставщика и резервные копии этим не удаляются.\n\n"
-            "Подтверждение действует 2 минуты, до следующего действия.",
+            "<b>🗑 Удалить все ваши диалоги?</b>\n\n"
+            "Список диалогов и их история в боте будут очищены. Отменить удаление нельзя.\n"
+            "Сообщения в Telegram останутся. Аккаунт, баланс и тариф не изменятся.",
             ui.keyboard(
                 [[("🗑 Да, удалить все диалоги", f"forget_yes:{nonce}")], [("Отмена", "menu")]]
             ),
@@ -195,12 +199,16 @@ async def handle_action(
         valid = controller.confirmations.take(user_id, "forget", value)
         if valid is None:
             await delivery.screen(
-                message, "Подтверждение устарело. Откройте /forget заново.", ui.back()
+                message,
+                "Подтверждение устарело. Нажмите «Удалить все диалоги» в списке диалогов ещё раз.",
+                ui.back(),
             )
         else:
             store.forget_dialogs(user_id)
             await delivery.screen(
-                message, "✅ Все ваши диалоги и оценки на сервере бота удалены.", ui.back()
+                message,
+                "✅ Все диалоги удалены. Открыт новый — просто напишите сообщение.",
+                ui.back(),
             )
     elif action == "support":
         turn = store.latest_turn(user_id)
@@ -214,7 +222,9 @@ async def handle_action(
             message,
             "<b>🛟 Поддержка</b>\n\n"
             + html.escape(controller.settings.support_contact)
-            + f"\nВаш Telegram ID: <code>{user_id}</code>"
+            + "\nВаш ID: <code>"
+            + html.escape(str(local.get("account_id") or "пока не определён"))
+            + "</code>"
             + reference
             + "\n\nСообщите время и описание проблемы. Не присылайте API-ключи и пароли. "
             "Тексты диалогов автоматически в поддержку не передаются.",

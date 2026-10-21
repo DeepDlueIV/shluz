@@ -118,7 +118,7 @@ class ClosedAccessMiddleware(BaseMiddleware):
         except DialogLimit:
             await self.controller.delivery.say(
                 message,
-                "🗂 Достигнут лимит диалогов. Удалите ненужный через «Настройки».",
+                "🗂 Достигнут лимит диалогов. Удалите ненужный через «Настройки диалога».",
                 ui.back(),
             )
         except Exception as exc:
@@ -127,7 +127,7 @@ class ClosedAccessMiddleware(BaseMiddleware):
             with suppress(TelegramAPIError):
                 await self.controller.delivery.say(
                     message,
-                    "⚠️ Не удалось выполнить действие. Попробуйте открыть /menu.",
+                    "⚠️ Не удалось выполнить действие. Откройте главное меню кнопкой ниже.",
                     ui.back(),
                 )
         return None
@@ -150,6 +150,7 @@ class Controller:
         self.last_request: dict[int, float] = {}
         self.shutting_down = False
         self.confirmations = Confirmations()
+        self.rename_targets: dict[int, tuple[str, float]] = {}
 
     async def linked_profile(self, message: Message, token: str, *, user=None) -> dict:
         sender = user or message.from_user
@@ -165,9 +166,12 @@ class Controller:
     async def show_menu(self, message: Message, user_id: int, remote: dict | None = None) -> None:
         profile = self.store.profile(user_id)
         model = html.escape(profile["model"] or "будет выбрана при первом сообщении")
+        dialog = self.store.dialog_for(user_id, profile["active_dialog"])
+        title = html.escape(dialog["title"] if dialog else "Новый диалог")
         text = (
             "<b>🧪 Shluz · тестовая версия</b>\n\n"
-            "Напишите сообщение — отвечу в контексте текущего диалога.\n"
+            f"Сейчас открыт: <b>{title}</b>\n"
+            "Просто напишите сообщение, чтобы продолжить этот диалог.\n"
             f"Модель: <code>{model}</code>\n\n"
             "«Новый чат» начинает отдельный диалог. Предыдущие остаются в «Диалогах»."
         )
@@ -193,6 +197,7 @@ class Controller:
             )
             return
         if text.startswith("/"):
+            self.rename_targets.pop(user_id, None)
             command = text.split()[0].split("@")[0][1:].lower()
             parts = text.split(maxsplit=1)
             value = parts[1].strip() if len(parts) > 1 else ""
@@ -203,6 +208,36 @@ class Controller:
                 command,
                 value,
                 update_id=telegram_update_id,
+            )
+            return
+        pending_name = self.rename_targets.get(user_id)
+        if pending_name is not None:
+            target, expires = pending_name
+            if expires <= time.monotonic():
+                self.rename_targets.pop(user_id, None)
+                await self.delivery.screen(
+                    message,
+                    "Запрос названия устарел. Нажмите «Название диалога» ещё раз.",
+                    ui.keyboard([[("✏️ Название диалога", "rename")], [("☰ Меню", "menu")]]),
+                )
+                return
+            try:
+                changed = self.store.rename_dialog(user_id, target, text)
+            except ValueError:
+                await self.delivery.screen(
+                    message,
+                    "Название должно содержать от 1 до 60 символов. Попробуйте ещё раз.",
+                    ui.keyboard([[("Отмена", "rename_cancel")]]),
+                )
+                return
+            self.rename_targets.pop(user_id, None)
+            dialog = self.store.dialog_for(user_id, target) if changed else None
+            await self.delivery.screen(
+                message,
+                f"✅ Название: {html.escape(dialog['title'])}"
+                if dialog
+                else "Диалог уже удалён или недоступен.",
+                ui.back(),
             )
             return
         if len(text) > self.settings.max_input_chars:
@@ -218,6 +253,7 @@ class Controller:
         self, callback: CallbackQuery, gateway_token: SecretStr, telegram_update_id: int
     ) -> None:
         action, _, value = (callback.data or "").partition(":")
+        self.rename_targets.pop(callback.from_user.id, None)
         if action not in {"retry_yes", "forget_yes", "clear_yes", "delete_yes"}:
             self.confirmations.clear(callback.from_user.id)
         if action in {"up", "down"}:
@@ -255,6 +291,7 @@ class Controller:
             "new",
             "clear",
             "delete",
+            "delete_turn",
             "clear_yes",
             "delete_yes",
             "dialog",
@@ -270,7 +307,7 @@ class Controller:
         if action in busy_actions and user_id in self.jobs:
             await self.delivery.screen(
                 message,
-                "⏳ Ответ уже готовится. Дождитесь его или нажмите /cancel.",
+                "⏳ Ответ уже готовится. Дождитесь его или нажмите «Остановить ожидание».",
                 ui.cancel_controls(self.job_ids.get(user_id)),
             )
             return
@@ -343,7 +380,7 @@ class Controller:
             matches = [model for model in models if ui.model_key(model) == value]
             if len(matches) != 1:
                 await self.delivery.screen(
-                    message, "🤖 Список изменился. Откройте /models ещё раз.", ui.back()
+                    message, "🤖 Список изменился. Откройте «Модели» ещё раз.", ui.back()
                 )
                 return
             self.store.set_model(user_id, matches[0])
@@ -352,16 +389,18 @@ class Controller:
                 f"✅ Выбрана модель <code>{html.escape(matches[0])}</code>.",
                 ui.answer_controls(),
             )
-        elif action == "settings":
+        elif action in {"settings", "rename_cancel"}:
             await self.delivery.screen(
                 message,
-                "<b>⚙️ Настройки</b>\nВыберите стиль ответа. Содержимое диалога не изменяется.",
+                "<b>⚙️ Настройки диалога</b>\n"
+                f"История: {self.settings.history_retention_days} дней.\n\n"
+                "Выберите стиль ответа или действие с текущим диалогом.",
                 ui.settings_controls(local["style"]),
             )
         elif action == "style":
             if value not in ui.STYLE_LABELS:
                 await self.delivery.screen(
-                    message, "Кнопка устарела. Откройте /settings.", ui.back()
+                    message, "Кнопка устарела. Откройте «Настройки диалога».", ui.back()
                 )
                 return
             self.store.set_style(user_id, value)
@@ -379,28 +418,42 @@ class Controller:
         elif action == "dialog":
             if not self.store.activate_dialog(user_id, value):
                 await self.delivery.screen(
-                    message, "Этот диалог недоступен. Откройте /history.", ui.back()
+                    message, "Этот диалог недоступен. Откройте «Диалоги».", ui.back()
                 )
                 return
             history = self.store.history(user_id)
-            text = "💬 Диалог выбран. Следующее сообщение продолжит его."
+            dialog = self.store.dialog_for(user_id, value)
+            title = html.escape(dialog["title"] if dialog else "Новый диалог")
+            text = f"💬 Сейчас открыт: <b>{title}</b>\nПросто напишите сообщение для продолжения."
             if history:
                 excerpt = history[-1]["content"][:700]
                 text += "\n\n<b>Начало последнего ответа:</b>\n" + html.escape(excerpt)
-                text += "\n\nПолная история доступна через /export."
+                text += "\n\nПолная история — «Настройки диалога» → «Экспорт»."
             await self.delivery.screen(message, text, ui.answer_controls())
-        elif action in {"clear", "delete"}:
-            nonce = self.confirmations.issue(user_id, action, local["active_dialog"])
-            verb = (
-                "Очистить историю текущего диалога"
-                if action == "clear"
-                else "Удалить текущий диалог"
-            )
+        elif action in {"clear", "delete", "delete_turn"}:
+            target = local["active_dialog"]
+            if action == "delete_turn":
+                turn = self.store.turn_for(user_id, value)
+                if not turn:
+                    await self.delivery.screen(
+                        message,
+                        "Диалог этого ответа уже удалён или недоступен.",
+                        ui.keyboard([[("🗂 Диалоги", "history:0")], [("☰ Меню", "menu")]]),
+                    )
+                    return
+                target = turn["dialog_id"]
+                action = "delete"
+            dialog = self.store.dialog_for(user_id, target)
+            if not dialog:
+                await self.delivery.screen(message, "Диалог уже недоступен.", ui.back())
+                return
+            nonce = self.confirmations.issue(user_id, action, target)
+            verb = "Очистить историю диалога" if action == "clear" else "Удалить диалог"
             await self.delivery.screen(
                 message,
-                f"<b>🗑 {verb}?</b>\n"
-                "Это удалит историю на сервере бота. Сообщения в Telegram "
-                "и журнал расходов шлюза останутся.",
+                f"<b>🗑 {verb} «{html.escape(dialog['title'])}»?</b>\n\n"
+                "История этого диалога в боте будет удалена. Отменить удаление нельзя.\n"
+                "Сообщения в Telegram останутся. Баланс и тариф не изменятся.",
                 ui.keyboard(
                     [
                         [("Да, удалить", f"{action}_yes:{nonce}")],
@@ -412,7 +465,9 @@ class Controller:
             target = self.confirmations.take(user_id, action.removesuffix("_yes"), value)
             if target is None:
                 await self.delivery.screen(
-                    message, "Подтверждение устарело. Откройте /settings ещё раз.", ui.back()
+                    message,
+                    "Подтверждение устарело. Откройте «Настройки диалога» ещё раз.",
+                    ui.back(),
                 )
                 return
             change = self.store.clear_dialog if action == "clear_yes" else self.store.delete_dialog
@@ -444,44 +499,22 @@ class Controller:
                 await self.delivery.screen(
                     message, "Сейчас нет запроса, которого нужно ждать.", ui.back()
                 )
-        elif action == "privacy":
+        elif action in {"faq", "help", "privacy"}:
             await self.delivery.screen(
                 message,
-                "<b>🔐 О ваших данных</b>\n\n"
-                "Бот хранит текст диалогов на сервере для продолжения разговора. "
-                f"Срок хранения — {self.settings.history_retention_days} дней; "
-                f"до {self.settings.max_saved_turns} обменов в каждом диалоге. "
-                "История не имеет сквозного шифрования. Она передаётся через Shluz выбранному "
-                "поставщику модели. Не отправляйте пароли и другие секреты.\n\n"
-                "/clear очищает текущий диалог, /delete удаляет его, "
-                "/forget удаляет все диалоги бота. "
-                "Оценки 👍/👎 привязаны к ответу и удаляются вместе с ним. Сообщения в Telegram "
-                "удаляйте средствами Telegram; резервные копии сервера управляются отдельно. "
-                "Удаление истории не отменяет уже учтённый расход.",
-                ui.privacy_controls(),
+                "<b>❓ FAQ</b>\n\n"
+                "Здесь появятся ответы на частые вопросы. Пока можно обратиться в поддержку."
+                '\n\n<a href="https://github.com/DeepDlueIV/shluz/blob/'
+                'implementation/telegram-beta-complete/docs/telegram-privacy.md">'
+                "Конфиденциальность</a>",
+                ui.keyboard([[("🛟 Поддержка", "support")], [("☰ Меню", "menu")]]),
             )
-        elif action == "help":
-            await self.delivery.screen(
-                message,
-                "<b>❓ Как пользоваться Shluz</b>\n\n"
-                "Пишите обычным текстом. Контекст сохраняется в текущем диалоге.\n"
-                "/new — новый диалог\n/models — выбор модели\n/history — ваши диалоги\n"
-                "/plan — тариф и лимиты\n/settings — стиль ответа и очистка\n"
-                "/export — полный текст диалога и прошлые варианты\n/cancel — остановить ожидание\n"
-                "/last — показать сохранённый ответ без нового запроса\n"
-                "/retry — другой вариант с подтверждением расхода\n"
-                "/rename Название — переименовать диалог\n"
-                "/stats — расход и квоты аккаунта\n/forget — удалить все диалоги бота\n"
-                "/support — помощь с технической проблемой\n"
-                "/privacy — хранение данных\n/menu — главное меню\n\n"
-                "Если запрос уже ушёл модели, отмена ожидания не гарантирует отмену расхода. "
-                "Платежи в этой версии не принимаются.\n\n"
-                + html.escape(self.settings.support_contact),
-                ui.back(),
-            )
+
         else:
             await self.delivery.screen(
-                message, "Неизвестная команда или устаревшая кнопка. Откройте /menu.", ui.back()
+                message,
+                "Неизвестная команда или устаревшая кнопка. Нажмите «Главное меню».",
+                ui.back(),
             )
 
     async def generate(
@@ -501,7 +534,7 @@ class Controller:
         if user_id in self.jobs:
             await self.delivery.say(
                 message,
-                "⏳ Ответ уже готовится. Дождитесь его или нажмите /cancel.",
+                "⏳ Ответ уже готовится. Дождитесь его или нажмите «Остановить ожидание».",
                 ui.cancel_controls(self.job_ids.get(user_id)),
             )
             return
@@ -576,7 +609,7 @@ class Controller:
             )
             if turn_id is None:
                 await self.delivery.edit(
-                    message, waiting, "Этот запрос уже обработан. Проверьте /history."
+                    message, waiting, "Этот запрос уже обработан. Откройте «Диалоги»."
                 )
                 return
             self.last_request[user_id] = time.monotonic()
@@ -608,7 +641,7 @@ class Controller:
                 await self.delivery.say(
                     message,
                     "ℹ️ В запрос вошла только последняя часть длинной истории. "
-                    "Полная сохранённая история доступна через /export.",
+                    "Полная история — «Настройки диалога» → «Экспорт».",
                 )
         except asyncio.CancelledError:
             await stop_animation()
@@ -617,10 +650,14 @@ class Controller:
             if not self.shutting_down:
                 text = (
                     "⏹ Ожидание остановлено. Запрос мог быть выполнен и учтён шлюзом. "
-                    "Автоматического повтора не будет. Проверьте /plan перед новым запросом."
+                    "Автоматического повтора не будет. "
+                    "Проверьте «Аккаунт и лимиты» перед новым запросом."
                 )
                 if turn_id and self.store.turn_status(turn_id) == "complete":
-                    text = "⏹ Показ остановлен. Ответ уже сохранён — он доступен через /export."
+                    text = (
+                        "⏹ Показ остановлен. Ответ уже сохранён — "
+                        "он доступен в «Настройках диалога» → «Экспорт»."
+                    )
                 if preview and not (turn_id and self.store.turn_status(turn_id) == "complete"):
                     text = preview.interrupted(text)
                 with suppress(TelegramAPIError):
@@ -653,7 +690,7 @@ class Controller:
                 self.store.fail_turn(turn_id, "unknown")
             await self.delivery.say(
                 message,
-                "📏 Сообщение не помещается в контекст. Сократите его или начните /new.",
+                "📏 Сообщение не помещается в контекст. Сократите его или нажмите «Новый чат».",
                 ui.back(),
             )
         except Exception as exc:
@@ -663,10 +700,11 @@ class Controller:
             logger.warning("Сбой генерации/доставки: %s", type(exc).__name__)
             with suppress(TelegramAPIError):
                 text = (
-                    "📄 Ответ сохранён, но не доставлен полностью. Получите его через /export."
+                    "📄 Ответ сохранён, но не доставлен полностью. "
+                    "Получите его в «Настройках диалога» → «Экспорт»."
                     if turn_id and self.store.turn_status(turn_id) == "complete"
                     else "⚠️ Результат не подтверждён. Запрос мог быть учтён. "
-                    "Автоповтора не будет; проверьте /plan."
+                    "Автоповтора не будет; проверьте «Аккаунт и лимиты»."
                 )
                 await self.delivery.say(message, text, ui.answer_controls())
         finally:
