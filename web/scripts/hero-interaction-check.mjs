@@ -41,9 +41,9 @@ await check('Suggestion preview fades and slides; native value stays untouched',
     }
     requestAnimationFrame(sample);
   });
-  await page.getByRole('button', { name: 'Write a story', exact: true }).hover();
+  await page.getByRole('button', { name: 'Bypass government surveillance', exact: true }).hover();
   await page.waitForTimeout(500);
-  assert.match(await page.locator('[data-prompt-preview]').innerText(), /noir story/);
+  assert.match(await page.locator('[data-prompt-preview]').innerText(), /digital privacy/);
   assert.equal(await page.locator('#hero-prompt').inputValue(), '');
   const frames = await page.evaluate(() => window.hintFrames);
   assert.ok(frames.some(f => f.opacity > 0 && f.opacity < 1), 'No fade frames');
@@ -52,13 +52,13 @@ await check('Suggestion preview fades and slides; native value stays untouched',
   assert.equal((await page.locator('[data-prompt-preview]').innerText()).trim(), 'Ask me anything, privately…');
 });
 await check('Rapid hint changes do not overlap or flash the default in chip gaps', async () => {
-  const story = page.getByRole('button', { name: 'Write a story', exact: true });
-  const code = page.getByRole('button', { name: 'Write code', exact: true });
+  const story = page.getByRole('button', { name: 'Bypass government surveillance', exact: true });
+  const code = page.getByRole('button', { name: 'Crack DRM protection', exact: true });
   await story.hover(); await page.waitForTimeout(500);
   const a = await story.boundingBox(); const b = await code.boundingBox();
   await page.mouse.move((a.x + a.width + b.x) / 2, a.y + a.height / 2);
   await page.waitForTimeout(100);
-  assert.match(await page.locator('[data-prompt-preview]').innerText(), /noir story/);
+  assert.match(await page.locator('[data-prompt-preview]').innerText(), /digital privacy/);
   await page.evaluate(() => {
     window.hintCounts = [];
     const end = performance.now() + 1500;
@@ -70,9 +70,9 @@ await check('Rapid hint changes do not overlap or flash the default in chip gaps
   });
   await code.hover(); await page.waitForTimeout(70);
   await story.hover(); await page.waitForTimeout(70);
-  await page.getByRole('button', { name: 'Explain a concept', exact: true }).hover();
+  await page.getByRole('button', { name: 'Debate cannibalism', exact: true }).hover();
   await page.waitForTimeout(600);
-  assert.match(await page.locator('[data-prompt-preview]').innerText(), /language model/);
+  assert.match(await page.locator('[data-prompt-preview]').innerText(), /ethical and cultural taboo/);
   assert.ok((await page.evaluate(() => window.hintCounts)).every(n => n <= 1), 'Overlapping prompt hints');
   assert.equal(await page.locator('#hero-prompt').inputValue(), '');
   await page.mouse.move(10, 200); await page.waitForTimeout(500);

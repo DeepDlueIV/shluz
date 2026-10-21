@@ -27,7 +27,7 @@
 .promptWorkspace[data-navigation="true"] input { opacity: 0; pointer-events: none; }
 .promptWorkspace[data-navigation="true"] .promptPreview { opacity: 0; }
 .promptPreview { position: absolute; inset: 0 55px 0 16px; display: flex; align-items: center; overflow: hidden; pointer-events: none; color: #aaa9a8; font-size: 13px; opacity: 1; transition: opacity 200ms ease; }
-.promptPreview span { position: absolute; left: 0; right: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.promptPreview span { position: absolute; left: 0; width: 100%; max-width: min(100%, 52ch); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sendButton { position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 43px; height: 43px; border-radius: 50%; display: grid; place-items: center; border: 0; background: #f0eee7; color: #17191b; transition: color .15s,background .15s; }
 .sendButton:disabled { background: #ffffff14; color: #a2a2a2; cursor: default; }
 .sendButton:not(:disabled):hover { background: #fff; }
@@ -46,10 +46,7 @@
 .navLinks .loginLink { color: #f6f3ed; display: flex; align-items: center; gap: 7px; margin-left: 3px; padding-left: 22px; border-left: 1px solid #ffffff18; }
 .soonLink { position: relative; }
 .soonDot { display: inline-block; vertical-align: middle; width: 3px; height: 3px; background: #757679; border-radius: 50%; margin-left: 4px; }
-.suggestions { position: relative; z-index: 3; max-width: 900px; margin: 15px auto 0; padding: 0 22px; }
-.chipRow { display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; }
-.chipRow button { padding: 8px 11px; border-radius: 20px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid #ffffff1f; background: #1a1b1d35; color: #b5b6b7; font-size: 10px; transition: background .15s,color .15s,border-color .15s; }
-.chipRow button:hover,.chipRow button:focus-visible { color: #f4f2eb; background: #ffffff0b; border-color: #ffffff35; }
+.suggestions { position: relative; z-index: 3; max-width: 1104px; margin: 11px auto 0; padding: 0 22px; }
 .scrollHint { position: absolute; left: 50%; bottom: 52px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 14px; color: #939495; text-decoration: none; font-size: 10px; }
 .scrollHint svg { animation: drift 3s ease-in-out infinite; }
 .scrollHint:hover { color: #ece9e2; }
@@ -79,9 +76,10 @@
   .glassPanel { height: 64px; padding: 7px 10px; }
   .promptWorkspace input,.promptPreview { font-size: 16px; }
   .sendButton { width: 39px; height: 39px; } .promptToggle { height: 43px; }
-  .suggestions { margin-top: 13px; padding: 0 26px; } .chipRow { gap: 6px; max-width: 410px; margin: 0 auto; } .chipRow button { font-size: 9px; padding: 7px 9px; }
-  .scrollHint { bottom: 38px; gap: 12px; } .poster,.video { object-position: 50% 20%; opacity: .7; }
+  .suggestions { margin-top: 13px; padding: 0 26px; } .scrollHint { bottom: 38px; gap: 12px; } .poster,.video { object-position: 50% 20%; opacity: .7; }
   .videoShade { background: linear-gradient(180deg,#0c0d0f30,#0c0d0f30 25%,#0c0d0f60 60%,#0c0d0f 100%); }
 }
 @media(prefers-reduced-motion:reduce) { .scrollHint svg { animation: none; } .promptToggle { transition-duration: 50ms; } .toggleCaption,.promptWorkspace input,.promptPreview { transition-duration: 0ms; } }
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) { .glassPanel { background: #2a2b2ff2; } }
+
+.suggestions[aria-hidden="true"] { visibility: hidden; }
