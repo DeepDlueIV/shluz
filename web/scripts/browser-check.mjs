@@ -95,12 +95,11 @@ await check('Mobile layout and language menu', async () => {
   await p.screenshot({ path: 'test-results/mobile-en.png' });
   await mobile.close();
 });
-await check('Reduced-motion setting is respected, with explicit animation opt-in', async () => {
+await check('Background autoplays without a button even with reduced motion', async () => {
   const reduced = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1280, height: 900 } });
   const p = await reduced.newPage();
   await p.goto(origin, { waitUntil: 'networkidle' });
-  assert.equal(await p.locator('[data-hero-video]').evaluate(v => v.paused), true);
-  await p.getByRole('button', { name: 'Enable animation' }).click();
+  assert.equal(await p.getByRole('button', { name: 'Enable animation' }).count(), 0);
   await p.waitForFunction(() => { const v = document.querySelector('[data-hero-video]'); return v && !v.paused && v.currentTime > .15; });
   assert.equal(await p.locator('[data-marquee="right"]').evaluate(el => getComputedStyle(el).animationPlayState), 'running');
   await reduced.close();

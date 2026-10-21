@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
-import { AnimatePresence, motion, useMotionValueEvent, useReducedMotion, useScroll, useTransform } from "motion/react";
+import { AnimatePresence, animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion, useScroll, useTransform } from "motion/react";
 import { useGuestJourney } from "./GuestJourney";
 import LandingSections from "./LandingSections";
 import styles from "./HomePage.module.css";
@@ -49,9 +49,12 @@ export default function HomePage() {
   const reduceMotion = useReducedMotion();
   const anchorRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [draft, setDraft] = useState("");
   const [preview, setPreview] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const expansion = useMotionValue(0);
   const [docked, setDocked] = useState(false);
   const [suggestionsVisible, setSuggestionsVisible] = useState(true);
   const [mobileMenu, setMobileMenu] = useState(false);
@@ -63,9 +66,16 @@ export default function HomePage() {
   const top = useTransform(scrollY, value => Math.max(18, metrics.top - value));
   const width = useTransform(progress, [0, 0.35, 1], [metrics.width, metrics.width, metrics.navWidth]);
   const radius = useTransform(progress, [0, 1], [38, 26]);
-  const formWidth = useTransform(progress, [0, 0.6, 1], [metrics.width - 30, metrics.width - 30, metrics.mobile ? metrics.navWidth - 82 : 264]);
-  const navOpacity = useTransform(progress, [0, 0.76, 0.96], [0, 0, 1]);
-  const navWidth = useTransform(progress, [0, 0.6, 1], [0, 0, metrics.mobile ? 48 : metrics.navWidth - 300]);
+  const compactWidth = metrics.mobile ? metrics.navWidth - 82 : 300;
+  const baseFormWidth = useTransform(progress, [0, 0.6, 1], [metrics.width - 22, metrics.width - 22, compactWidth]);
+  const formWidth = useTransform(() => baseFormWidth.get() + (width.get() - 22 - baseFormWidth.get()) * expansion.get());
+  const baseNavOpacity = useTransform(progress, [0, 0.76, 0.96], [0, 0, 1]);
+  const navOpacity = useTransform(() => baseNavOpacity.get() * (1 - expansion.get()));
+  const navWidth = useTransform(() => Math.max(0, width.get() - 22 - formWidth.get()));
+  const navX = useTransform(expansion, [0, 1], [0, metrics.navWidth]);
+  const navigationMode = docked && !expanded;
+  const navInteractive = navigationMode;
+  const previewText = examples.find(example => example.id === preview)?.prompt || t("Ask anything…", "Задайте вопрос…");
   const titleOpacity = useTransform(scrollY, [0, Math.max(250, metrics.top * 0.66)], [1, 0]);
   const titleY = useTransform(scrollY, [0, metrics.top], [0, reduceMotion ? 0 : -65]);
   const chipOpacity = useTransform(progress, [0, 0.35], [1, 0]);
@@ -97,8 +107,25 @@ export default function HomePage() {
     setDocked(previous => previous === next ? previous : next);
     const showSuggestions = value < 0.35;
     setSuggestionsVisible(previous => previous === showSuggestions ? previous : showSuggestions);
-    if (!next) setMobileMenu(false);
+    if (!next) { setMobileMenu(false); setExpanded(false); }
   });
+
+  useEffect(() => {
+    const controls = animate(expansion, docked && expanded ? 1 : 0, {
+      duration: reduceMotion ? 0.05 : 0.16, ease: [0.2, 0.8, 0.2, 1],
+    });
+    return () => controls.stop();
+  }, [docked, expanded, expansion, reduceMotion]);
+
+  useEffect(() => {
+    if (docked && expanded) inputRef.current?.focus({ preventScroll: true });
+  }, [docked, expanded]);
+
+  const togglePrompt = () => {
+    setExpanded(value => !value);
+    setMobileMenu(false);
+    setPreview("");
+  };
 
   useEffect(() => {
     if (!mobileMenu) return;
@@ -126,10 +153,10 @@ export default function HomePage() {
 
   const renderNav = (mobile = false) => <nav aria-label={mobile ? t("Mobile navigation", "Навигация на мобильном экране") : t("Main navigation", "Основная навигация")} className={mobile ? styles.menuLinks : styles.navLinks}>
     {navLinks.map(item => "href" in item
-      ? <a key={t(item.label, item.labelRu)} href={item.href} tabIndex={docked ? 0 : -1} onClick={() => setMobileMenu(false)}>{t(item.label, item.labelRu)}</a>
-      : <button key={t(item.label, item.labelRu)} type="button" className={styles.soonLink} tabIndex={docked ? 0 : -1}
+      ? <a key={t(item.label, item.labelRu)} href={item.href} tabIndex={navInteractive ? 0 : -1} onClick={() => setMobileMenu(false)}>{t(item.label, item.labelRu)}</a>
+      : <button key={t(item.label, item.labelRu)} type="button" className={styles.soonLink} tabIndex={navInteractive ? 0 : -1}
           onClick={() => showNotice(t(item.label, item.labelRu), t("This section is not available in the preview.", "Этот раздел пока не открыт. Сейчас можно познакомиться с возможностями NoClip."))}>{t(item.label, item.labelRu)}<span className={styles.soonDot} aria-label={t("Coming soon", "Скоро")} /></button>)}
-    <button type="button" className={styles.loginLink} tabIndex={docked ? 0 : -1}
+    <button type="button" className={styles.loginLink} tabIndex={navInteractive ? 0 : -1}
       onClick={() => showNotice(t("Log in to NoClip", "Вход в NoClip"), t("Account sign-in is not available in this preview. You can still open the guest chat.", "Вход в личный аккаунт пока недоступен. Вы можете продолжить знакомство с NoClip и попробовать гостевой запрос."))}>{t("Log in", "Войти")} <Icon name="right" size={14} /></button>
   </nav>;
 
@@ -146,6 +173,7 @@ export default function HomePage() {
       </header>
       <div className={`${styles.heroContent} ${presentation.heroContent}`}>
         <motion.div className={styles.heroCopy} style={{ opacity: titleOpacity, y: titleY }}>
+          <img data-hero-logo className={styles.heroMark} src="/media/noclip-mark.png" width="40" height="34" alt="" />
           <h1 id="hero-title">{t("Ask anything", "Спросите о чём угодно")}</h1>
         </motion.div>
         <div ref={anchorRef} className={styles.composerAnchor} />
@@ -153,9 +181,9 @@ export default function HomePage() {
           <div className={styles.chipRow} style={{ visibility: draft ? "hidden" : "visible" }}>
             {examples.map(example => <button key={example.id} type="button"
               tabIndex={suggestionsVisible && !draft ? 0 : -1}
-              onMouseEnter={() => !draft && setPreview(example.prompt)}
+              onMouseEnter={() => !draft && setPreview(example.id)}
               onMouseLeave={() => setPreview("")}
-              onFocus={() => !draft && setPreview(example.prompt)}
+              onFocus={() => !draft && setPreview(example.id)}
               onBlur={() => setPreview("")}
               onClick={() => { setDraft(example.prompt); setPreview(""); inputRef.current?.focus(); }}>
               <Icon name={example.icon} size={14} /><span>{example.label}</span>
@@ -167,29 +195,57 @@ export default function HomePage() {
     </section>
 
     <motion.div className={styles.glassPanel} data-docked={docked} data-ready={metrics.ready}
+      data-prompt-mode={!docked ? "hero" : expanded ? "prompt" : "navigation"}
       style={{ top, width, borderRadius: radius }} aria-label={docked ? t("Prompt and navigation", "Ввод и навигация") : t("Prompt", "Поле запроса")}>
       <motion.form onSubmit={submit} className={styles.composer} style={{ width: formWidth }}>
         <button type="button" className={styles.composerMark} onClick={focusComposer} aria-label={t("Back to top", "Вернуться к началу")}>
           <img src="/media/noclip-mark.png" width="30" height="26" alt="" />
         </button>
-        <label htmlFor="hero-prompt" className="sr-only">{t("Your prompt for NoClip", "Ваш вопрос для NoClip")}</label>
-        <input ref={inputRef} id="hero-prompt" name="prompt" value={draft}
-          onChange={event => { setDraft(event.target.value); setPreview(""); }}
-          onKeyDown={event => { if (event.key === "Enter" && event.nativeEvent.isComposing) event.preventDefault(); }}
-          autoComplete="off" spellCheck placeholder={preview || (docked ? t("Ask anything…", "Задайте вопрос…") : t("Ask anything…", "Что вы хотите исследовать?"))}
-          aria-describedby="prompt-guidance" />
-        <button type="submit" className={styles.sendButton} disabled={!draft.trim()} aria-label={t("Send prompt", "Отправить запрос")}><Icon name="arrow" size={21} /></button>
+        <div className={styles.promptWorkspace} data-navigation={navigationMode}>
+          <label htmlFor="hero-prompt" className="sr-only">{t("Your prompt for NoClip", "Ваш вопрос для NoClip")}</label>
+          <input ref={inputRef} id="hero-prompt" name="prompt" value={draft}
+            tabIndex={navigationMode ? -1 : 0} aria-hidden={navigationMode}
+            onChange={event => { setDraft(event.target.value); setPreview(""); }}
+            onKeyDown={event => {
+              if (event.key === "Enter" && event.nativeEvent.isComposing) event.preventDefault();
+              if (event.key === "Escape" && docked && expanded) {
+                event.preventDefault(); setExpanded(false); toggleRef.current?.focus();
+              }
+            }}
+            autoComplete="off" spellCheck enterKeyHint="send" aria-describedby="prompt-guidance" />
+          {!draft && !navigationMode && <div className={styles.promptPreview} aria-hidden="true" data-prompt-preview>
+            <AnimatePresence initial={false} mode="sync">
+              <motion.span key={previewText} initial={{ opacity: 0, x: reduceMotion ? 0 : -10 }}
+                animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: reduceMotion ? 0 : 10 }}
+                transition={{ duration: 0.12, ease: "easeOut" }}>{previewText}</motion.span>
+            </AnimatePresence>
+          </div>}
+          {docked ? <button ref={toggleRef} data-prompt-toggle type="button" className={styles.promptToggle}
+            data-expanded={expanded} aria-expanded={expanded} aria-controls="hero-prompt"
+            aria-label={expanded ? t("Collapse prompt", "Свернуть ввод") : t("Expand prompt", "Развернуть ввод")}
+            title={expanded ? t("Collapse prompt · Enter to send", "Свернуть ввод · Enter — отправить") : t("Expand prompt", "Развернуть ввод")}
+            onClick={togglePrompt}>
+            <span className={styles.toggleCaption}>{t("Ask anything…", "Задайте вопрос…")}</span>
+            <span className={styles.toggleArrow}><Icon name="arrow" size={21} /></span>
+          </button> : <button type="submit" className={styles.sendButton} disabled={!draft.trim()}
+            aria-label={t("Send prompt", "Отправить запрос")}><Icon name="arrow" size={21} /></button>}
+        </div>
       </motion.form>
-      <motion.div className={styles.navArea} style={{ width: navWidth, opacity: navOpacity, pointerEvents: docked ? "auto" : "none" }} aria-hidden={!docked}>
-        {metrics.mobile
-          ? <button className={styles.menuButton} type="button" onClick={() => setMobileMenu(!mobileMenu)} aria-expanded={mobileMenu} aria-controls="mobile-navigation" aria-label={mobileMenu ? t("Close menu", "Закрыть меню") : t("Open menu", "Открыть меню")} tabIndex={docked ? 0 : -1}><Icon name={mobileMenu ? "close" : "menu"} size={21} /></button>
-          : renderNav()}
+      <motion.div className={styles.navArea} data-nav-area inert={!navInteractive} aria-hidden={!navInteractive}
+        style={{ width: navWidth, opacity: navOpacity, pointerEvents: navInteractive ? "auto" : "none" }}>
+        <motion.div className={styles.navInner} style={{ x: navX, width: metrics.navWidth - 22 - compactWidth }}>
+          {metrics.mobile
+            ? <button className={styles.menuButton} type="button" onClick={() => setMobileMenu(!mobileMenu)} aria-expanded={mobileMenu}
+                aria-controls="mobile-navigation" aria-label={mobileMenu ? t("Close menu", "Закрыть меню") : t("Open menu", "Открыть меню")}
+                tabIndex={navInteractive ? 0 : -1}><Icon name={mobileMenu ? "close" : "menu"} size={21} /></button>
+            : renderNav()}
+        </motion.div>
       </motion.div>
     </motion.div>
-    <span id="prompt-guidance" className="sr-only">{t("Submitting a prompt opens the guest chat. No registration is required for the initial demo.", "После отправки вы перейдёте в гостевой чат. Регистрация для первого запроса не требуется.")}</span>
+    <span id="prompt-guidance" className="sr-only">{t("Press Enter to send. The toolbar arrow expands or collapses the prompt without sending it.", "Enter — отправить. Стрелка панели раскрывает или сворачивает поле, не отправляя запрос.")}</span>
 
     <AnimatePresence>
-      {mobileMenu && docked && <motion.div id="mobile-navigation" className={styles.mobileMenu}
+      {mobileMenu && navInteractive && <motion.div id="mobile-navigation" className={styles.mobileMenu}
         initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
         {renderNav(true)}
       </motion.div>}

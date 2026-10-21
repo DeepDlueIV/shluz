@@ -46,7 +46,6 @@ jobs:
           NEXT_PUBLIC_GATEWAY_ENABLED: 'false'
           NEXT_TELEMETRY_DISABLED: '1'
       - name: Browser regression checks
-        if: hashFiles('web/scripts/browser-check.mjs') != ''
         run: |
           npm install --prefix "$RUNNER_TEMP/noclip-browser" --no-save --package-lock=false playwright@1.56.1
           ln -s "$RUNNER_TEMP/noclip-browser/node_modules/playwright" node_modules/playwright
@@ -56,6 +55,7 @@ jobs:
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
           node scripts/video-diagnostics.mjs
           node scripts/browser-check.mjs
+          node scripts/hero-interaction-check.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
