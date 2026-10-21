@@ -40,7 +40,7 @@
 .marqueeReverse { animation-direction: reverse; animation-duration: 62s; opacity: .42; }
 .modelStrips:hover .marqueeTrack { animation-play-state: paused; }
 .modelWord { display: flex; align-items: center; gap: 12px; font-size: clamp(25px, 2.8vw, 37px); font-weight: 500; letter-spacing: -.045em; line-height: 1.4; color: #d8d7da; white-space: nowrap; }
-.modelMark { width: 34px; height: 34px; flex-shrink: 0; }
+.modelMark { width: 34px; height: 34px; flex-shrink: 0; object-fit: contain; filter: brightness(0) invert(1); opacity: .85; }
 .modelDisclaimer { margin: 39px 24px 0 !important; text-align: center; color: #69696e; font-size: 10px; line-height: 1.7; }
 .mobileBreak { display: none; }
 @keyframes marquee { to { transform: translateX(-33.333333%); } }
