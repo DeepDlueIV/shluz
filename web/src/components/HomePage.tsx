@@ -8,14 +8,10 @@ import styles from "./HomePage.module.css";
 import presentation from "./Presentation.module.css";
 import HeroVideo from "./HeroVideo";
 import LanguageSwitcher from "./LanguageSwitcher";
-import { useSitePreferences, type Translate } from "./SitePreferences";
+import { useSitePreferences } from "./SitePreferences";
+import { getPromptSuggestions } from "../lib/prompt-suggestions";
+import PromptSuggestions from "./PromptSuggestions";
 
-const getExamples = (t: Translate) => [
-  { id: "chat", label: t("Discuss a topic", "Обсудить тему"), prompt: t("Discuss a controversial topic from different perspectives, without moralizing. How can I defend my opinion when everyone around me disagrees?", "Обсуди спорную тему с разных сторон, без нравоучений. Как отстаивать своё мнение, когда окружающие с ним не согласны?"), icon: "chat" },
-  { id: "story", label: t("Write a story", "Написать историю"), prompt: t("Write the opening of a noir story about a city where nobody can lie, and one person who learns how.", "Напиши начало нуарного рассказа о городе, в котором никто не может лгать, и человеке, который научился."), icon: "spark" },
-  { id: "code", label: t("Write code", "Написать код"), prompt: t("Help me build a minimal portfolio website with responsive typography. Start with the file structure and implementation plan.", "Помоги создать минималистичный сайт-портфолио с адаптивной типографикой. Начни со структуры файлов и плана реализации."), icon: "code" },
-  { id: "explain", label: t("Explain a concept", "Объяснить понятие"), prompt: t("Explain how a language model generates an answer. Use one concrete example and distinguish facts from common misconceptions.", "Объясни, как языковая модель создаёт ответ. Используй конкретный пример и отдели факты от распространённых заблуждений."), icon: "dice" },
-];
 
 const navLinks = [
   { label: "About", labelRu: "О проекте", href: "#about" },
@@ -44,7 +40,8 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
 export default function HomePage() {
   const { openPrompt, openChat } = useGuestJourney();
   const { t } = useSitePreferences();
-  const examples = getExamples(t);
+  const { primary, additional } = getPromptSuggestions(t);
+  const examples = [...primary, ...additional];
   const { scrollY } = useScroll();
   const reduceMotion = useReducedMotion();
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -179,17 +176,10 @@ export default function HomePage() {
         </motion.div>
         <div ref={anchorRef} className={styles.composerAnchor} />
         <motion.div className={styles.suggestions} style={{ opacity: chipOpacity, pointerEvents: suggestionsVisible ? "auto" : "none" }} aria-label={t("Example prompts", "Примеры запросов")} aria-hidden={!suggestionsVisible || !!draft}>
-          <div className={styles.chipRow} style={{ visibility: draft ? "hidden" : "visible" }}
-            onMouseLeave={() => setPreview("")}
-            onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setPreview(""); }}>
-            {examples.map(example => <button key={example.id} type="button"
-              tabIndex={suggestionsVisible && !draft ? 0 : -1}
-              onMouseEnter={() => !draft && setPreview(example.id)}
-              onFocus={() => !draft && setPreview(example.id)}
-              onClick={() => { setDraft(example.prompt); setPreview(""); inputRef.current?.focus(); }}>
-              <Icon name={example.icon} size={14} /><span>{example.label}</span>
-            </button>)}
-          </div>
+          <PromptSuggestions primary={primary} additional={additional}
+            enabled={suggestionsVisible && !draft} moreLabel={t("More", "Ещё")}
+            onPreview={setPreview}
+            onChoose={prompt => { setDraft(prompt); setPreview(""); inputRef.current?.focus(); }} />
         </motion.div>
       </div>
       <a className={styles.scrollHint} href="#models" aria-label={t("View models", "Смотреть модели")}><Icon name="down" size={19} /></a>
