@@ -1,6 +1,6 @@
 .headerActions { display: flex; align-items: center; gap: 14px; }
 .heroSection .heroContent { padding-top: clamp(220px, 31svh, 370px); }
-.heroSection h1 { max-width: 1000px; margin-inline: auto; line-height: 1.04; font-style: normal; font-weight: 400; }
+.heroSection .heroContent h1 { max-width: 1000px; margin: 0 auto; text-align: center; line-height: 1.04; font-style: normal; font-weight: 400; }
 .background[data-video-ready="true"] picture { visibility: hidden; }
 .enableAnimation { position: absolute; z-index: 4; bottom: 35px; right: 30px; display: inline-flex; align-items: center; gap: 9px; min-height: 42px; padding: 10px 15px; border: 1px solid #ffffff30; border-radius: 24px; color: #ecebe8; background: #17181bb8; backdrop-filter: blur(12px); font-size: 12px; }
 .modelStrips [data-marquee] { animation: modelScroll 60s linear infinite !important; animation-play-state: running !important; will-change: transform; opacity: 1; }

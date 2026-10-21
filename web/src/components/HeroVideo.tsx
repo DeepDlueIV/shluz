@@ -41,7 +41,6 @@ export default function HeroVideo() {
     observer.observe(video);
     video.addEventListener("canplay", sync);
     document.addEventListener("visibilitychange", sync);
-    // An interaction retries autoplay without resending any prompt or restarting the clip.
     document.addEventListener("pointerdown", play);
     document.addEventListener("keydown", play);
     sync();
@@ -59,17 +58,20 @@ export default function HeroVideo() {
     if (!video) return;
     video.defaultMuted = true; video.muted = true;
     if (failed) { video.load(); setFailed(false); }
-    // This call stays inside the user gesture for browsers with restrictive autoplay.
+    // Keep the attempt inside the user gesture for restrictive autoplay policies.
     void video.play().then(() => setBlocked(false)).catch(() => setBlocked(true));
   }
+  const variant = mobile ? "mobile" : "desktop";
   return <>
     <div className={`${styles.heroMedia} ${presentation.background}`} data-video-ready={ready} aria-hidden="true">
       <picture><source media="(max-width: 700px)" srcSet="/media/hero-poster-mobile.webp" />
         <img className={styles.poster} src="/media/hero-poster.webp" alt="" fetchPriority="high" /></picture>
-      <video ref={videoRef} data-hero-video className={styles.video} muted loop playsInline autoPlay={ambientMotion}
-        preload="auto" src={mobile ? "/media/hero-mobile.mp4" : "/media/hero-desktop.mp4"}
-        poster={mobile ? "/media/hero-poster-mobile.webp" : "/media/hero-poster.webp"}
-        onPlaying={() => { setReady(true); setBlocked(false); }} onError={() => setFailed(true)} />
+      <video key={variant} ref={videoRef} data-hero-video className={styles.video} muted loop playsInline autoPlay={ambientMotion}
+        preload="auto" poster={mobile ? "/media/hero-poster-mobile.webp" : "/media/hero-poster.webp"}
+        onPlaying={() => { setReady(true); setBlocked(false); }} onError={() => setFailed(true)}>
+        <source src={`/media/hero-${variant}.webm`} type="video/webm" />
+        <source src={`/media/hero-${variant}.mp4`} type="video/mp4" />
+      </video>
       <div className={styles.videoShade} />
     </div>
     {preferencesReady && (!ambientMotion || blocked || failed) && <button type="button" className={presentation.enableAnimation} onClick={retry}
