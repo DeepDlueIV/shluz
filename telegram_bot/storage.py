@@ -168,6 +168,14 @@ class Store:
                 )
             ]
 
+    def dialog_for(self, user_id: int, dialog_id: str) -> dict | None:
+        """Получить название/метаданные только собственного диалога, без смены активного."""
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT * FROM dialogs WHERE id=? AND user_id=?", (dialog_id, user_id)
+            ).fetchone()
+            return dict(row) if row else None
+
     def activate_dialog(self, user_id: int, dialog_id: str) -> bool:
         with self.connection() as db:
             if not db.execute(

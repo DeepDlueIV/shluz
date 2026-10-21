@@ -25,42 +25,23 @@ def keyboard(rows: list[list[tuple[str, str]]]) -> InlineKeyboardMarkup:
 def menu() -> InlineKeyboardMarkup:
     return keyboard(
         [
-            [("✨ Новый чат", "new"), ("💬 Продолжить", "continue")],
+            [("✨ Новый чат", "new")],
             [("🤖 Модели", "models:0"), ("🗂 Диалоги", "history:0")],
-            [("📊 Аккаунт и лимиты", "plan"), ("⚙️ Настройки", "settings")],
+            [("📊 Аккаунт и лимиты", "plan"), ("⚙️ Настройки диалога", "settings")],
             [("💳 Тарифы и оплата", "tariffs")],
-            [("❓ Помощь", "help"), ("🛟 Поддержка", "support")],
+            [("❓ FAQ", "faq"), ("🛟 Поддержка", "support")],
         ]
     )
 
 
 def answer_controls(turn_id: str | None = None) -> InlineKeyboardMarkup:
-    rows = []
-    if turn_id:
-        rows.extend(
-            [
-                [
-                    ("🔄 Другой вариант", f"retry:{turn_id}"),
-                    ("📄 Ответ файлом", f"answer:{turn_id}"),
-                ],
-                [("👍 Полезно", f"up:{turn_id}"), ("👎 Не подошло", f"down:{turn_id}")],
-            ]
-        )
+    # Привязка к ответу: переключение диалога не изменит цель удаления.
+    rows = [[("🗑 Удалить этот диалог", f"delete_turn:{turn_id}")]] if turn_id else []
     return keyboard(
         rows
         + [
             [("✨ Новый чат", "new"), ("🤖 Модель", "models:0")],
             [("🗂 Диалоги", "history:0"), ("☰ Меню", "menu")],
-        ]
-    )
-
-
-def privacy_controls() -> InlineKeyboardMarkup:
-    return keyboard(
-        [
-            [("📄 Экспорт диалога", "export"), ("🧹 Очистить текущий", "clear")],
-            [("🗑 Удалить все мои диалоги", "forget")],
-            [("☰ Главное меню", "menu")],
         ]
     )
 
@@ -83,7 +64,7 @@ def settings_controls(style: str) -> InlineKeyboardMarkup:
         + [
             [("✏️ Название диалога", "rename"), ("📄 Экспорт", "export")],
             [("🧹 Очистить диалог", "clear"), ("🗑 Удалить диалог", "delete")],
-            [("🔐 О данных", "privacy"), ("☰ Меню", "menu")],
+            [("☰ Меню", "menu")],
         ]
     )
 
@@ -119,15 +100,19 @@ def history_controls(dialogs: list[dict], active: str, offset: int):
         paging.append(("Далее →", f"history:{offset + 8}"))
     if paging:
         rows.append(paging)
-    return keyboard(rows + [[("✨ Новый чат", "new"), ("☰ Меню", "menu")]])
+    return keyboard(
+        rows
+        + [[("🗑 Удалить все диалоги", "forget")], [("✨ Новый чат", "new"), ("☰ Меню", "menu")]]
+    )
 
 
 def profile_text(remote: dict, local: dict) -> str:
     account, plan = remote["account"], remote["plan"]
     lines = [
         "<b>👤 Ваш аккаунт</b>",
-        html.escape(account["display_name"]),
-        f"Telegram ID: <code>{local['user_id']}</code>",
+        "Ваш ID: <code>"
+        + html.escape(str(account.get("id") or local.get("account_id") or "пока не определён"))
+        + "</code>",
         f"Модель: <code>{html.escape(local['model'] or 'не выбрана')}</code>",
         "",
     ]
