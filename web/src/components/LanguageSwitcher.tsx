@@ -40,13 +40,13 @@ export default function LanguageSwitcher() {
     <button ref={trigger} type="button" className={styles.trigger} aria-label={t("Change language", "Выбрать язык")}
       aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen(!open)}>
       <svg data-language-globe width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true"><circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18M5 7h14M5 17h14" /></svg>
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="m3 4.5 3 3 3-3" stroke="currentColor" strokeWidth="1.3" /></svg>
+      <svg data-language-chevron width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="m3 4.5 3 3 3-3" stroke="currentColor" strokeWidth="1.3" /></svg>
     </button>
-    {open && <div id={id} role="menu" aria-label={t("Language", "Язык")} className={styles.menu}>
+    <div id={id} data-language-menu data-open={open} inert={!open} aria-hidden={!open} role="menu" aria-label={t("Language", "Язык")} className={styles.menu}>
       {([ ["en", "English"], ["ru", "Русский"] ] as const).map(([code, label]) => <button key={code} type="button" role="menuitemradio"
         aria-checked={locale === code} className={styles.option} onClick={() => { setLocale(code); close(); }}>
         <Flag locale={code} /><span>{label}</span><span className={styles.check} aria-hidden="true">{locale === code ? "✓" : ""}</span>
       </button>)}
-    </div>}
+    </div>
   </div>;
 }

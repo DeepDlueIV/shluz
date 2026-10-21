@@ -49,6 +49,7 @@ export default function HomePage() {
   const toggleRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [draft, setDraft] = useState("");
+  const [autofill, setAutofill] = useState(false);
   const [preview, setPreview] = useState("");
   const [expanded, setExpanded] = useState(false);
   const expansion = useMotionValue(0);
@@ -110,10 +111,10 @@ export default function HomePage() {
 
   useEffect(() => {
     const controls = animate(expansion, docked && expanded ? 1 : 0, {
-      duration: reduceMotion ? 0.05 : 0.4, ease: [0.4, 0, 0.2, 1],
+      duration: 0.8, ease: [0.4, 0, 0.2, 1],
     });
     return () => controls.stop();
-  }, [docked, expanded, expansion, reduceMotion]);
+  }, [docked, expanded, expansion]);
 
   useEffect(() => {
     if (docked && expanded) inputRef.current?.focus({ preventScroll: true });
@@ -179,7 +180,15 @@ export default function HomePage() {
           <PromptSuggestions primary={primary} additional={additional}
             enabled={suggestionsVisible && !draft} moreLabel={t("More", "Ещё")}
             onPreview={setPreview}
-            onChoose={prompt => { setDraft(prompt); setPreview(""); inputRef.current?.focus(); }} />
+            onChoose={prompt => {
+              setDraft(prompt); setPreview(""); setAutofill(true);
+              inputRef.current?.focus({ preventScroll: true });
+              // Показываем начало полного промпта, а не его конец после программного заполнения.
+              requestAnimationFrame(() => {
+                inputRef.current?.setSelectionRange(0, 0);
+                if (inputRef.current) inputRef.current.scrollLeft = 0;
+              });
+            }} />
         </motion.div>
       </div>
       <a className={styles.scrollHint} href="#models" aria-label={t("View models", "Смотреть модели")}><Icon name="down" size={19} /></a>
@@ -192,8 +201,9 @@ export default function HomePage() {
         <div className={styles.promptWorkspace} data-navigation={navigationMode}>
           <label htmlFor="hero-prompt" className="sr-only">{t("Your prompt for NoClip", "Ваш вопрос для NoClip")}</label>
           <input ref={inputRef} id="hero-prompt" name="prompt" value={draft}
+            data-autofill={autofill} onAnimationEnd={() => setAutofill(false)}
             tabIndex={navigationMode ? -1 : 0} aria-hidden={navigationMode}
-            onChange={event => { setDraft(event.target.value); setPreview(""); }}
+            onChange={event => { setAutofill(false); setDraft(event.target.value); setPreview(""); }}
             onKeyDown={event => {
               if (event.key === "Enter" && event.nativeEvent.isComposing) event.preventDefault();
               if (event.key === "Escape" && docked && expanded) {
@@ -203,10 +213,10 @@ export default function HomePage() {
             autoComplete="off" spellCheck enterKeyHint="send" aria-describedby="prompt-guidance" />
           {!draft && <div className={styles.promptPreview} aria-hidden="true" data-prompt-preview>
             <AnimatePresence initial={false} mode="wait">
-              <motion.span key={previewText} initial={{ opacity: 0, x: reduceMotion ? 0 : -6 }}
+              <motion.span key={previewText} initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: reduceMotion ? 0 : 6, transition: { duration: reduceMotion ? 0 : 0.16, ease: "easeIn" } }}
-                transition={{ duration: reduceMotion ? 0 : 0.24, ease: "easeOut" }}>{previewText}</motion.span>
+                exit={{ opacity: 0, x: 14, transition: { duration: 0.22, ease: "easeIn" } }}
+                transition={{ duration: 0.5, ease: "easeOut" }}>{previewText}</motion.span>
             </AnimatePresence>
           </div>}
           {docked ? <button ref={toggleRef} data-prompt-toggle type="button" className={styles.promptToggle}

@@ -37,7 +37,7 @@ test('Suggestions: hover has a shared region and an accessible More toggle', () 
 });
 test('Suggestions: preview is clipped without truncating the actual prompt value', () => {
   const css = read('../components/HomePage.module.css');
-  assert.match(css, /max-width:\s*min\(100%,\s*52ch\)/);
+  assert.doesNotMatch(css, /52ch/);
   assert.match(css, /text-overflow:\s*ellipsis/);
 });
 test('Suggestions: mobile disclosure scrolls within its shared hover region', () => {
