@@ -1,5 +1,4 @@
 name: Verify Telegram source objects
-
 on:
   pull_request:
     branches: [implementation/telegram-beta-complete]
@@ -7,10 +6,8 @@ on:
   push:
     branches: [feat/telegram-menu-simplification]
     paths: [.github/workflows/telegram-ui-prepare.yml]
-
 permissions:
   contents: write
-
 jobs:
   prepare:
     runs-on: ubuntu-latest
@@ -36,7 +33,6 @@ jobs:
               with urllib.request.urlopen(urllib.request.Request(repo + '/git/blobs/' + sha, headers=headers), timeout=30) as response:
                   part = base64.b64decode(json.load(response)['content'])
               if sha == '31243beec86d66bf78c9125d8087cf89dde5d807':
-                  # Repair the single transport transcription character, then verify canonical bytes.
                   part = part.replace(b'K9AU2O9+6xTJ11SBx4U4PqB', b'K9AU2O9+6xTJ11SBx4U8PqB')
               assert hashlib.sha1(f'blob {len(part)}\0'.encode() + part).hexdigest() == expected
               chunks.append(part)
@@ -52,6 +48,7 @@ jobs:
           print('Exact application source tree verified:', actual)
           PY
       - name: Install and verify actual source
+        shell: bash
         working-directory: /tmp/verified-source
         run: |
           python -m pip install -e ".[dev]"
