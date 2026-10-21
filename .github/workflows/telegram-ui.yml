@@ -1,0 +1,49 @@
+name: Telegram menu regression
+
+on:
+  push:
+    branches: [feat/telegram-menu-simplification]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - name: Telegram menu and scoped deletion regressions
+        run: pytest tests/telegram/test_simple_menu.py -v
+      - name: Full lint and regression
+        run: |
+          ruff check .
+          pytest -q
+      - name: Export offline test dependencies
+        if: always()
+        run: |
+          python - <<'PY'
+          import importlib.util, pathlib, shutil, subprocess, zipfile
+          target = pathlib.Path('/tmp/offline-test-deps')
+          target.mkdir()
+          for package in ('aiogram', 'magic_filter'):
+              spec = importlib.util.find_spec(package)
+              if spec and spec.origin:
+                  source = pathlib.Path(spec.origin).parent
+                  shutil.copytree(source, target / package)
+          tool = shutil.which('ruff')
+          if tool:
+              shutil.copyfile(tool, target / 'ruff')
+          shutil.make_archive('/tmp/offline-test-deps', 'zip', target)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: telegram-offline-test-deps
+          path: /tmp/offline-test-deps.zip
+          retention-days: 2
