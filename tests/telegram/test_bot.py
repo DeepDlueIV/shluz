@@ -598,9 +598,12 @@ def test_owner_menu_navigation_edits_only_menu_never_an_answer(client, tmp_path)
         )
         before = len(session.calls)
         await dp.feed_update(bot, event)
-        assert not any(c.__api_method__ == "sendMessage" for c in session.calls[before:])
+        assert sum(c.__api_method__ == "sendMessage" for c in session.calls[before:]) == 1
+        assert ctrl.store.screen_id(bot.id, 100) > final.message_id
+        assert [c.message_id for c in session.calls[before:]
+                if c.__api_method__ == "deleteMessage"] == [screen_id]
         edits = [c for c in session.calls[before:] if c.__api_method__ == "editMessageText"]
-        assert edits and all(c.message_id == screen_id != final.message_id for c in edits)
+        assert not edits  # Старый ответ не редактируется; новая панель уже внизу.
 
     asyncio.run(scenario())
 

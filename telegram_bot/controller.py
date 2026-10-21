@@ -40,6 +40,7 @@ class ClosedAccessMiddleware(BaseMiddleware):
             if callback:
                 await callback.answer("Работаю только в личном чате.", show_alert=True)
             return None
+        self.controller.delivery.observe_message(message)
         token = self.controller.access.token_for(sender.id)
         if self.controller.settings.connector_file:
             start_parts = (message.text or "").split(maxsplit=1) if not callback else []
@@ -60,7 +61,7 @@ class ClosedAccessMiddleware(BaseMiddleware):
                 if callback:
                     with suppress(TelegramAPIError):
                         await callback.answer()
-                await self.controller.delivery.screen(message, ERROR_TEXT[exc.code])
+                await self.controller.delivery.screen(message, exc.user_message())
                 return None
             if admission["state"] != "active":
                 if callback:
@@ -114,13 +115,16 @@ class ClosedAccessMiddleware(BaseMiddleware):
         try:
             return await handler(event, data)
         except GatewayError as exc:
-            await self.controller.delivery.screen(message, ERROR_TEXT[exc.code], ui.back())
+            await self.controller.delivery.screen(message, exc.user_message(), ui.back())
         except DialogLimit:
             await self.controller.delivery.screen(
                 message,
                 "🗂 Достигнут лимит диалогов. Удалите ненужный через «Настройки диалога».",
                 ui.back(),
             )
+        except TelegramAPIError as exc:
+            # sendMessage мог дойти до Telegram без ответа нам: не создаём дубликат меню.
+            logger.warning("Доставка меню Telegram не подтверждена: %s", type(exc).__name__)
         except Exception as exc:
             # Не логируем тело сообщения, токены, URL запроса или traceback с секретами.
             logger.warning("Ошибка обработки Telegram: %s", type(exc).__name__)
@@ -628,7 +632,9 @@ class Controller:
             answer = await self.gateway.chat(token, model, messages, turn_id, on_delta=show_delta)
             self.store.complete_turn(turn_id, answer)
             await stop_animation()
-            await self.delivery.answer(message, waiting, answer, turn_id=turn_id)
+            await self.delivery.answer(
+                message, waiting, answer, turn_id=turn_id, draft=preview.draft_used
+            )
             if remote["plan"].get("kind") == "demo":
                 updated = await self.gateway.profile(token)
                 left = updated["allowance"]["requests"]["remaining"]
@@ -662,8 +668,9 @@ class Controller:
                     text = preview.interrupted(text)
                 with suppress(TelegramAPIError):
                     if waiting:
-                        await self.delivery.edit(
-                            message, waiting, text, ui.answer_controls(), plain_text=text
+                        await self.delivery.finish(
+                            message, waiting, text, ui.answer_controls(), plain_text=text,
+                            draft=bool(preview and preview.draft_used),
                         )
                     else:
                         await self.delivery.say(message, text, ui.answer_controls())
@@ -675,13 +682,21 @@ class Controller:
                     "invalid_response",
                     "response_too_large",
                     "provider_unavailable",
+                    "provider_error",
                 }
                 self.store.fail_turn(turn_id, "unknown" if uncertain else "failed")
-            text = ERROR_TEXT.get(exc.code, ERROR_TEXT["unavailable"])
+            logger.warning(
+                "Сбой запроса модели: code=%s status=%s reference=%s",
+                exc.code, exc.status, exc.reference or "unknown",
+            )
+            text = exc.user_message()
             if preview:
                 text = preview.interrupted(text)
             if waiting:
-                await self.delivery.edit(message, waiting, text, ui.answer_controls())
+                await self.delivery.finish(
+                    message, waiting, text, ui.answer_controls(),
+                    draft=bool(preview and preview.draft_used),
+                )
             else:
                 await self.delivery.say(message, text, ui.back())
         except ValueError:

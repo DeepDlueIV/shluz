@@ -73,6 +73,12 @@ class Store:
                 "bot_id INTEGER NOT NULL, chat_id INTEGER NOT NULL, message_id INTEGER NOT NULL, "
                 "PRIMARY KEY(bot_id, chat_id))"
             )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS ui_activity ("
+                "bot_id INTEGER NOT NULL, chat_id INTEGER NOT NULL, "
+                "last_message_id INTEGER NOT NULL, "
+                "PRIMARY KEY(bot_id, chat_id))"
+            )
         self.path.chmod(0o600)
 
     @contextmanager
@@ -105,6 +111,24 @@ class Store:
                 "ON CONFLICT(bot_id,chat_id) DO UPDATE SET message_id=excluded.message_id",
                 (bot_id, chat_id, message_id),
             )
+
+    def note_message(self, bot_id: int, chat_id: int, message_id: int) -> None:
+        """Только позиция сообщения, без текста. Старые callbacks не отматывают её назад."""
+        with self.connection() as db:
+            db.execute(
+                "INSERT INTO ui_activity(bot_id,chat_id,last_message_id) VALUES(?,?,?) "
+                "ON CONFLICT(bot_id,chat_id) DO UPDATE SET "
+                "last_message_id=MAX(ui_activity.last_message_id,excluded.last_message_id)",
+                (bot_id, chat_id, message_id),
+            )
+
+    def last_message_id(self, bot_id: int, chat_id: int) -> int:
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT last_message_id FROM ui_activity WHERE bot_id=? AND chat_id=?",
+                (bot_id, chat_id),
+            ).fetchone()
+            return row[0] if row else 0
 
     def ensure_user(self, user_id: int, name: str) -> dict:
         now = time.time()

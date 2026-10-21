@@ -2,6 +2,7 @@
 
 import asyncio
 import json as jsonlib
+import re
 
 import httpx
 from pydantic import SecretStr
@@ -10,10 +11,22 @@ from app.streaming.sse import SSEError, events
 
 
 class GatewayError(Exception):
-    def __init__(self, code: str, status: int = 0) -> None:
+    def __init__(self, code: str, status: int = 0, reference: str | None = None) -> None:
         self.code = code
         self.status = status
+        # Корреляция с журналом шлюза, не текст upstream и не произвольный заголовок.
+        self.reference = (
+            reference
+            if isinstance(reference, str) and re.fullmatch(r"[a-f0-9]{32}", reference)
+            else None
+        )
         super().__init__(code)
+
+    def user_message(self) -> str:
+        text = ERROR_TEXT.get(self.code, ERROR_TEXT["unavailable"])
+        if self.reference:
+            text += f"\nКод обращения: <code>{self.reference}</code>"
+        return text
 
 
 ERROR_TEXT = {
@@ -47,6 +60,13 @@ ERROR_TEXT = {
     "provider_rate_limit": "⏳ Модель перегружена. Попробуйте позже; автоповтора не будет.",
     "rate_limit": "⏳ Слишком много запросов. Попробуйте позже.",
     "provider_unavailable": "🛠 Модель временно недоступна. Попробуйте позже.",
+    "provider_error": "🛠 Не удалось получить ответ от поставщика модели. Автоповтора не будет.",
+    "provider_authentication_error": (
+        "🔧 Поставщик не принял серверный ключ. Администратору нужно проверить подключение."
+    ),
+    "provider_balance_exhausted": (
+        "🔧 У поставщика недоступен баланс для генерации. Сообщите администратору."
+    ),
     "unavailable": "🛠 Шлюз сейчас недоступен. Попробуйте позже.",
     "outcome_unknown": (
         "⚠️ Не удалось подтвердить результат запроса. Он мог быть выполнен и учтён шлюзом. "
@@ -132,7 +152,7 @@ class GatewayClient:
                     422: "invalid_request",
                     429: "rate_limit",
                 }.get(response.status_code, "provider_unavailable")
-            raise GatewayError(code, response.status_code)
+            raise GatewayError(code, response.status_code, response.headers.get("x-request-id"))
         return data
 
     async def register_bot(self, username: str) -> None:
@@ -240,6 +260,7 @@ class GatewayClient:
 
     async def _chat_stream(self, token, model, messages, request_id, on_delta):
         parts, size = [], 0
+        reference = None
         try:
             async with asyncio.timeout(self.timeout):
                 async with self.http.stream(
@@ -254,13 +275,17 @@ class GatewayClient:
                     },
                     follow_redirects=False,
                 ) as response:
+                    reference = response.headers.get("x-request-id")
                     if not response.is_success:
                         body = bytearray()
                         async for block in response.aiter_bytes():
                             if len(body) + len(block) > 65536:
                                 raise GatewayError("invalid_response")
                             body.extend(block)
-                        data = jsonlib.loads(body)
+                        try:
+                            data = jsonlib.loads(body)
+                        except (ValueError, UnicodeError):
+                            data = {}
                         error = data.get("error") if isinstance(data, dict) else None
                         code = error.get("code") if isinstance(error, dict) else None
                         if not isinstance(code, str) or code not in ERROR_TEXT:
@@ -269,6 +294,10 @@ class GatewayClient:
                                 403: "wrong_channel",
                                 429: "rate_limit",
                                 402: "subscription_required",
+                                404: "model_not_found",
+                                400: "invalid_request",
+                                422: "invalid_request",
+                                409: "identity_conflict",
                             }.get(response.status_code, "provider_unavailable")
                         raise GatewayError(code, response.status_code)
                     if not response.headers.get("content-type", "").startswith("text/event-stream"):
@@ -303,7 +332,9 @@ class GatewayClient:
                                 parts.append(text)
                                 await on_delta("".join(parts))
                     raise GatewayError("outcome_unknown")
+        except GatewayError as exc:
+            raise GatewayError(exc.code, exc.status, reference) from exc
         except (TimeoutError, httpx.RequestError, SSEError) as exc:
-            raise GatewayError("outcome_unknown") from exc
+            raise GatewayError("outcome_unknown", reference=reference) from exc
         except (ValueError, UnicodeError, TypeError) as exc:
-            raise GatewayError("invalid_response") from exc
+            raise GatewayError("invalid_response", reference=reference) from exc

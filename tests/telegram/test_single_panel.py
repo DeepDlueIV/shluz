@@ -47,7 +47,7 @@ def test_navigation_and_text_commands_reuse_one_panel(client, tmp_path):
     asyncio.run(scenario())
 
 
-def test_button_under_answer_edits_panel_not_answer(client, tmp_path):
+def test_button_under_answer_moves_panel_without_editing_answer(client, tmp_path):
     async def scenario():
         ctrl, dp, bot, session = environment(client, tmp_path)
         await dp.feed_update(bot, incoming(1, "/menu"))
@@ -57,8 +57,11 @@ def test_button_under_answer_edits_panel_not_answer(client, tmp_path):
         before = len(session.calls)
         await dp.feed_update(bot, incoming(3, callback="menu"))
         calls = session.calls[before:]
-        assert not any(c.__api_method__ == "sendMessage" for c in calls)
-        assert methods(session, "editMessageText")[-1].message_id == panel_id != answer_id
+        assert len([c for c in calls if c.__api_method__ == "sendMessage"]) == 1
+        assert ctrl.store.screen_id(bot.id, 100) > answer_id
+        assert [c.message_id for c in calls if c.__api_method__ == "deleteMessage"] == [panel_id]
+        assert not any(c.__api_method__ == "editMessageText" and c.message_id == answer_id
+                       for c in calls)
         assert count_usage(client) == 1
         assert "Do not erase" in str(ctrl.store.history(100))
 
@@ -131,7 +134,7 @@ def test_missing_panel_is_replaced_once_without_touching_answer(tmp_path, descri
         assert replacement.message_id != old.message_id
         assert store.screen_id(bot.id, 100) == replacement.message_id
         assert methods(session, "editMessageText")[-1].message_id == replacement.message_id
-        assert not methods(session, "deleteMessage")
+        assert [m.message_id for m in methods(session, "deleteMessage")] == [old.message_id]
 
     asyncio.run(scenario())
 
