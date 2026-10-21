@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   web:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
@@ -44,13 +44,16 @@ jobs:
       - run: npm run build
         env:
           NEXT_PUBLIC_GATEWAY_ENABLED: 'false'
+          NEXT_TELEMETRY_DISABLED: '1'
       - name: Browser regression checks
         if: hashFiles('web/scripts/browser-check.mjs') != ''
         run: |
-          npm install --no-save --package-lock=false playwright@1.56.1
-          npx playwright install --with-deps chromium
+          npm install --prefix "$RUNNER_TEMP/noclip-browser" --no-save --package-lock=false playwright@1.56.1
+          ln -s "$RUNNER_TEMP/noclip-browser/node_modules/playwright" node_modules/playwright
+          "$RUNNER_TEMP/noclip-browser/node_modules/.bin/playwright" install --with-deps chromium
           npm run start > /tmp/noclip-web.log 2>&1 &
-          trap 'kill $! 2>/dev/null || true' EXIT
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
           node scripts/browser-check.mjs
       - uses: actions/upload-artifact@v4
         if: always()
