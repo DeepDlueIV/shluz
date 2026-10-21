@@ -67,6 +67,12 @@ class Store:
                 db.execute("ALTER TABLE turns ADD COLUMN feedback INTEGER CHECK(feedback IN(-1,1))")
                 db.execute("CREATE INDEX ix_turns_replaces ON turns(replaces_turn_id)")
                 db.execute("PRAGMA user_version=2")
+            # Аддитивные метаданные интерфейса: ни текстов, ни ключей; прежняя схема совместима.
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS ui_panels ("
+                "bot_id INTEGER NOT NULL, chat_id INTEGER NOT NULL, message_id INTEGER NOT NULL, "
+                "PRIMARY KEY(bot_id, chat_id))"
+            )
         self.path.chmod(0o600)
 
     @contextmanager
@@ -83,6 +89,22 @@ class Store:
             raise
         finally:
             db.close()
+
+    def screen_id(self, bot_id: int, chat_id: int) -> int | None:
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT message_id FROM ui_panels WHERE bot_id=? AND chat_id=?",
+                (bot_id, chat_id),
+            ).fetchone()
+            return row["message_id"] if row else None
+
+    def set_screen_id(self, bot_id: int, chat_id: int, message_id: int) -> None:
+        with self.connection() as db:
+            db.execute(
+                "INSERT INTO ui_panels(bot_id,chat_id,message_id) VALUES(?,?,?) "
+                "ON CONFLICT(bot_id,chat_id) DO UPDATE SET message_id=excluded.message_id",
+                (bot_id, chat_id, message_id),
+            )
 
     def ensure_user(self, user_id: int, name: str) -> dict:
         now = time.time()

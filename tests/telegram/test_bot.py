@@ -558,7 +558,7 @@ def test_owner_menu_navigation_edits_only_menu_never_an_answer(client, tmp_path)
     async def scenario():
         ctrl, dp, bot, session = environment(client, tmp_path)
         await dp.feed_update(bot, incoming(1, "/menu"))
-        screen_id = ctrl.delivery.screen_ids[100]
+        screen_id = ctrl.delivery.screen_ids[(bot.id, 100)]
         event = incoming(2, callback="settings")
         event = event.model_copy(
             update={
@@ -598,7 +598,9 @@ def test_owner_menu_navigation_edits_only_menu_never_an_answer(client, tmp_path)
         )
         before = len(session.calls)
         await dp.feed_update(bot, event)
-        assert any(c.__api_method__ == "sendMessage" for c in session.calls[before:])
+        assert not any(c.__api_method__ == "sendMessage" for c in session.calls[before:])
+        edits = [c for c in session.calls[before:] if c.__api_method__ == "editMessageText"]
+        assert edits and all(c.message_id == screen_id != final.message_id for c in edits)
 
     asyncio.run(scenario())
 
