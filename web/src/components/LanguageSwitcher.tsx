@@ -5,7 +5,7 @@ import { useSitePreferences, type Locale } from "./SitePreferences";
 import styles from "./LanguageSwitcher.module.css";
 
 function Flag({ locale }: { locale: Locale }) {
-  return <svg viewBox="0 0 30 20" width="24" height="16" aria-hidden="true" className={styles.flag}>
+  return <svg data-language-flag viewBox="0 0 30 20" width="24" height="16" aria-hidden="true" className={styles.flag}>
     {locale === "ru" ? <><path fill="#fff" d="M0 0h30v20H0z" /><path fill="#2455a6" d="M0 6.67h30v6.66H0z" /><path fill="#d72d39" d="M0 13.33h30V20H0z" /></>
       : <><path fill="#243b79" d="M0 0h30v20H0z" /><path d="m0 0 30 20M30 0 0 20" stroke="#fff" strokeWidth="5" /><path d="m0 0 30 20M30 0 0 20" stroke="#c63242" strokeWidth="2" /><path d="M15 0v20M0 10h30" stroke="#fff" strokeWidth="7" /><path d="M15 0v20M0 10h30" stroke="#c63242" strokeWidth="4" /></>}
   </svg>;
@@ -39,7 +39,7 @@ export default function LanguageSwitcher() {
   return <div ref={root} className={styles.root} onKeyDown={keys}>
     <button ref={trigger} type="button" className={styles.trigger} aria-label={t("Change language", "Выбрать язык")}
       aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen(!open)}>
-      <Flag locale={locale} /><span>{locale.toUpperCase()}</span>
+      <svg data-language-globe width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18M5 6.5h14M5 17.5h14" /></svg><span>{locale.toUpperCase()}</span>
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="m3 4.5 3 3 3-3" stroke="currentColor" strokeWidth="1.3" /></svg>
     </button>
     {open && <div id={id} role="menu" aria-label={t("Language", "Язык")} className={styles.menu}>

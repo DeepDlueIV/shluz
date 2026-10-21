@@ -2,7 +2,9 @@ name: Import pinned web icons
 on:
   push:
     branches: ['fix/web-composer-polish-20261021']
-    paths: ['.github/workflows/web-import-icons.yml']
+    paths:
+      - '.github/workflows/web-import-icons.yml'
+      - 'web/scripts/import-model-icons.py'
 permissions:
   contents: write
 jobs:
@@ -12,71 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Fetch and validate SVG assets
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from concurrent.futures import ThreadPoolExecutor
-          from pathlib import Path
-          from urllib.request import urlopen
-          from urllib.error import HTTPError
-          import hashlib
-          import xml.etree.ElementTree as ET
-          import re
-          revision = '21b2144f4ebe87ead9b7c0e10067759ae261b03e'
-          root = f'https://raw.githubusercontent.com/lobehub/lobe-icons/{revision}/'
-          sources = {
-            'claude': ['claude'], 'google': ['google'], 'deepseek': ['deepseek'],
-            'openai': ['openai'], 'mistral': ['mistral'], 'meta': ['meta'],
-            'qwen': ['qwen'], 'grok': ['grok'], 'kimi': ['kimi'],
-            'black-forest-labs': ['flux'], 'nvidia': ['nvidia'],
-            'elevenlabs': ['elevenlabs'], 'runway': ['runway'],
-            'bytedance': ['bytedance'], 'minimax': ['minimax'],
-            'glm': ['zai', 'chatglm'], 'gemma': ['gemma'],
-            'kling': ['kling'], 'pixverse': ['pixverse'], 'vidu': ['vidu'],
-          }
-          destination = Path('web/public/media/models')
-          destination.mkdir(parents=True, exist_ok=True)
-          def fetch(item):
-            name, candidates = item
-            data = None
-            for candidate in candidates:
-              path = f'packages/static-svg/icons/{candidate}.svg'
-              try:
-                data = urlopen(root + path, timeout=30).read()
-                break
-              except HTTPError as error:
-                if error.code != 404: raise
-            if data is None: raise RuntimeError('Missing asset: ' + name)
-            if len(data) > 200000: raise RuntimeError('Oversized asset: ' + name)
-            element = ET.fromstring(data)
-            if element.tag.split('}')[-1] != 'svg': raise RuntimeError('Not SVG: ' + name)
-            for node in element.iter():
-              if node.tag.split('}')[-1].lower() in {'script', 'foreignobject', 'iframe', 'image', 'animate', 'set'}:
-                raise RuntimeError('Unexpected active/external SVG content: ' + name)
-              for key, value in node.attrib.items():
-                local = key.split('}')[-1].lower()
-                if local.startswith('on') or (local == 'href' and not value.startswith('#')):
-                  raise RuntimeError('Unexpected SVG attribute: ' + name)
-                if re.search(r'url\(\s*[\"\x27]?\s*(?:https?:|//|data:)', value, re.I):
-                  raise RuntimeError('External SVG URL: ' + name)
-            (destination / (name + '.svg')).write_bytes(data)
-            print(name, path, len(data))
-            return f'| `{name}.svg` | [{path}]({root + path}) | `{hashlib.sha256(data).hexdigest()}` |'
-          rows = list(ThreadPoolExecutor(max_workers=6).map(fetch, sources.items()))
-          license_data = urlopen(root + 'LICENSE', timeout=30).read()
-          if b'MIT License' not in license_data: raise RuntimeError('Unexpected license')
-          license_path = Path('web/public/licenses/lobe-icons-MIT.txt')
-          license_path.parent.mkdir(parents=True, exist_ok=True)
-          license_path.write_bytes(license_data)
-          Path('docs/web-icon-sources.md').write_text(
-            '# Источники логотипов моделей\n\n'
-            'SVG-файлы из LobeHub Icons; зафиксирован commit `' + revision + '`.\n'
-            'Лицензия MIT сохранена в `web/public/licenses/lobe-icons-MIT.txt`.\n'
-            'Это изображения товарных знаков для идентификации, а не заявление о партнёрстве или доступности модели.\n'
-            'Black Forest Labs: знак FLUX из одноимённого раздела библиотеки; GLM: знак разработчика Z.ai.\n'
-            'Старые пять inline SVG в первой версии были упрощёнными рисованными заглушками, не этими ассетами.\n\n'
-            '| Файл | Оригинал | SHA-256 |\n|---|---|---|\n' + '\n'.join(rows) + '\n', encoding='utf-8')
-          PY
+        run: python3 web/scripts/import-model-icons.py
       - name: Commit only imported assets and attribution
         run: |
           git config user.name 'github-actions[bot]'

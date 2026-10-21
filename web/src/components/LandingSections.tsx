@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import styles from "./LandingSections.module.css";
 import presentation from "./Presentation.module.css";
 import { useSitePreferences, type Translate } from "./SitePreferences";
-import { modelRows, modelCatalogSource } from "../lib/model-catalog";
+import { modelRows, modelIcons } from "../lib/model-catalog";
 
 type LandingSectionsProps = {
   onPrompt: (prompt: string) => void;
@@ -62,7 +62,7 @@ function ModelStrip({ row }: { row: 0 | 1 }) {
   return <div className={styles.marquee}>
     <div data-marquee={direction} className={`${styles.marqueeTrack} ${row === 0 ? styles.marqueeReverse : ""}`}>
       {[0, 1].map(copy => <div className={styles.marqueeGroup} key={copy} aria-hidden={copy === 1 || undefined}>
-        {modelRows[row].map(name => <div className={styles.modelWord} key={name} data-model-name={copy === 0 ? name : undefined}><span>{name}</span></div>)}
+        {modelRows[row].map(name => <div className={styles.modelWord} key={name} data-model-name={copy === 0 ? name : undefined}><img src={modelIcons[name]} className={styles.modelMark} width="34" height="34" alt="" decoding="async" /><span>{name}</span></div>)}
       </div>)}
     </div>
   </div>;
@@ -299,10 +299,8 @@ export default function LandingSections({ onPrompt, onOpenChat }: LandingSection
     <section id="models" className={`${styles.models} ${styles.anchorSection}`}>
       <div className={`${styles.container} ${styles.modelsIntro}`}>
         <h2 className={styles.sectionTitle}>{t("Models & providers", "Модели и провайдеры")}</h2>
-        <p className={styles.sectionDescription}>{t("From the Venice catalog. Availability in NoClip is configured separately.", "Из каталога Venice. Доступность в NoClip настраивается отдельно.")}</p>
       </div>
       <div className={`${styles.modelStrips} ${presentation.modelStrips}`} data-model-strips><ModelStrip row={0} /><ModelStrip row={1} /></div>
-      <div className={presentation.catalogLink}><a href={modelCatalogSource} target="_blank" rel="noreferrer">{t("View the Venice model catalog", "Каталог моделей Venice")} ↗</a></div>
     </section>
     <section id="features" className={`${styles.features} ${styles.anchorSection}`}>
       <div className={styles.container}>
