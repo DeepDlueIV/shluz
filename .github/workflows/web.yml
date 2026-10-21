@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   website:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
@@ -32,11 +32,6 @@ jobs:
       - run: npm run build
       - name: Build isolated visual preview
         run: NOCLIP_STATIC_EXPORT=1 npm run build
-      - name: Capture current public catalog for this review
-        continue-on-error: true
-        run: |
-          mkdir -p research
-          curl -fSL --max-time 45 https://venice.ai/models -o research/venice-models.html
       - name: Install browser test runner
         run: |
           npm install --prefix "$RUNNER_TEMP/noclip-qa" playwright@1.56.1
