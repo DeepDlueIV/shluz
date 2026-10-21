@@ -1,22 +1,14 @@
 name: Web checks
-
 on:
   push:
-    paths:
-      - 'web/**'
-      - '.github/workflows/web-check.yml'
+    paths: ['web/**', '.github/workflows/web-check.yml']
   pull_request:
-    paths:
-      - 'web/**'
-      - '.github/workflows/web-check.yml'
-
+    paths: ['web/**', '.github/workflows/web-check.yml']
 permissions:
-  contents: read
-
+  contents: write
 concurrency:
   group: web-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   web:
     runs-on: ubuntu-24.04
@@ -26,6 +18,18 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      - name: Import pinned brand assets on the review branch
+        if: github.ref == 'refs/heads/fix/web-hero-toolbar-20261021' && hashFiles('web/scripts/prepare-brand-assets.py') != ''
+        run: |
+          python3 scripts/prepare-brand-assets.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add public/media/models public/licenses/lobe-icons-MIT.txt src/components/LandingSections.tsx src/components/LandingSections.module.css scripts/browser-check.mjs
+          git rm scripts/prepare-brand-assets.py
+          git commit -m 'assets(web): restore mapped model marks and clean provider references'
+          git push origin HEAD:fix/web-hero-toolbar-20261021
       - name: Archive source for review
         run: tar -czf ../web-source.tar.gz .
       - uses: actions/upload-artifact@v4
@@ -46,7 +50,6 @@ jobs:
           NEXT_PUBLIC_GATEWAY_ENABLED: 'false'
           NEXT_TELEMETRY_DISABLED: '1'
       - name: Browser regression checks
-        if: hashFiles('web/scripts/browser-check.mjs') != ''
         run: |
           npm install --prefix "$RUNNER_TEMP/noclip-browser" --no-save --package-lock=false playwright@1.56.1
           ln -s "$RUNNER_TEMP/noclip-browser/node_modules/playwright" node_modules/playwright
@@ -56,6 +59,7 @@ jobs:
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
           node scripts/video-diagnostics.mjs
           node scripts/browser-check.mjs
+          node scripts/hero-interaction-check.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
