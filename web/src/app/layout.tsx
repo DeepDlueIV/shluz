@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { homeReloadScript } from "@/lib/home-reload";
 import "@fontsource-variable/manrope";
 import "@fontsource-variable/cormorant-garamond";
 import "./globals.css";
@@ -14,5 +15,5 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#0c0d0f" };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body><SitePreferences><GuestJourneyProvider>{children}</GuestJourneyProvider></SitePreferences></body></html>;
+  return <html lang="en"><head><script id="noclip-home-reload" dangerouslySetInnerHTML={{ __html: homeReloadScript }} /></head><body><SitePreferences><GuestJourneyProvider>{children}</GuestJourneyProvider></SitePreferences></body></html>;
 }

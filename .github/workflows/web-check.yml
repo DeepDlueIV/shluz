@@ -54,6 +54,7 @@ jobs:
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
           node scripts/video-diagnostics.mjs
+          node scripts/scroll-reload-check.mjs
           node scripts/hover-continuity-check.mjs
           node scripts/browser-check.mjs
           node scripts/hero-interaction-check.mjs
