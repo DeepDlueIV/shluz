@@ -13,11 +13,22 @@ export const homepageReloadScrollScript = `(() => {
   const resetTop = () => window.scrollTo({ top: 0, left: 0, behavior: "instant" });
   resetTop();
 
-  window.addEventListener("pageshow", () => {
-    // До первого layout браузер ещё может отложить восстановление прокрутки.
-    resetTop();
+  // Поздняя загрузка шрифта не должна перехватывать уже начатое действие пользователя.
+  let interacted = false;
+  const interactionEvents = ["pointerdown", "wheel", "touchstart", "keydown"];
+  const onInteraction = () => { interacted = true; };
+  interactionEvents.forEach(type => window.addEventListener(type, onInteraction, { passive: true }));
+
+  const finish = () => {
+    if (!interacted) resetTop();
     requestAnimationFrame(() => requestAnimationFrame(() => {
       history.scrollRestoration = previousRestoration;
+      interactionEvents.forEach(type => window.removeEventListener(type, onInteraction));
     }));
+  };
+  window.addEventListener("pageshow", () => {
+    // Ждём окончательных размеров текста, а не фиксированной задержки таймера.
+    if (document.fonts) document.fonts.ready.then(finish, finish);
+    else finish();
   }, { once: true });
 })();`;
