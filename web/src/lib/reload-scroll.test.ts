@@ -5,7 +5,7 @@ import { homepageReloadScrollScript } from "./reload-scroll.ts";
 
 function run({ path = "/", type = "reload", hash = "", search = "" } = {}) {
   const listeners = new Map<string, () => void>();
-  const timers: (() => void)[] = [];
+  const frames: (() => void)[] = [];
   const scrolls: { top: number; behavior: string }[] = [];
   const state = { __NA: true, tree: ["keep-router-state"] };
   const replacements: unknown[][] = [];
@@ -15,9 +15,10 @@ function run({ path = "/", type = "reload", hash = "", search = "" } = {}) {
     performance: { getEntriesByType: () => type ? [{ type }] : [] },
     scrollTo: (options: { top: number; behavior: string }) => scrolls.push(options),
     addEventListener: (name: string, handler: () => void) => listeners.set(name, handler),
-    setTimeout: (handler: () => void) => timers.push(handler) };
+    setTimeout: () => 0,
+    requestAnimationFrame: (handler: () => void) => frames.push(handler) };
   runInNewContext(homepageReloadScrollScript, { ...env, window: env });
-  return { history, state, replacements, scrolls, listeners, timers };
+  return { history, state, replacements, scrolls, listeners, frames };
 }
 
 test("Homepage reload disables restoration before resetting scroll instantly", () => {
@@ -33,13 +34,16 @@ test("Reload drops only the fragment, preserving query and Next router state", (
   assert.equal(result.replacements[0][0], result.state);
   assert.equal(result.replacements[0][2], "/?source=demo");
 });
-test("Restoration resumes after pageshow, without a delayed scroll reset", () => {
+test("Restoration resumes only after the first two rendered frames", () => {
   const result = run();
   result.listeners.get("pageshow")!();
   assert.equal(result.history.scrollRestoration, "manual");
-  result.timers.forEach(timer => timer());
+  assert.equal(result.scrolls.length, 2);
+  result.frames.shift()!();
+  assert.equal(result.history.scrollRestoration, "manual");
+  result.frames.shift()!();
   assert.equal(result.history.scrollRestoration, "auto");
-  assert.equal(result.scrolls.length, 1);
+  assert.equal(result.scrolls.length, 2);
 });
 test("Ordinary navigation, back/forward and absent timing leave anchors alone", () => {
   for (const type of ["navigate", "back_forward", ""]) {

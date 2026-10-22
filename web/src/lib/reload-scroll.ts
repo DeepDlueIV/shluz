@@ -10,10 +10,14 @@ export const homepageReloadScrollScript = `(() => {
   if (window.location.hash) {
     history.replaceState(history.state, "", window.location.pathname + window.location.search);
   }
-  window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  const resetTop = () => window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  resetTop();
 
   window.addEventListener("pageshow", () => {
-    // Даём браузеру закончить восстановление этой загрузки; последующую историю не блокируем.
-    setTimeout(() => { history.scrollRestoration = previousRestoration; }, 0);
+    // До первого layout браузер ещё может отложить восстановление прокрутки.
+    resetTop();
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      history.scrollRestoration = previousRestoration;
+    }));
   }, { once: true });
 })();`;
