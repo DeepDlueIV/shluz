@@ -29,32 +29,19 @@ try {
       viewport: mobile ? { width: 390, height: 844 } : { width: 1440, height: 1000 },
       isMobile: mobile, hasTouch: mobile, reducedMotion: 'no-preference',
     });
-    await context.addInitScript(() => {
-      window.__scrollTrace = [];
-      const record = (event, detail) => window.__scrollTrace.push({ event, detail, t: performance.now(), y: scrollY, hash: location.hash, restoration: history.scrollRestoration, type: performance.getEntriesByType('navigation')[0]?.type });
-      const original = window.scrollTo.bind(window);
-      window.scrollTo = (...args) => { record('scrollTo', args); return original(...args); };
-      for (const event of ['DOMContentLoaded', 'load', 'pageshow', 'scroll', 'wheel', 'pointerdown']) window.addEventListener(event, () => record(event), { passive: true });
-      const descriptor = Object.getOwnPropertyDescriptor(History.prototype, 'scrollRestoration');
-      if (descriptor?.set && descriptor.get) Object.defineProperty(history, 'scrollRestoration', {
-        get() { return descriptor.get.call(history); },
-        set(value) { record('restoration-set', value); descriptor.set.call(history, value); },
-      });
-      record('init');
-    });
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(String(error)));
     await check(`${label}: repeated reloads from the middle and footer start at the hero`, async () => {
       await page.goto(origin, { waitUntil: 'networkidle' });
-      for (const top of [2400, 100000]) {
+      for (const top of [2400, 100000, 1600, 4000, 2400, 100000]) {
         await page.evaluate(top => window.scrollTo({ top, behavior: 'instant' }), top);
         await page.waitForTimeout(180);
         assert.ok(await page.evaluate(() => scrollY > 1000));
         await page.reload({ waitUntil: 'networkidle' });
-        await page.waitForTimeout(350);
-        traces.push({ label, from: top, trace: await page.evaluate(() => window.__scrollTrace) });
+        traces.push({ label, from: top, state: await page.evaluate(() => ({ y: scrollY, hash: location.hash, restoration: history.scrollRestoration, type: performance.getEntriesByType('navigation')[0]?.type })) });
         await atHero(page);
+        assert.equal(await page.evaluate(() => history.scrollRestoration), 'manual');
       }
       await page.screenshot({ path: `test-results/reload-${label.toLowerCase()}.png` });
     });

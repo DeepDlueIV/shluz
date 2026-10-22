@@ -40,11 +40,12 @@ test('Homepage reload resets immediately, disables restoration and clears only t
   assert.equal(b.location.search, '?source=test');
   assert.equal((b.scrolls[0] as { behavior: string }).behavior, 'instant');
 });
-test('After pageshow the reload stays at top and releases the restoration override', () => {
+test('After pageshow restoration stays manual until the first user interaction', () => {
   const b = browser(); b.window.scrollY = 800; b.fire('pageshow');
   assert.equal(b.window.scrollY, 0);
   assert.equal(b.history.scrollRestoration, 'manual');
-  b.frame(); assert.equal(b.history.scrollRestoration, 'auto');
+  b.frame(); assert.equal(b.history.scrollRestoration, 'manual');
+  b.fire('pointerdown'); assert.equal(b.history.scrollRestoration, 'auto');
 });
 test('Navigation, history return and the guest page are unaffected', () => {
   for (const options of [{ type: 'navigate' }, { type: 'back_forward' }, { pathname: '/app' }, { pathname: '/app/' }]) {
@@ -56,7 +57,8 @@ test('Navigation, history return and the guest page are unaffected', () => {
 test('A user scroll before load completes is not pulled back to the hero', () => {
   const b = browser();
   b.fire('wheel'); b.window.scrollY = 700; b.fire('pageshow'); b.frame();
-  assert.equal(b.window.scrollY, 700); assert.equal(b.history.scrollRestoration, 'auto');
+  assert.equal(b.window.scrollY, 700); assert.equal(b.history.scrollRestoration, 'manual');
+  b.fire('wheel'); assert.equal(b.history.scrollRestoration, 'auto');
 });
 test('A new anchor chosen before pageshow is not overwritten', () => {
   const b = browser(); b.location.hash = '#pricing'; b.window.scrollY = 3000;
@@ -71,4 +73,13 @@ test('The reload policy is installed in head, before page hydration', () => {
   const layout = readFileSync(new URL('../app/layout.tsx', import.meta.url), 'utf8');
   assert.match(layout, /<head>[\s\S]*<script[^>]*id="noclip-home-reload"/);
   assert.match(layout, /__html:\s*homeReloadScript/);
+});
+
+test('Leaving the document or changing history releases the policy without resetting position', () => {
+  for (const event of ['pagehide', 'popstate', 'hashchange']) {
+    const b = browser(); b.fire('pageshow'); b.window.scrollY = 600;
+    b.fire(event);
+    assert.equal(b.history.scrollRestoration, 'auto'); assert.equal(b.window.scrollY, 600);
+    b.fire('pageshow'); assert.equal(b.window.scrollY, 600);
+  }
 });
