@@ -1,0 +1,60 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { runInNewContext } from "node:vm";
+import { homepageReloadScrollScript } from "./reload-scroll.ts";
+
+function run({ path = "/", type = "reload", hash = "", search = "" } = {}) {
+  const listeners = new Map<string, () => void>();
+  const timers: (() => void)[] = [];
+  const scrolls: { top: number; behavior: string }[] = [];
+  const state = { __NA: true, tree: ["keep-router-state"] };
+  const replacements: unknown[][] = [];
+  const history = { scrollRestoration: "auto", state,
+    replaceState(...args: unknown[]) { replacements.push(args); } };
+  const env = { location: { pathname: path, hash, search }, history,
+    performance: { getEntriesByType: () => type ? [{ type }] : [] },
+    scrollTo: (options: { top: number; behavior: string }) => scrolls.push(options),
+    addEventListener: (name: string, handler: () => void) => listeners.set(name, handler),
+    setTimeout: (handler: () => void) => timers.push(handler) };
+  runInNewContext(homepageReloadScrollScript, { ...env, window: env });
+  return { history, state, replacements, scrolls, listeners, timers };
+}
+
+test("Homepage reload disables restoration before resetting scroll instantly", () => {
+  const result = run();
+  assert.equal(result.history.scrollRestoration, "manual");
+  assert.equal(result.scrolls.length, 1);
+  assert.equal(result.scrolls[0].top, 0);
+  assert.equal(result.scrolls[0].behavior, "instant");
+});
+test("Reload drops only the fragment, preserving query and Next router state", () => {
+  const result = run({ hash: "#features", search: "?source=demo" });
+  assert.equal(result.replacements.length, 1);
+  assert.equal(result.replacements[0][0], result.state);
+  assert.equal(result.replacements[0][2], "/?source=demo");
+});
+test("Restoration resumes after pageshow, without a delayed scroll reset", () => {
+  const result = run();
+  result.listeners.get("pageshow")!();
+  assert.equal(result.history.scrollRestoration, "manual");
+  result.timers.forEach(timer => timer());
+  assert.equal(result.history.scrollRestoration, "auto");
+  assert.equal(result.scrolls.length, 1);
+});
+test("Ordinary navigation, back/forward and absent timing leave anchors alone", () => {
+  for (const type of ["navigate", "back_forward", ""]) {
+    const result = run({ type, hash: "#pricing" });
+    assert.equal(result.history.scrollRestoration, "auto");
+    assert.equal(result.scrolls.length, 0);
+    assert.equal(result.replacements.length, 0);
+    assert.equal(result.listeners.size, 0);
+  }
+});
+test("Reload policy is scoped to the homepage, not the guest route", () => {
+  for (const path of ["/app", "/app/"]) {
+    const result = run({ path, hash: "#chat" });
+    assert.equal(result.history.scrollRestoration, "auto");
+    assert.equal(result.scrolls.length, 0);
+    assert.equal(result.replacements.length, 0);
+  }
+});

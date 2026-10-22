@@ -4,6 +4,7 @@ import "@fontsource-variable/cormorant-garamond";
 import "./globals.css";
 import { GuestJourneyProvider } from "@/components/GuestJourney";
 import { SitePreferences } from "@/components/SitePreferences";
+import { homepageReloadScrollScript } from "@/lib/reload-scroll";
 
 export const metadata: Metadata = {
   title: "NoClip — AI chat and coding agents",
@@ -14,5 +15,5 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#0c0d0f" };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body><SitePreferences><GuestJourneyProvider>{children}</GuestJourneyProvider></SitePreferences></body></html>;
+  return <html lang="en"><head><script id="homepage-reload-scroll" dangerouslySetInnerHTML={{ __html: homepageReloadScrollScript }} /></head><body><SitePreferences><GuestJourneyProvider>{children}</GuestJourneyProvider></SitePreferences></body></html>;
 }
