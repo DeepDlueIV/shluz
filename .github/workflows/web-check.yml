@@ -54,10 +54,12 @@ jobs:
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
           node scripts/video-diagnostics.mjs
-          node scripts/hover-continuity-check.mjs
+          node scripts/reload-scroll-diagnostics.mjs
+          node scripts/reload-scroll-check.mjs
           node scripts/browser-check.mjs
           node scripts/hero-interaction-check.mjs
           node scripts/suggestions-check.mjs
+          node scripts/hover-continuity-check.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
