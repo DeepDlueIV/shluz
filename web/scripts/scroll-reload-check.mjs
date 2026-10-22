@@ -5,6 +5,7 @@ import { chromium } from 'playwright';
 const origin = process.env.WEB_TEST_ORIGIN || 'http://127.0.0.1:3000';
 const browser = await chromium.launch();
 const results = [];
+const traces = [];
 await mkdir('test-results', { recursive: true });
 async function check(name, run) {
   try { await run(); results.push({ name, passed: true }); }
@@ -28,6 +29,19 @@ try {
       viewport: mobile ? { width: 390, height: 844 } : { width: 1440, height: 1000 },
       isMobile: mobile, hasTouch: mobile, reducedMotion: 'no-preference',
     });
+    await context.addInitScript(() => {
+      window.__scrollTrace = [];
+      const record = (event, detail) => window.__scrollTrace.push({ event, detail, t: performance.now(), y: scrollY, hash: location.hash, restoration: history.scrollRestoration, type: performance.getEntriesByType('navigation')[0]?.type });
+      const original = window.scrollTo.bind(window);
+      window.scrollTo = (...args) => { record('scrollTo', args); return original(...args); };
+      for (const event of ['DOMContentLoaded', 'load', 'pageshow', 'scroll', 'wheel', 'pointerdown']) window.addEventListener(event, () => record(event), { passive: true });
+      const descriptor = Object.getOwnPropertyDescriptor(History.prototype, 'scrollRestoration');
+      if (descriptor?.set && descriptor.get) Object.defineProperty(history, 'scrollRestoration', {
+        get() { return descriptor.get.call(history); },
+        set(value) { record('restoration-set', value); descriptor.set.call(history, value); },
+      });
+      record('init');
+    });
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(String(error)));
@@ -38,6 +52,8 @@ try {
         await page.waitForTimeout(180);
         assert.ok(await page.evaluate(() => scrollY > 1000));
         await page.reload({ waitUntil: 'networkidle' });
+        await page.waitForTimeout(350);
+        traces.push({ label, from: top, trace: await page.evaluate(() => window.__scrollTrace) });
         await atHero(page);
       }
       await page.screenshot({ path: `test-results/reload-${label.toLowerCase()}.png` });
@@ -72,6 +88,7 @@ try {
   });
 } finally {
   await browser.close();
+  await writeFile('test-results/scroll-traces.json', JSON.stringify(traces, null, 2));
   await writeFile('test-results/scroll-reload.json', JSON.stringify(results, null, 2));
 }
 for (const result of results) console.log(`${result.passed ? 'PASS' : 'FAIL'} ${result.name}${result.error ? ': ' + result.error : ''}`);
