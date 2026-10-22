@@ -158,12 +158,23 @@ await check('Requested fade and slide remain visible with reduced-motion: text, 
   const samples = await p.evaluate(() => window.motionSamples);
   assert.ok(samples.filter(f => f.opacity > .05 && f.opacity < .95).length > 8, 'Fade is too brief or disabled');
   assert.ok(samples.some(f => f.x < -3), 'Missing left-to-right text slide');
-  await p.locator('[data-more-prompts]').hover(); await p.waitForTimeout(120);
-  const more = await p.locator('[data-additional-prompts]').evaluate(el => ({ opacity: Number(getComputedStyle(el).opacity), y: new DOMMatrix(getComputedStyle(el).transform).m42 }));
+  await p.locator('[data-more-prompts]').hover();
+  // Проверяем реальный промежуточный кадр, а не предполагаем скорость планировщика CI.
+  const moreFrame = await p.waitForFunction(() => {
+    const el = document.querySelector('[data-additional-prompts]'); if (!el) return false;
+    const s = getComputedStyle(el), state = { opacity: Number(s.opacity), y: new DOMMatrix(s.transform).m42 };
+    return state.opacity > 0 && state.opacity < 1 && state.y < 0 ? state : false;
+  }, undefined, { polling: 'raf', timeout: 2000 });
+  const more = await moreFrame.jsonValue();
   assert.ok(more.opacity > 0 && more.opacity < 1 && more.y < 0, JSON.stringify(more));
   await p.waitForTimeout(650);
-  await p.getByRole('button', { name: 'Change language' }).click(); await p.waitForTimeout(120);
-  const menu = await p.locator('[data-language-menu]').evaluate(el => ({ opacity: Number(getComputedStyle(el).opacity), y: new DOMMatrix(getComputedStyle(el).transform).m42 }));
+  await p.getByRole('button', { name: 'Change language' }).click();
+  const menuFrame = await p.waitForFunction(() => {
+    const el = document.querySelector('[data-language-menu]'); if (!el) return false;
+    const s = getComputedStyle(el), state = { opacity: Number(s.opacity), y: new DOMMatrix(s.transform).m42 };
+    return state.opacity > 0 && state.opacity < 1 && state.y < 0 ? state : false;
+  }, undefined, { polling: 'raf', timeout: 2000 });
+  const menu = await menuFrame.jsonValue();
   assert.ok(menu.opacity > 0 && menu.opacity < 1 && menu.y < 0, JSON.stringify(menu));
   await p.waitForTimeout(500); await p.keyboard.press('Escape'); await p.waitForTimeout(120);
   assert.ok(await p.locator('[data-language-menu]').evaluate(el => Number(getComputedStyle(el).opacity) > 0));
