@@ -70,6 +70,9 @@ await check('Mobile tap opens extras, fills prompt, and does not overflow', asyn
   await p.goto(origin, { waitUntil: 'networkidle' });
   await p.locator('[data-more-prompts]').tap(); await p.waitForTimeout(1000);
   assert.equal(await p.locator('[data-additional-prompts] button').count(), 10);
+  const mobileFilters = await p.locator('[data-primary-suggestions] button, [data-additional-prompts] button').evaluateAll(nodes => nodes.map(el => getComputedStyle(el).backdropFilter));
+  assert.equal(mobileFilters.length, 15);
+  assert.ok(mobileFilters.every(value => value === 'blur(32px) saturate(1.2)'));
   assert.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   await p.screenshot({ path: 'test-results/more-mobile.png', fullPage: false });
   assert.equal(await p.locator('a[href="#models"]').first().isVisible(), false);
@@ -87,7 +90,7 @@ await check('Russian translations retain the same suggestion identities', async 
   await page.screenshot({ path: 'test-results/more-ru.png' });
 });
 await check('No runtime errors or unsolicited model requests', () => { assert.deepEqual(errors, []); assert.deepEqual(requests, []); });
-await check('Transparent chips: white semibold text, single-line labels and equal row widths', async () => {
+await check('Glass chips: stronger blur without darker fill, white text and equal row widths', async () => {
   await page.evaluate(() => localStorage.removeItem('noclip.locale'));
   await home();
   const before = await page.locator('[data-primary-suggestions]').boundingBox();
@@ -97,6 +100,9 @@ await check('Transparent chips: white semibold text, single-line labels and equa
   const extra = await page.locator('[data-additional-prompts] > div').boundingBox();
   assert.ok(Math.abs(before.width - after.width) < 1, 'Opening More changes the block width');
   assert.ok(Math.abs(extra.width - after.width) < 1 && Math.abs(extra.x - after.x) < 1);
+  const composerBlur = await page.locator('[data-prompt-mode="hero"]').evaluate(el => getComputedStyle(el).backdropFilter);
+  assert.equal(composerBlur, 'blur(27px) saturate(1.2)');
+  assert.equal(await page.locator('[data-more-prompts]').evaluate(el => getComputedStyle(el).backdropFilter), 'blur(32px) saturate(1.2)');
   const chips = await page.locator('[data-suggestion]').evaluateAll(nodes => nodes.map(el => {
     const s = getComputedStyle(el), label = getComputedStyle(el.querySelector('span'));
     return { color: s.color, weight: s.fontWeight, font: parseFloat(s.fontSize), blur: s.backdropFilter, background: s.backgroundColor, height: el.getBoundingClientRect().height, whiteSpace: label.whiteSpace };
@@ -104,7 +110,7 @@ await check('Transparent chips: white semibold text, single-line labels and equa
   for (const chip of chips) {
     assert.equal(chip.color, 'rgb(255, 255, 255)');
     assert.ok(Number(chip.weight) >= 600 && chip.font >= 13);
-    assert.equal(chip.blur, 'none');
+    assert.equal(chip.blur, 'blur(32px) saturate(1.2)');
     assert.equal(chip.background, 'rgba(26, 27, 29, 0.208)');
     assert.equal(chip.whiteSpace, 'nowrap'); assert.equal(chip.height, chips[0].height);
   }

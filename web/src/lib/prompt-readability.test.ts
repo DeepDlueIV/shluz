@@ -4,14 +4,17 @@ import test from 'node:test';
 import { getPromptSuggestions } from './prompt-suggestions.ts';
 const source = (file: string) => readFileSync(new URL(file, import.meta.url), 'utf8');
 
-test('Suggestion chips keep readable text with the original transparent surface', () => {
+test('Suggestion chips blur slightly more than the composer without darkening the surface', () => {
   const css = source('../components/PromptSuggestions.module.css');
   assert.match(css, /color:\s*#fff(?:;|\s)/);
   assert.match(css, /font-weight:\s*600/);
   assert.match(css, /font-size:\s*13px/);
   assert.match(css, /background:\s*#1a1b1d35/);
   assert.match(css, /background:\s*#ffffff0b/);
-  assert.doesNotMatch(css, /backdrop-filter|box-shadow/);
+  assert.match(css, /-webkit-backdrop-filter:\s*blur\(32px\) saturate\(120%\)/);
+  assert.match(css, /(?:^|[;\s])backdrop-filter:\s*blur\(32px\) saturate\(120%\)/);
+  assert.match(source('../components/HomePage.module.css'), /backdrop-filter:\s*blur\(27px\) saturate\(120%\)/);
+  assert.doesNotMatch(css, /box-shadow/);
 });
 test('Compact suggestion rows keep one-line labels and a shared intrinsic width', () => {
   const css = source('../components/PromptSuggestions.module.css');
