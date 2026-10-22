@@ -83,3 +83,9 @@ test('Leaving the document or changing history releases the policy without reset
     b.fire('pageshow'); assert.equal(b.window.scrollY, 600);
   }
 });
+
+test('The homepage does not anchor the viewport to moving content during font layout', () => {
+  const css = readFileSync(new URL('../components/HomePage.module.css', import.meta.url), 'utf8');
+  const pageRule = css.match(/\.page\s*\{([^}]+)\}/)?.[1] ?? '';
+  assert.match(pageRule, /overflow-anchor:\s*none/);
+});

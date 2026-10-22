@@ -1,4 +1,4 @@
-.page { position: relative; overflow-x: clip; }
+.page { position: relative; overflow-x: clip; overflow-anchor: none; }
 .skipLink { position: fixed; top: 8px; left: 16px; padding: 12px 16px; border-radius: 8px; background: #f4f0e8; color: #161719; z-index: 100; transform: translateY(-160%); }
 .skipLink:focus { transform: translateY(0); }
 .hero { position: relative; min-height: 850px; height: 100svh; max-height: 1180px; isolation: isolate; }
