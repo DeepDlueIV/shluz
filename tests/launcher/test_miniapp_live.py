@@ -219,6 +219,49 @@ def test_error_after_journal_restores_classic_without_changing_volumes(tmp_path,
     assert not any(e[:2] == ("volume", "rm") for e in events)
 
 
+
+def test_healthy_new_bot_survives_failure_to_open_telegram_browser(tmp_path, monkeypatch):
+    m = load()
+    events = []
+    monkeypatch.setattr(
+        m, "docker",
+        lambda *a, **kw: "linux/amd64" if a[:2] == ("info", "--format") else "",
+    )
+    monkeypatch.setattr(m.trial, "root_folder", lambda: tmp_path / "miniapp-trial")
+    monkeypatch.setattr(m.trial, "inspect", lambda *a: None)
+    monkeypatch.setattr(m, "read_state", lambda *a: None)
+    monkeypatch.setattr(m, "gateway_and_old", lambda: (gateway(), old_bot()))
+    monkeypatch.setattr(m, "current_settings", lambda *a: settings())
+    monkeypatch.setattr(
+        m, "prepare_images",
+        lambda *a: (
+            {"commit": m.PREVIEW_COMMIT, "image": "shluz-preview:" + m.PREVIEW_COMMIT},
+            "cloudflare/cloudflared@sha256:" + "a" * 64,
+        ),
+    )
+    monkeypatch.setattr(
+        m, "ensure_preflight",
+        lambda *a: ("ci-bot-token", {"type": "commands"}, "NoClipTestBot"),
+    )
+    monkeypatch.setattr(m, "start_gateway", lambda *a: None)
+    monkeypatch.setattr(m, "backup", lambda *a: None)
+    monkeypatch.setattr(m, "owned", lambda *a: None)
+    monkeypatch.setattr(
+        m, "save_state", lambda _root, data: events.append(data["phase"])
+    )
+    monkeypatch.setattr(
+        m.trial, "wait_tunnel", lambda *a: "https://test.trycloudflare.com"
+    )
+    monkeypatch.setattr(m, "secure_env", lambda *a: tmp_path / "env")
+    monkeypatch.setattr(m, "safe_candidate_args", lambda *a: ("create", "candidate"))
+    monkeypatch.setattr(m.trial, "wait_ready", lambda *a: None)
+    monkeypatch.setattr(m, "restore_classic", lambda *a: pytest.fail("unexpected rollback"))
+    monkeypatch.setattr(
+        m.webbrowser, "open", lambda *a: (_ for _ in ()).throw(OSError("no browser"))
+    )
+    m.start(tmp_path)
+    assert events == ["preparing", "active"]
+
 def test_pinned_preview_and_trial_revisions_are_different_but_explicit():
     m = load()
     assert m.PREVIEW_COMMIT == "c47ff5b8acc4a7b24b8f34b19e3a9d024aba0fea"
