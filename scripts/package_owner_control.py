@@ -11,8 +11,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = ROOT / "launcher"
-PINNED_MINIAPP_COMMIT = "fbaeb43b58c393d48d6000393f388e26991ecf34"
-INCLUDED = ("NoClip.cmd", "owner_control.py", "updater.py", "miniapp_trial.py", "PORTABLE.md")
+PINNED_MINIAPP_COMMIT = "ceac07cc88401dd99315a368a52d1c24f4f5d697"
+INCLUDED = (
+    "NoClip.cmd", "Stop-NoClip.cmd", "Status-NoClip.cmd", "Backup-NoClip.cmd",
+    "miniapp_live.py", "updater.py", "miniapp_trial.py", "PORTABLE.md",
+)
 
 
 def sha256(data):
