@@ -12,6 +12,10 @@ class ProviderAuthenticationError(ProviderError):
     """Provider credentials are missing, expired, or invalid."""
 
 
+class ProviderAccessDeniedError(ProviderError):
+    """Provider forbids the requested model, key scope or request context."""
+
+
 class ProviderInsufficientBalanceError(ProviderError):
     """Provider account does not have enough balance for the request."""
 

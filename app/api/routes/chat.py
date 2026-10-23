@@ -25,6 +25,7 @@ from app.providers.base import (
     ChatRequest,
     ModelNotFoundError,
     ProviderAuthenticationError,
+    ProviderAccessDeniedError,
     ProviderError,
     ProviderInsufficientBalanceError,
     ProviderRateLimitError,
@@ -214,10 +215,28 @@ async def chat_completions(
             await session.close()
         return _error_response(
             status_code=502,
-            message="The model provider credentials are invalid",
+            message="The model provider rejected authentication for this request",
             error_type="provider_authentication_error",
             param=None,
             code="provider_authentication_error",
+        )
+    except ProviderAccessDeniedError:
+        await run_in_threadpool(
+            usage_service.record_failure,
+            reservation,
+            error_code="provider_access_denied",
+            timing=observation.timing(),
+        )
+        observation.finish("provider_access_denied")
+        if session:
+            session.settled = True
+            await session.close()
+        return _error_response(
+            status_code=502,
+            message="The selected model is not permitted by the provider",
+            error_type="provider_access_denied",
+            param="model",
+            code="provider_access_denied",
         )
     except ProviderInsufficientBalanceError:
         await run_in_threadpool(

@@ -9,6 +9,7 @@ from app.providers.base import (
     ChatResult,
     ModelInfo,
     ProviderAuthenticationError,
+    ProviderAccessDeniedError,
     ProviderError,
     ProviderInsufficientBalanceError,
     ProviderRateLimitError,
@@ -56,7 +57,13 @@ class ErrorProvider:
             ProviderAuthenticationError("secret upstream detail"),
             502,
             "provider_authentication_error",
-            "The model provider credentials are invalid",
+            "The model provider rejected authentication for this request",
+        ),
+        (
+            ProviderAccessDeniedError("secret upstream detail"),
+            502,
+            "provider_access_denied",
+            "The selected model is not permitted by the provider",
         ),
         (
             ProviderInsufficientBalanceError("secret upstream detail"),
