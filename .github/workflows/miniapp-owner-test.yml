@@ -4,15 +4,109 @@ on:
     branches: [feat/telegram-miniapp-owner-test]
 permissions:
   contents: read
+concurrency:
+  group: miniapp-owner-test
+  cancel-in-progress: false
 jobs:
-  source:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  windows:
+    name: Owner launcher on Windows
+    runs-on: windows-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: git archive --format=zip --prefix=shluz/ HEAD -o miniapp-owner-source.zip
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest pyyaml
+      - run: python -m pytest tests/launcher -q --noconftest
+  verify-build:
+    name: Verify and build isolated candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Save exact source for review
+        run: git archive --format=zip --prefix=shluz/ HEAD -o miniapp-owner-source.zip
       - uses: actions/upload-artifact@v4
         with:
           name: miniapp-owner-source
           path: miniapp-owner-source.zip
           retention-days: 7
+      - name: Full server and safety tests
+        shell: bash
+        run: |
+          python -m pip install -e '.[dev,ui]'
+          ruff check .
+          pytest -q | tee /tmp/miniapp-tests.log
+      - name: Actual browser and HTTP integration
+        shell: bash
+        run: |
+          python -m playwright install --with-deps chromium
+          python scripts/verify_telegram_miniapp.py | tee /tmp/miniapp-browser.log
+      - name: Build candidate without live secrets
+        run: docker build --platform linux/amd64 --build-arg SHLUZ_BUILD_SHA="$GITHUB_SHA" -t "shluz-preview:$GITHUB_SHA" .
+      - name: Verify private snapshot and HTTP boundary in Docker
+        shell: bash
+        run: python scripts/miniapp_trial_docker_smoke.py "shluz-preview:$GITHUB_SHA" | tee /tmp/miniapp-docker.log
+      - name: Pin tunnel helper and package
+        shell: bash
+        run: |
+          docker pull --platform linux/amd64 cloudflare/cloudflared:2026.10.3
+          python scripts/package_miniapp_trial.py "$GITHUB_SHA"
+          python - <<'PY'
+          import json, sys, zipfile
+          from pathlib import Path
+          sys.path.insert(0, 'launcher')
+          import miniapp_trial as trial
+          manifest = trial.validate_manifest(json.loads(Path('dist/miniapp-test/manifest.json').read_text()))
+          assert trial.updater.archive_config_digest(Path('dist/miniapp-test/image.tar.gz'), manifest['image']) == manifest['image_config_digest']
+          with zipfile.ZipFile('dist/miniapp-test/NoClip-MiniApp-Test.zip') as z:
+              assert z.testzip() is None
+              assert json.loads(z.read('NoClip-MiniApp-Test/trial-manifest.json')) == manifest
+              assert 'NoClip-MiniApp-Test/Start-MiniApp.cmd' in z.namelist()
+              assert not any(n.endswith('.env') for n in z.namelist())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: miniapp-release-package
+          path: dist/miniapp-test/
+          compression-level: 0
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: miniapp-owner-launcher-and-checks
+          path: |
+            dist/miniapp-test/NoClip-MiniApp-Test.zip
+            dist/miniapp-test/manifest.json
+            dist/miniapp-test/SHA256SUMS
+            artifacts/miniapp/
+            /tmp/miniapp-tests.log
+            /tmp/miniapp-browser.log
+            /tmp/miniapp-docker.log
+          retention-days: 7
+  publish:
+    name: Publish separate trial release only
+    needs: [windows, verify-build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: miniapp-release-package
+          path: dist
+      - name: Publish immutable-address trial without touching preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TAG="miniapp-test-$GITHUB_SHA"
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false --title "NoClip Mini App — private owner trial ${GITHUB_SHA:0:8}" --notes "Isolated owner-only local trial. Use Start-MiniApp.cmd and Stop-MiniApp.cmd. Separate history copy; existing gateway and normal preview unchanged. HTTPS tunnel exposes the panel only; Telegram signature and owner ID are required for data access. Manual prompts still use the existing account quota/balance. No live Telegram, Venice or owner data were used in CI. Tests: Windows launcher, full server suite, Chromium/HTTP, Docker snapshot and HTTP boundaries. Not a production rollout."
