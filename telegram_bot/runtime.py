@@ -161,7 +161,11 @@ async def run(settings: BotSettings, *, bot: Bot | None = None) -> None:
                 )
                 upkeep = asyncio.create_task(maintenance(store, settings))
                 dispatcher = create_dispatcher(controller)
-                await dispatcher.start_polling(
+                from telegram_bot.miniapp.runtime import poll_with_panel
+
+                await poll_with_panel(
+                    controller,
+                    dispatcher,
                     resolved_bot,
                     allowed_updates=["message", "callback_query"],
                     handle_as_tasks=True,

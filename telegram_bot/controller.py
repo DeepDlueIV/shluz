@@ -148,7 +148,12 @@ class Controller:
         sleep=asyncio.sleep,
     ) -> None:
         self.settings, self.access, self.store, self.gateway = settings, access, store, gateway
-        self.delivery = Delivery(max_parts=settings.max_text_parts, sleep=sleep, store=store)
+        self.delivery = Delivery(
+            max_parts=settings.max_text_parts,
+            sleep=sleep,
+            store=store,
+            clean_chat=settings.interface == "miniapp",
+        )
         self.jobs: dict[int, asyncio.Task] = {}
         self.job_ids: dict[int, str] = {}
         self.last_request: dict[int, float] = {}
@@ -199,6 +204,17 @@ class Controller:
                 "Файлы, фото и голосовые модели не отправляются.",
                 ui.back(),
             )
+            return
+        if text.startswith("/") and self.settings.interface == "miniapp":
+            await self.linked_profile(message, gateway_token.get_secret_value())
+            if text.split()[0].split("@")[0].lower() == "/cancel":
+                job = self.jobs.get(user_id)
+                if job:
+                    job.cancel()
+            # Команды остаются точкой входа, а не отдельными меню в истории.
+            from telegram_bot.miniapp.runtime import open_menu
+
+            await open_menu(message, self)
             return
         if text.startswith("/"):
             self.rename_targets.pop(user_id, None)
@@ -256,6 +272,18 @@ class Controller:
     async def on_callback(
         self, callback: CallbackQuery, gateway_token: SecretStr, telegram_update_id: int
     ) -> None:
+        if self.settings.interface == "miniapp":
+            # Старые клавиатуры не меняют состояние нового интерфейса.
+            if (callback.data or "").startswith("cancel:"):
+                target = (callback.data or "").partition(":")[2]
+                if target == self.job_ids.get(callback.from_user.id):
+                    job = self.jobs.get(callback.from_user.id)
+                    if job:
+                        job.cancel()
+            await callback.answer("Управление — в кнопке «Меню» возле поля ввода.")
+            with suppress(TelegramAPIError):
+                await callback.message.edit_reply_markup(reply_markup=None)
+            return
         action, _, value = (callback.data or "").partition(":")
         self.rename_targets.pop(callback.from_user.id, None)
         if action not in {"retry_yes", "forget_yes", "clear_yes", "delete_yes"}:
@@ -635,7 +663,7 @@ class Controller:
             await self.delivery.answer(
                 message, waiting, answer, turn_id=turn_id, draft=preview.draft_used
             )
-            if remote["plan"].get("kind") == "demo":
+            if remote["plan"].get("kind") == "demo" and self.settings.interface == "classic":
                 updated = await self.gateway.profile(token)
                 left = updated["allowance"]["requests"]["remaining"]
                 await self.delivery.say(
@@ -643,7 +671,7 @@ class Controller:
                     f"🎁 Демо: осталось {left} запросов.",
                     ui.keyboard([[("💳 Тарифы и оплата", "tariffs")]]) if left == 0 else None,
                 )
-            if trimmed:
+            if trimmed and self.settings.interface == "classic":
                 await self.delivery.say(
                     message,
                     "ℹ️ В запрос вошла только последняя часть длинной истории. "
@@ -669,7 +697,11 @@ class Controller:
                 with suppress(TelegramAPIError):
                     if waiting:
                         await self.delivery.finish(
-                            message, waiting, text, ui.answer_controls(), plain_text=text,
+                            message,
+                            waiting,
+                            text,
+                            ui.answer_controls(),
+                            plain_text=text,
                             draft=bool(preview and preview.draft_used),
                         )
                     else:
@@ -687,14 +719,19 @@ class Controller:
                 self.store.fail_turn(turn_id, "unknown" if uncertain else "failed")
             logger.warning(
                 "Сбой запроса модели: code=%s status=%s reference=%s",
-                exc.code, exc.status, exc.reference or "unknown",
+                exc.code,
+                exc.status,
+                exc.reference or "unknown",
             )
             text = exc.user_message()
             if preview:
                 text = preview.interrupted(text)
             if waiting:
                 await self.delivery.finish(
-                    message, waiting, text, ui.answer_controls(),
+                    message,
+                    waiting,
+                    text,
+                    ui.answer_controls(),
                     draft=bool(preview and preview.draft_used),
                 )
             else:
