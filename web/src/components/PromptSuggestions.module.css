@@ -11,12 +11,18 @@
 .more svg { transition: transform 500ms cubic-bezier(.4,0,.2,1); transition-duration: 500ms !important; }
 .more[aria-expanded="true"] svg { transform: rotate(180deg); }
 /* Раскрытие не участвует в расчёте ширины: все строки совпадают с компактной первой. */
-.disclosure { overflow: hidden; contain: inline-size; }
+/* Fade родителя обрезает backdrop у детей и даёт вспышку при opacity=1.
+   Анимируем прозрачность самих стеклянных кнопок, а контейнер — только по высоте. */
+.disclosure { display: grid; grid-template-rows: 0fr; overflow: hidden; contain: inline-size; visibility: hidden; transition: grid-template-rows 500ms cubic-bezier(.4,0,.2,1),visibility 0s 500ms; transition-duration: 500ms,0s !important; }
+.disclosure[data-open="true"] { grid-template-rows: 1fr; visibility: visible; transition-delay: 0s,0s; }
+.additionalViewport { min-height: 0; overflow: hidden; }
+.disclosure .additional button { opacity: 0; transform: translateY(-18px); transition: opacity 500ms cubic-bezier(.4,0,.2,1),transform 500ms cubic-bezier(.4,0,.2,1),background 220ms,color 220ms,border-color 220ms; transition-duration: 500ms,500ms,220ms,220ms,220ms !important; }
+.disclosure[data-open="true"] .additional button { opacity: 1; transform: translateY(0); }
 @media(max-width:900px) { .region button { padding-inline: 8px; } }
 @media(max-width:700px) {
   .region { width: 100%; }
   .primary,.additional { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
   .region button { height: 44px; font-size: 12px; padding-inline: 9px; }
   .primary .more { grid-column: 1 / -1; justify-self: center; min-width: 94px; }
-  .disclosure { max-height: min(280px,30svh); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  .additionalViewport { max-height: min(280px,30svh); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 }
