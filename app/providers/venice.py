@@ -10,8 +10,8 @@ from app.providers.base import (
     ChatRequest,
     ChatResult,
     ModelInfo,
-    ProviderAuthenticationError,
     ProviderAccessDeniedError,
+    ProviderAuthenticationError,
     ProviderError,
     ProviderInsufficientBalanceError,
     ProviderRateLimitError,
@@ -264,7 +264,9 @@ class VeniceProvider:
             )
         except ProviderAuthenticationError:
             # Inference Only keys cannot access /billing, yet may generate normally.
-            warnings.append("Баланс через Inference Only ключ не показывается; права генерации проверяются отдельно")
+            warnings.append(
+                "Баланс через Inference Only ключ не показывается; права генерации проверяются отдельно"
+            )
         except ProviderError:
             warnings.append("Баланс Venice временно недоступен")
 
@@ -307,7 +309,9 @@ class VeniceProvider:
             )
             analytics = self._parse_analytics(payload, lookback)
         except ProviderAuthenticationError:
-            warnings.append("Аналитика доступна только с ключом Admin; Inference Only ключ может работать")
+            warnings.append(
+                "Аналитика доступна только с ключом Admin; Inference Only ключ может работать"
+            )
         except ProviderError:
             warnings.append("Аналитика Venice временно недоступна")
 
