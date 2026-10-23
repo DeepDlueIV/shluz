@@ -88,3 +88,34 @@ jobs:
             dist/NoClip-SHLUZ-Portable.sha256
           retention-days: 30
           if-no-files-found: error
+
+  publish:
+    name: Separate portable pre-release (no preview deployment)
+    needs: [package]
+    if: >-
+      github.event_name == 'push' &&
+      github.repository == 'DeepDlueIV/shluz' &&
+      github.ref == 'refs/heads/feat/unified-portable-control-20261024'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: NoClip-SHLUZ-Portable-Windows
+          path: dist
+      - name: Verify ZIP before release
+        run: cd dist && sha256sum -c NoClip-SHLUZ-Portable.sha256
+      - name: Publish immutable owner candidate only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="noclip-portable-${GITHUB_SHA}"
+          gh release create "$TAG" \
+            dist/NoClip-SHLUZ-Portable.zip \
+            dist/NoClip-SHLUZ-Portable.sha256 \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --prerelease --latest=false \
+            --title "NoClip unified portable — ${GITHUB_SHA:0:10}" \
+            --notes "Owner-only local candidate. One-click NoClip.cmd starts Gateway and Telegram Mini App mode with the existing bot token and history volume. Classic bot remains stopped for rollback. No Docker volumes are deleted. Release contains no user data or secrets. Windows, Linux and isolated Docker tests passed. Live HTTPS/Telegram and owner Windows machine still require acceptance. Not production, not ordinary preview or main."
