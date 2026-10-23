@@ -412,19 +412,23 @@ def start(root):
         if not owner_file.is_file():
             owner_file = legacy_trial_root / "owner.json"
         if owner_file.is_file():
-            owner_id = json.loads(owner_file.read_text(encoding="utf-8")).get("telegram_id")
-            if type(owner_id) is int and 0 < owner_id < 2**52:
-                trial.telegram(
-                    token, "setChatMenuButton",
-                    chat_id=owner_id, menu_button={"type": "default"},
+            with suppress(OSError, ValueError, TypeError, trial.TrialError):
+                owner_id = json.loads(owner_file.read_text(encoding="utf-8")).get(
+                    "telegram_id"
                 )
+                if type(owner_id) is int and 0 < owner_id < 2**52:
+                    trial.telegram(
+                        token, "setChatMenuButton",
+                        chat_id=owner_id, menu_button={"type": "default"},
+                    )
         initial["phase"] = "active"
         initial["origin"] = url  # HTTPS адрес не секрет; необходим для диагностики.
         save_state(root, initial)
         print("Готово: Gateway + новый Telegram с Mini App.")
         print("Откройте Telegram и кнопку «Меню». Старый бот сохранён для отката.")
         if re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
-            webbrowser.open("https://t.me/" + username)
+            with suppress(Exception):
+                webbrowser.open("https://t.me/" + username)
     except Exception:
         with suppress(Exception):
             # Не скрывать исходную ошибку; state сохраняется при ошибке отката.
