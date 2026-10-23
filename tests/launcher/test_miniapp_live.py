@@ -193,7 +193,9 @@ def test_error_after_journal_restores_classic_without_changing_volumes(tmp_path,
         {"commit": m.PREVIEW_COMMIT, "image": "shluz-preview:" + m.PREVIEW_COMMIT},
         "cloudflare/cloudflared@sha256:" + "a" * 64,
     ))
-    monkeypatch.setattr(m, "ensure_preflight", lambda *a: ("ci-bot-token", {"type": "commands"}, ""))
+    monkeypatch.setattr(
+        m, "ensure_preflight", lambda *a: ("ci-bot-token", {"type": "commands"}, "")
+    )
     monkeypatch.setattr(m, "start_gateway", lambda *a: events.append(("gateway-ready",)))
     monkeypatch.setattr(m, "backup", lambda *a: events.append(("backup-done",)))
     monkeypatch.setattr(m, "owned", lambda *a: None)
