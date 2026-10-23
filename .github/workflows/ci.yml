@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, implementation/telegram-beta-complete]
+    branches: [main, implementation/telegram-beta-complete, feat/opencode-tool-calling]
   pull_request:
-    branches: [main]
+    branches: [main, implementation/telegram-beta-complete]
 
 permissions:
   contents: read
@@ -234,7 +234,7 @@ jobs:
 
   preview:
     name: Checked preview and safe upgrade
-    needs: [test, admin-ui, postgres, launcher-windows, launcher-image-stores]
+    needs: [test, admin-ui, postgres, launcher-windows, launcher-image-stores, agent-sdk]
     if: >-
       github.event_name == 'push' && github.repository == 'DeepDlueIV/shluz' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/implementation/telegram-beta-complete')
@@ -262,3 +262,39 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python scripts/publish_preview.py
+
+  agent-sdk:
+    name: Pinned OpenCode Chat Completions adapter
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install test dependencies
+        run: |
+          python -m pip install -e ".[dev]"
+          mkdir -p "$RUNNER_TEMP/noclip-sdk"
+          cp tests/agent/sdk-smoke.mjs "$RUNNER_TEMP/noclip-sdk/"
+          npm install --prefix "$RUNNER_TEMP/noclip-sdk" --ignore-scripts --no-audit --no-fund @ai-sdk/openai-compatible@2.0.41
+      - name: Exercise pinned SDK against mock-only gateway
+        env:
+          SDK_TEST_TOKEN: shluz_synthetic_ci_agent_only_not_a_secret
+          SHLUZ_VENICE_API_KEY: ""
+          VENICE_API_KEY: ""
+        run: |
+          export SDK_TEST_DATABASE="sqlite+pysqlite:///$RUNNER_TEMP/agent-sdk.sqlite"
+          python -m uvicorn tests.agent.sdk_server:app --host 127.0.0.1 --port 18979 > "$RUNNER_TEMP/agent-sdk.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 50); do
+            if curl -fsS http://127.0.0.1:18979/health >/dev/null; then break; fi
+            if [ "$attempt" -eq 50 ]; then cat "$RUNNER_TEMP/agent-sdk.log"; exit 1; fi
+            sleep 0.2
+          done
+          node "$RUNNER_TEMP/noclip-sdk/sdk-smoke.mjs"

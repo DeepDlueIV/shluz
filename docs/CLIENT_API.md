@@ -9,6 +9,7 @@
 
 | Документ | Назначение и статус |
 |---|---|
+| [desktop-agent-api.md](desktop-agent-api.md) | `desktop-tools-v1`: Bearer harness, function tools в JSON/SSE, OpenWork/OpenCode; требуется отдельная живая приёмка |
 | [telegram-web-login.md](telegram-web-login.md) | Официальный Telegram Login через JS library и серверный RS256/nonce; требует Client ID и Allowed URLs |
 | [web-access-and-abuse.md](web-access-and-abuse.md) | Реализованные cookie-сессии, гостевой демо-чат, OTP, CORS/CSRF, Turnstile и ограничения |
 | [client-api-demo.md](client-api-demo.md) | Существующий Bearer API профиля, моделей, тарифов и расхода; используется desktop/ботом, не публичным гостем |

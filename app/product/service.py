@@ -19,6 +19,11 @@ class PolicyError(RuntimeError):
     message = "This model is not allowed for this account and channel"
 
 
+class DemoToolsNotAllowed(PolicyError):
+    code = "demo_tools_not_allowed"
+    message = "Tools require a non-demo plan"
+
+
 class DemoExhausted(PolicyError):
     code = "demo_exhausted"
     status = 429
