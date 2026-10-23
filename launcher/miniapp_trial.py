@@ -279,20 +279,69 @@ def wait_tunnel(name):
     raise TrialError("Не удалось открыть временный HTTPS. Старый бот будет восстановлен.")
 
 
-def wait_ready(name, public_url):
-    for _ in range(90):
+def probe_local_panel(name):
+    """Проверить localhost HTTP внутри кандидата; наружу не публиковать порт."""
+    script = (
+        "import json,urllib.request; "
+        "r=urllib.request.urlopen('http://127.0.0.1:8081/miniapp/health',timeout=3); "
+        "assert json.load(r)=={'status':'ok'}; print('ready')"
+    )
+    return docker("exec", name, "python", "-c", script, optional=True, timeout=12).strip() == "ready"
+
+
+def probe_windows_https(url):
+    """Проверка с хоста может не пройти из-за отдельного VPN/proxy Windows."""
+    try:
+        with urllib.request.urlopen(url + "/miniapp/health", timeout=5) as response:
+            return json.load(response) == {"status": "ok"}
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def probe_container_https(name, url):
+    """Независимый TLS/Cloudflare probe из контейнера, без вывода URL или ошибок."""
+    # URL уже проверен trial_environment: host trycloudflare.com без query/fragment.
+    script = (
+        "import json,urllib.request; "
+        f"r=urllib.request.urlopen({(url + '/miniapp/health')!r},timeout=5); "
+        "assert json.load(r)=={'status':'ok'}; print('ready')"
+    )
+    return docker("exec", name, "python", "-c", script, optional=True, timeout=12).strip() == "ready"
+
+
+def wait_ready(name, public_url, *, attempts=90):
+    """Нужны: живой polling, локальная панель и доказанный публичный HTTPS.
+
+    Внешняя проверка может быть выполнена внутри контейнера, если Windows/VPN
+    блокирует trycloudflare.com локально. При сбое возвращаем категорию причины.
+    """
+    seen_healthy = False
+    seen_local_panel = False
+    for _ in range(attempts):
         item = inspect(name)
         if not item or not item["State"]["Running"]:
-            raise TrialError("Тестовый бот не запустился. Старый бот будет восстановлен.")
+            raise TrialError("Тестовый бот остановился. Старый бот будет восстановлен.")
         if item["State"].get("Health", {}).get("Status") == "healthy":
-            try:
-                with urllib.request.urlopen(public_url + "/miniapp/health", timeout=5) as r:
-                    if json.load(r) == {"status": "ok"}:
-                        return
-            except (OSError, ValueError):
-                pass
+            seen_healthy = True
+            if probe_local_panel(name):
+                seen_local_panel = True
+                if probe_windows_https(public_url) or probe_container_https(name, public_url):
+                    return
         time.sleep(1)
-    raise TrialError("Панель не прошла проверку HTTPS. Старый бот будет восстановлен.")
+    if not seen_healthy:
+        raise TrialError(
+            "Не запустился Telegram-бот в тестовом контейнере (проверка heartbeat). "
+            "Это не ошибка HTTPS. Старый бот будет восстановлен."
+        )
+    if not seen_local_panel:
+        raise TrialError(
+            "Бот запущен, но его локальная HTTP-панель не ответила. "
+            "Старый бот будет восстановлен."
+        )
+    raise TrialError(
+        "Бот и HTTP-панель работают, но HTTPS-туннель Cloudflare недоступен "
+        "и из Windows, и из тестового контейнера. Старый бот будет восстановлен."
+    )
 
 
 def run_trial(root):
