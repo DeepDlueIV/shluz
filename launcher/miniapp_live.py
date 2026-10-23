@@ -167,7 +167,13 @@ def secure_env(root, values):
     target.parent.mkdir(parents=True, exist_ok=True)
     if any(not k.startswith("TELEGRAM_") for k in values):
         raise LiveError("Недопустимый ключ среды Telegram.")
-    updater.write_env(target, values)
+    # docker --env-file НЕ снимает кавычки dotenv: пишем строго KEY=VALUE.
+    content = "\n".join(k + "=" + v for k, v in values.items()) + "\n"
+    temporary = target.with_name(".live.env.tmp")
+    temporary.write_text(content, encoding="utf-8")
+    temporary.chmod(0o600)
+    temporary.replace(target)
+    target.chmod(0o600)
     if os.name == "nt":
         # Windows chmod сам по себе не изменяет inherited ACL на D:.
         user = subprocess.run(
