@@ -1,20 +1,38 @@
 name: Web checks
 
 on:
+  # В рабочей ветке нет второго запуска push рядом с pull_request.
   push:
+    branches: [main]
     paths:
       - 'web/**'
       - '.github/workflows/web-check.yml'
+      - '.github/scripts/**'
   pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - 'web/**'
       - '.github/workflows/web-check.yml'
+      - '.github/scripts/**'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'quick: tests + types; full: build + all browser scenarios'
+        type: choice
+        options: [quick, full]
+        default: full
+        required: true
+      export_source:
+        description: 'Export source archive only when needed for diagnosis'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: web-${{ github.ref }}
+  group: web-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -24,45 +42,75 @@ jobs:
     defaults:
       run:
         working-directory: web
+    env:
+      # Draft — быстрая обратная связь; Ready — полная проверка каждой новой версии.
+      FULL_CHECK: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && inputs.mode == 'full') }}
+      NEXT_PUBLIC_GATEWAY_ENABLED: 'false'
+      NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v4
-      - name: Archive source for review
-        run: tar -czf ../web-source.tar.gz .
-      - uses: actions/upload-artifact@v4
         with:
-          name: web-source
-          path: web-source.tar.gz
-          retention-days: 3
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - name: Validate CI routing
+        run: python3 -m unittest discover -s ../.github/scripts -p 'test_*.py'
       - run: npm ci
       - run: npm test
       - run: npm run typecheck
-      - run: npm run build
-        env:
-          NEXT_PUBLIC_GATEWAY_ENABLED: 'false'
-          NEXT_TELEMETRY_DISABLED: '1'
-      - name: Browser regression checks
+      - name: Production build
+        if: env.FULL_CHECK == 'true'
+        run: npm run build
+      - name: Prepare browser environment
+        if: env.FULL_CHECK == 'true'
         run: |
           npm install --prefix "$RUNNER_TEMP/noclip-browser" --no-save --package-lock=false playwright@1.56.1
           ln -s "$RUNNER_TEMP/noclip-browser/node_modules/playwright" node_modules/playwright
           "$RUNNER_TEMP/noclip-browser/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Browser regression checks
+        if: env.FULL_CHECK == 'true'
+        run: |
           npm run start > /tmp/noclip-web.log 2>&1 &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3000/ > /dev/null; then break; fi
+            if [ "$attempt" -eq 60 ]; then cat /tmp/noclip-web.log; exit 1; fi
+            sleep 0.5
+          done
           node scripts/video-diagnostics.mjs
           node scripts/scroll-reload-check.mjs
           node scripts/hover-continuity-check.mjs
           node scripts/browser-check.mjs
           node scripts/hero-interaction-check.mjs
           node scripts/suggestions-check.mjs
-      - uses: actions/upload-artifact@v4
-        if: always()
+      - name: Save browser review
+        uses: actions/upload-artifact@v4
+        if: always() && env.FULL_CHECK == 'true'
         with:
           name: web-browser-review
           path: web/test-results
           if-no-files-found: ignore
           retention-days: 7
+      - name: Archive source on explicit request
+        if: github.event_name == 'workflow_dispatch' && inputs.export_source
+        run: tar --exclude='./node_modules' --exclude='./.next' --exclude='./test-results' --exclude='./.env*' -czf ../web-source.tar.gz .
+      - name: Save requested source archive
+        uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' && inputs.export_source
+        with:
+          name: web-source
+          path: web-source.tar.gz
+          retention-days: 3
+      - name: Record verification mode
+        if: always()
+        run: |
+          if [ "$FULL_CHECK" = 'true' ]; then
+            echo '### Full: tests, types, production build and all browser scenarios' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '### Quick: tests and types; browser/build verification NOT performed' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Before merging, mark the PR Ready and wait for a successful full run on its current revision.' >> "$GITHUB_STEP_SUMMARY"
+          fi

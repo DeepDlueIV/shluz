@@ -9,3 +9,10 @@
 - Use the existing Git integration; do not trigger duplicate deploys for the same commit. Confirm the SHA and READY status before saying a version is live.
 - Keep Hobby, deployment protection and `NEXT_PUBLIC_GATEWAY_ENABLED=false` unchanged. No provider secrets belong in this client.
 - Preserve failed deployment history for diagnosis. Do not delete unrelated deployments, alter other projects, or turn on paid features.
+
+## Efficient verification
+
+- Follow `docs/ci-workflow.md`: use Draft PRs while iterating and targeted local tests for the changed behavior. Draft CI runs units/types only, not the whole browser suite.
+- Mark the finished PR Ready once to run the complete build and browser suite. Merge only after that full run succeeds for the current revision. If debugging resumes, return the PR to Draft; never treat a quick green check as full verification.
+- Working branch pushes do not need a second CI run alongside the PR. After merge, main runs quick checks; do not manually duplicate a completed full run or Vercel deployment.
+- Request source artifacts only when actually needed. Read the existing results/logs once; avoid repeated downloads and tight status polling. Keep the owner informed at milestones.
