@@ -43,7 +43,7 @@ jobs:
       - name: Portable and original launcher regressions
         run: python -m pytest tests/launcher -q --noconftest
       - name: Telegram panel authorization regressions
-        run: python -m pytest tests/telegram/test_miniapp.py -q --noconftest
+        run: python -m pytest tests/telegram/test_miniapp.py -q
 
   package:
     name: Verified ZIP for Windows, no secrets
