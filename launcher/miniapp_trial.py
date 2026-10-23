@@ -7,7 +7,6 @@ Cloudflare получает только узкий HTTP listener панели, 
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 import sys
@@ -242,8 +241,7 @@ for path in [target, *target.rglob('*')]:
 
 
 def root_folder():
-    home = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / ".local" / "share")))
-    root = home / "Shluz" / ROOT_NAME
+    root = updater.home_root() / ROOT_NAME
     root.mkdir(parents=True, exist_ok=True)
     return root
 
