@@ -265,7 +265,7 @@ class VeniceProvider:
         except ProviderAuthenticationError:
             # Inference Only keys cannot access /billing, yet may generate normally.
             warnings.append(
-                "Баланс через Inference Only ключ не показывается; права генерации проверяются отдельно"
+                "Баланс недоступен с Inference Only ключом; права проверяются отдельно"
             )
         except ProviderError:
             warnings.append("Баланс Venice временно недоступен")
