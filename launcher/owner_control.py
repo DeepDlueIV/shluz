@@ -367,7 +367,7 @@ def start_miniapp(root):
     if trial_occupied(root):
         raise ControlError("Mini App уже активна. Используйте статус или Stop.")
     if not (root / "trial-manifest.json").is_file():
-        raise ControlError("Нет подписанного по контрольным суммам пакета Mini App.")
+        raise ControlError("Нет manifest проверенного пакета Mini App.")
     current = containers()
     if not running(current["shluz"]) or not running(current["telegram_bot"]):
         raise ControlError("Сначала запустите шлюз и обычного Telegram-бота.")
@@ -389,21 +389,22 @@ def start_miniapp(root):
 
 
 def update_services(root):
-    require_docker()
-    if trial_occupied(root):
-        raise ControlError("Сначала безопасно остановите Mini App.")
-    current = containers()
-    if current["shluz"]:
-        # updater.main может пересоздать контейнер при смене bind-mount; делаем
-        # независимый backup ДО запуска updater, включая обновление той же версии.
-        backup_services(root)
-    elif any((root / name).exists() for name in (
-        "installed.json", "runtime.json", "config/.env.owner"
-    )):
-        raise ControlError(
-            "Найдены данные без контейнера шлюза. "
-            "Автоматическую установку поверх неизвестной базы запрещаю."
-        )
+    # Держим lock на предохранительных проверках и предварительном backup;
+    # updater.main затем самостоятельно блокирует собственную миграцию.
+    with updater.update_lock(root):
+        require_docker()
+        if trial_occupied(root):
+            raise ControlError("Сначала безопасно остановите Mini App.")
+        current = containers()
+        if current["shluz"]:
+            backup_services(root)
+        elif any((root / name).exists() for name in (
+            "installed.json", "runtime.json", "config/.env.owner"
+        )):
+            raise ControlError(
+                "Найдены данные без контейнера шлюза. "
+                "Автоматическую установку поверх неизвестной базы запрещаю."
+            )
     result = updater.main()
     if result:
         raise ControlError("Обновление не завершилось. Старые volumes сохранены.")
@@ -431,7 +432,8 @@ def status(root):
             else:
                 label = "запущен / " + str(item["State"].get("Health", {}).get("Status", "без health"))
             print(service + ":", label)
-        print("Mini App:", "работает / требуется Stop" if trial_occupied(root) else "не активна")
+        present = trial_occupied(root) or trial_state(legacy_home()).exists()
+        print("Mini App:", "работает / требуется Stop" if present else "не активна")
     except (ControlError, updater.UpdateError):
         print("Docker: недоступен или конфигурация требует проверки")
         print("Mini App:", "есть файл восстановления" if trial_state(root).exists()
@@ -457,18 +459,29 @@ def action(command, root):
     if command == "status":
         status(root)
         return
-    if command == "migrate":
-        count = migrate_legacy(root)
-        print("Проверка переноса завершена. Новых файлов:", count)
+    if command == "miniapp-stop":
+        # Работает также для ещё не перенесённой старой AppData-проверки.
+        with updater.update_lock(root):
+            require_docker()
+            target = legacy_home() if (
+                not trial_state(root).exists() and trial_state(legacy_home()).exists()
+            ) else root
+            stop_miniapp(target)
         return
-    # Повторный запуск старого preview не нужен: копирование выполняется один раз.
-    copied = migrate_legacy(root)
-    if copied:
-        print("Проверено и скопировано файлов из AppData:", copied)
     if command == "update":
-        update_services(root)  # updater.main самостоятельно управляет своим lock.
+        with updater.update_lock(root):
+            copied = migrate_legacy(root)
+            if copied:
+                print("Проверено и скопировано файлов из AppData:", copied)
+        update_services(root)  # Свой lock внутри updater.main, backup без удаления.
         return
     with updater.update_lock(root):
+        copied = migrate_legacy(root)
+        if command == "migrate":
+            print("Проверка переноса завершена. Новых файлов:", copied)
+            return
+        if copied:
+            print("Проверено и скопировано файлов из AppData:", copied)
         if command == "start":
             start_services(root)
         elif command == "stop":
@@ -477,9 +490,6 @@ def action(command, root):
             backup_services(root)
         elif command == "miniapp-start":
             start_miniapp(root)
-        elif command == "miniapp-stop":
-            require_docker()
-            stop_miniapp(root)
         else:
             raise ControlError("Неизвестная операция.")
 
