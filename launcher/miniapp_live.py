@@ -375,7 +375,6 @@ def start(root):
         raise LiveError("Остались live-контейнеры без state; нужна безопасная диагностика.")
     if docker("network", "inspect", LIVE_NETWORK, optional=True):
         raise LiveError("Сеть Mini App занята. Не запускаю два polling-процесса.")
-    docker("network", "create", "--label", LIVE_LABEL + "=1", LIVE_NETWORK)
     initial = {
         "schema": 1,
         "phase": "preparing",
@@ -385,8 +384,9 @@ def start(root):
         "image": image_manifest["commit"],
         "created_at": datetime.now(UTC).isoformat(),
     }
-    save_state(root, initial)  # Для восстановления после crash / отключения Windows.
+    save_state(root, initial)  # ДО первой внешней модификации, для crash recovery.
     try:
+        docker("network", "create", "--label", LIVE_LABEL + "=1", LIVE_NETWORK)
         docker(
             "run", "-d", "--name", LIVE_TUNNEL, "--label", LIVE_LABEL + "=1",
             "--restart=no", "--network", LIVE_NETWORK, "--cap-drop=ALL",
