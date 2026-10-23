@@ -12,11 +12,11 @@ pause
 exit /b 2
 
 :run_python
-python "%~dp0owner_control.py"
+python "%~dp0miniapp_live.py"
 goto finished
 
 :run_py
-py -3 "%~dp0owner_control.py"
+py -3 "%~dp0miniapp_live.py"
 goto finished
 
 :finished
