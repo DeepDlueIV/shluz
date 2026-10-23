@@ -624,10 +624,21 @@ def perform_update(manifest, root, settings, *, prepare, backup, start):
     )
 
 
+def home_root():
+    """Новый единый запускатель задаёт SHLUZ_HOME; старый Shluz.cmd не изменяется."""
+    portable = os.environ.get("SHLUZ_HOME")
+    if portable:
+        folder = Path(portable)
+        if not folder.is_absolute():
+            raise UpdateError("Папка portable SHLUZ_HOME должна быть абсолютным путём.")
+        return folder.resolve()
+    return Path(os.environ.get("LOCALAPPDATA", str(Path.home() / ".local" / "share"))) / "Shluz"
+
+
 def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    home = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / ".local" / "share"))) / "Shluz"
+    home = home_root()
     home.mkdir(parents=True, exist_ok=True)
     try:
         with update_lock(home):
