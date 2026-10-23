@@ -20,7 +20,12 @@ def prepared(monkeypatch, *, healthy=True, local=True, host=False, container=Fal
     m = load()
     monkeypatch.setattr(
         m, "inspect",
-        lambda _: {"State": {"Running": True, "Health": {"Status": "healthy" if healthy else "unhealthy"}}},
+        lambda _: {
+            "State": {
+                "Running": True,
+                "Health": {"Status": "healthy" if healthy else "unhealthy"},
+            }
+        },
     )
     monkeypatch.setattr(m, "probe_local_panel", lambda _: local)
     monkeypatch.setattr(m, "probe_windows_https", lambda _: host)
