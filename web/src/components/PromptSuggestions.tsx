@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
 import type { PromptSuggestion } from '../lib/prompt-suggestions';
 import styles from './PromptSuggestions.module.css';
 
@@ -41,6 +40,7 @@ export default function PromptSuggestions({ primary, additional, enabled, moreLa
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const focusExtra = useRef(false);
   const pointerInside = useRef(false);
+  const hoverSession = useRef(false);
   const expanded = open && enabled;
 
   function cancelClose() {
@@ -52,48 +52,54 @@ export default function PromptSuggestions({ primary, additional, enabled, moreLa
     closeTimer.current = setTimeout(() => { setOpen(false); onPreview(''); }, 180);
   }
   useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
-  useEffect(() => { if (!enabled) setOpen(false); }, [enabled]);
+  useEffect(() => { if (!enabled) { hoverSession.current = false; setOpen(false); } }, [enabled]);
   useEffect(() => {
     if (expanded && focusExtra.current) { firstExtraRef.current?.focus(); focusExtra.current = false; }
   }, [expanded]);
 
-  function choice(item: PromptSuggestion, first = false) {
+  function choice(item: PromptSuggestion, first = false, extra = false) {
     return <button key={item.id} type="button" data-suggestion={item.id} title={item.label} aria-label={item.label}
-      ref={first ? firstExtraRef : undefined} tabIndex={enabled ? 0 : -1}
+      ref={first ? firstExtraRef : undefined} tabIndex={enabled && (!extra || expanded) ? 0 : -1}
       onPointerEnter={event => { if (event.pointerType !== 'touch' && enabled) onPreview(item.id); }}
       onFocus={() => { if (enabled) onPreview(item.id); }}
-      onClick={() => { cancelClose(); setOpen(false); onChoose(item.prompt); }}>
+      onClick={() => { cancelClose(); hoverSession.current = false; setOpen(false); onChoose(item.prompt); }}>
       <SuggestionIcon name={item.icon} /><span>{item.label}</span>
     </button>;
   }
 
   return <div className={styles.region} data-suggestion-region inert={!enabled}
-    onPointerEnter={event => { if (event.pointerType !== 'touch') { pointerInside.current = true; cancelClose(); } }}
+    onPointerEnter={event => { if (event.pointerType !== 'touch') { pointerInside.current = true; cancelClose(); if (hoverSession.current && enabled) setOpen(true); } }}
     onPointerLeave={event => { if (event.pointerType !== 'touch') { pointerInside.current = false; closeSoon(); } }}
     onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget) && !pointerInside.current) closeSoon(); }}
     onKeyDown={event => {
-      if (event.key === 'Escape') { event.preventDefault(); cancelClose(); setOpen(false); onPreview(''); moreRef.current?.focus(); }
+      if (event.key === 'Escape') { event.preventDefault(); cancelClose(); hoverSession.current = false; setOpen(false); onPreview(''); moreRef.current?.focus(); }
     }}>
     <div className={styles.primary} data-primary-suggestions>
       {primary.map(item => choice(item))}
       <button ref={moreRef} type="button" data-more-prompts aria-expanded={expanded} aria-controls="additional-prompts"
         tabIndex={enabled ? 0 : -1} className={styles.more}
-        onPointerEnter={event => { if (event.pointerType !== 'touch' && enabled) { cancelClose(); setOpen(true); } }}
-        onClick={() => { cancelClose(); setOpen(value => !value); }}
+        onPointerEnter={event => { if (event.pointerType !== 'touch' && enabled) { cancelClose(); hoverSession.current = true; setOpen(true); } }}
+        onClick={event => {
+          cancelClose();
+          // Мышь уже открыла меню по hover; click не должен немедленно запускать обратный fade.
+          if (event.detail > 0 && pointerInside.current) { hoverSession.current = true; setOpen(true); }
+          else { hoverSession.current = false; setOpen(value => !value); }
+        }}
         onKeyDown={event => {
           if (event.key === 'ArrowDown') { event.preventDefault(); cancelClose(); focusExtra.current = true; setOpen(true); if (expanded) { firstExtraRef.current?.focus(); focusExtra.current = false; } }
         }}>
         <span>{moreLabel}</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </button>
     </div>
-    <AnimatePresence initial={false}>
-      {expanded && <motion.div id="additional-prompts" className={styles.disclosure} data-additional-prompts
-        initial={{ height: 0, opacity: 0, y: -18 }}
-        animate={{ height: 'auto', opacity: 1, y: 0 }}
-        exit={{ height: 0, opacity: 0, y: -14 }}
-        transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}>
-        <div className={styles.additional}>{additional.map((item, index) => choice(item, index === 0))}</div>
-      </motion.div>}
-    </AnimatePresence>
+    {/* Постоянный DOM: CSS продолжает переход из текущего кадра при смене направления. */}
+    <div id="additional-prompts" className={styles.disclosure} data-additional-prompts
+      data-open={expanded} aria-hidden={!expanded} inert={!expanded}
+      onTransitionEnd={event => {
+        if (event.propertyName === 'opacity' && !expanded) hoverSession.current = false;
+      }}>
+      <div className={styles.additionalViewport}>
+        <div className={styles.additional}>{additional.map((item, index) => choice(item, index === 0, true))}</div>
+      </div>
+    </div>
   </div>;
 }

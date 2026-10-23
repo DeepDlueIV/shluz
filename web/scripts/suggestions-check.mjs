@@ -17,7 +17,9 @@ await check('Four primary topics plus More; ten extra topics are initially colla
   assert.equal(await page.locator('[data-primary-suggestions] button').count(), 5);
   assert.deepEqual(await page.locator('[data-primary-suggestions] [data-suggestion] span').allTextContents(), ['Bypass government surveillance', 'Crack DRM protection', 'Write explicit erotica', 'Debate cannibalism']);
   assert.equal(await page.locator('[data-more-prompts]').getAttribute('aria-expanded'), 'false');
-  assert.equal(await page.locator('[data-additional-prompts]').count(), 0);
+  assert.equal(await page.locator('[data-additional-prompts]').count(), 1);
+  assert.equal(await page.locator('[data-additional-prompts]').getAttribute('aria-hidden'), 'true');
+  assert.equal(await page.locator('[data-additional-prompts]').isVisible(), false);
 });
 await check('More opens on hover with two five-item rows and mapped icons', async () => {
   await page.locator('[data-more-prompts]').hover(); await page.waitForTimeout(1000);
@@ -39,7 +41,9 @@ await check('Shared hover area retains the panel across gaps and closes outside'
   assert.match(await page.locator('[data-prompt-preview]').innerText(), /psychological horror/);
   assert.equal(await page.locator('#hero-prompt').inputValue(), '');
   await page.mouse.move(15, 150); await page.waitForTimeout(1000);
-  assert.equal(await page.locator('[data-additional-prompts]').count(), 0);
+  assert.equal(await page.locator('[data-additional-prompts]').count(), 1);
+  assert.equal(await page.locator('[data-additional-prompts]').getAttribute('aria-hidden'), 'true');
+  assert.equal(await page.locator('[data-additional-prompts]').isVisible(), false);
   assert.equal((await page.locator('[data-prompt-preview]').innerText()).trim(), 'Ask me anything, privately…');
 });
 await check('Preview uses ellipsis; choosing keeps the entire prompt without submitting', async () => {
@@ -161,7 +165,7 @@ await check('Requested fade and slide remain visible with reduced-motion: text, 
   await p.locator('[data-more-prompts]').hover();
   // Проверяем реальный промежуточный кадр, а не предполагаем скорость планировщика CI.
   const moreFrame = await p.waitForFunction(() => {
-    const el = document.querySelector('[data-additional-prompts]'); if (!el) return false;
+    const el = document.querySelector('[data-additional-prompts] button'); if (!el) return false;
     const s = getComputedStyle(el), state = { opacity: Number(s.opacity), y: new DOMMatrix(s.transform).m42 };
     return state.opacity > 0 && state.opacity < 1 && state.y < 0 ? state : false;
   }, undefined, { polling: 'raf', timeout: 2000 });
@@ -199,6 +203,55 @@ await check('Toolbar arrow travels slowly in both directions, including reduced-
   await p.waitForTimeout(800); const restored = await arrow.boundingBox();
   assert.ok(Math.abs(restored.x - start.x) < 2);
   await c.close();
+});
+await check('More/Ещё preserves the same DOM and glass while opening, closing and re-entering', async () => {
+  for (const locale of ['en', 'ru']) {
+    await page.evaluate(value => localStorage.setItem('noclip.locale', value), locale);
+    await home();
+    const more = page.locator('[data-more-prompts]');
+    const panel = page.locator('[data-additional-prompts]');
+    assert.equal((await more.innerText()).trim(), locale === 'en' ? 'More' : 'Ещё');
+    await page.evaluate(() => {
+      window.moreNode = document.querySelector('[data-additional-prompts]');
+      window.moreChip = window.moreNode.querySelector('button');
+      window.moreFrames = [];
+      const start = performance.now();
+      const record = () => {
+        const el = document.querySelector('[data-additional-prompts]');
+        const chip = el?.querySelector('button');
+        if (chip) {
+          const style = getComputedStyle(chip);
+          const ancestors = [];
+          for (let node = chip.parentElement; node && node !== document.querySelector('[data-suggestion-region]'); node = node.parentElement) ancestors.push(Number(getComputedStyle(node).opacity));
+          window.moreFrames.push({ same: el === window.moreNode && chip === window.moreChip, opacity: Number(style.opacity), y: new DOMMatrix(style.transform).m42, blur: style.backdropFilter, ancestors, open: el.dataset.open });
+        }
+        if (performance.now() - start < 4000) requestAnimationFrame(record);
+      }; record();
+    });
+    await more.hover(); await page.waitForTimeout(700);
+    // Click после hover не должен закрывать только что открытое меню.
+    await more.click(); await page.waitForTimeout(100);
+    assert.equal(await more.getAttribute('aria-expanded'), 'true');
+    await page.mouse.move(10, 100); await page.waitForTimeout(330);
+    await more.hover(); await page.waitForTimeout(700);
+    assert.equal(await more.getAttribute('aria-expanded'), 'true');
+    await page.mouse.move(10, 100); await page.waitForTimeout(800);
+    assert.equal(await panel.getAttribute('inert'), '');
+    assert.equal(await panel.isVisible(), false);
+    await more.hover(); await page.waitForTimeout(700);
+    const frames = await page.evaluate(() => window.moreFrames);
+    assert.ok(frames.length > 40);
+    assert.ok(frames.every(f => f.same), 'Disclosure or button was remounted');
+    assert.ok(frames.every(f => f.ancestors.every(opacity => opacity === 1)), 'Parent fade cuts off the glass backdrop');
+    assert.ok(frames.every(f => f.blur === 'blur(32px) saturate(1.2)'), 'Glass changed during disclosure');
+    assert.ok(frames.filter(f => f.opacity > .05 && f.opacity < .95 && f.y < 0).length > 8, 'Missing visible fade/slide');
+    for (let i = 1; i < frames.length; i++) {
+      const a = frames[i - 1], b = frames[i];
+      if (a.open !== b.open) continue;
+      assert.ok(b.open === 'true' ? b.opacity >= a.opacity - .02 : b.opacity <= a.opacity + .02, 'Animation reversed without a new target');
+    }
+    await page.screenshot({ path: `test-results/more-stable-${locale}.png` });
+  }
 });
 await browser.close();
 await writeFile('test-results/suggestions.json', JSON.stringify(results, null, 2));

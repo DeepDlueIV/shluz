@@ -49,7 +49,7 @@ test('Interactive motion is noticeable even when the OS reduces ambient animatio
   assert.match(preview, /duration:\s*0\.5/);
   assert.match(preview, /x\.set\(-20\)/);
   assert.doesNotMatch(more, /useReducedMotion/);
-  assert.match(more, /duration:\s*0\.5/);
+  assert.match(source('../components/PromptSuggestions.module.css'), /opacity 500ms/);
   assert.match(language, /translateY\(-14px\)/);
   assert.match(language, /450ms/);
 });
