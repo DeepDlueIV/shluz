@@ -11,6 +11,7 @@ from app.providers.base import (
     ChatResult,
     ModelInfo,
     ProviderAuthenticationError,
+    ProviderAccessDeniedError,
     ProviderError,
     ProviderInsufficientBalanceError,
     ProviderRateLimitError,
@@ -261,6 +262,9 @@ class VeniceProvider:
                 diem=_decimal(balances.get("diem")),
                 diem_epoch_allocation=_decimal(data.get("diemEpochAllocation")),
             )
+        except ProviderAuthenticationError:
+            # Inference Only keys cannot access /billing, yet may generate normally.
+            warnings.append("Баланс через Inference Only ключ не показывается; права генерации проверяются отдельно")
         except ProviderError:
             warnings.append("Баланс Venice временно недоступен")
 
@@ -286,8 +290,12 @@ class VeniceProvider:
                     )
                 )
             rate_limits = tuple(parsed_limits)
+        except ProviderAuthenticationError:
+            warnings.append("Venice не подтвердил ключ через бесплатную проверку доступа (401)")
+        except ProviderAccessDeniedError:
+            warnings.append("Venice запретил проверку доступа для этого ключа (403)")
         except ProviderError:
-            warnings.append("Лимиты Venice временно недоступны")
+            warnings.append("Не удалось проверить права ключа Venice")
 
         try:
             payload = self._json(
@@ -298,6 +306,8 @@ class VeniceProvider:
                 )
             )
             analytics = self._parse_analytics(payload, lookback)
+        except ProviderAuthenticationError:
+            warnings.append("Аналитика доступна только с ключом Admin; Inference Only ключ может работать")
         except ProviderError:
             warnings.append("Аналитика Venice временно недоступна")
 
@@ -421,8 +431,11 @@ class VeniceProvider:
 
     def _raise_for_status(self, response: httpx.Response) -> None:
         status = response.status_code
-        if status in {401, 403}:
-            raise ProviderAuthenticationError("Venice rejected the API key")
+        if status == 401:
+            # 401 can mean a rejected key or a restricted model, not necessarily bad credentials.
+            raise ProviderAuthenticationError("Venice did not authorize this request")
+        if status == 403:
+            raise ProviderAccessDeniedError("Venice denied access to the selected model")
         if status == 402:
             raise ProviderInsufficientBalanceError("Venice balance is insufficient")
         if status == 429:

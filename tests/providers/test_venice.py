@@ -9,6 +9,7 @@ from app.providers.base import (
     ChatMessage,
     ChatRequest,
     ProviderAuthenticationError,
+    ProviderAccessDeniedError,
     ProviderError,
     ProviderInsufficientBalanceError,
     ProviderRateLimitError,
@@ -232,6 +233,7 @@ def test_account_snapshot_parses_official_usage_analytics_shape():
     ("status_code", "exception_type"),
     [
         (401, ProviderAuthenticationError),
+        (403, ProviderAccessDeniedError),
         (402, ProviderInsufficientBalanceError),
         (429, ProviderRateLimitError),
         (500, ProviderError),
@@ -272,3 +274,19 @@ def test_untrusted_missing_or_invalid_cost_is_not_shown_as_exact_zero(usd):
     )
     assert result.cost_known is False
     assert result.cost_usd == 0
+
+
+def test_inference_key_can_generate_even_if_admin_billing_is_denied():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/api_keys/rate_limits"):
+            return httpx.Response(200, json={"data": {"accessPermitted": True, "rateLimits": []}})
+        if request.url.path.startswith("/api/v1/billing/"):
+            return httpx.Response(401, json={"error": "Admin API key required"})
+        raise AssertionError(f"unexpected {request.url.path}")
+
+    result = _provider(handler).get_account_snapshot()
+    assert result.access_permitted is True
+    assert result.balance is None
+    assert result.analytics is None
+    assert any("Inference Only" in note for note in result.warnings)
+    assert not any("не подтвердил ключ" in note for note in result.warnings)

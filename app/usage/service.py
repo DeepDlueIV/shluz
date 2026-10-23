@@ -317,6 +317,7 @@ class UsageService:
                 return event
             definite = error_code in {
                 "provider_authentication_error",
+                "provider_access_denied",
                 "provider_balance_exhausted",
                 "provider_rate_limit",
             }

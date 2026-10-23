@@ -107,6 +107,8 @@ def test_venice_dashboard_shows_balance_limits_models_and_usage(test_settings):
     assert "Платный" in response.text
     assert "2027-01-01" in response.text
     assert "Venice Uncensored" in response.text
+    assert "Генерация разрешена" in response.text
+    assert "Проверка ключа не делает платных запросов" in response.text
     assert "0,50" in response.text
     assert "1,50" in response.text
     assert "100" in response.text
