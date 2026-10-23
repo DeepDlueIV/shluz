@@ -242,8 +242,7 @@ for path in [target, *target.rglob('*')]:
 
 
 def root_folder():
-    home = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / ".local" / "share")))
-    root = home / "Shluz" / ROOT_NAME
+    root = updater.home_root() / ROOT_NAME
     root.mkdir(parents=True, exist_ok=True)
     return root
 
