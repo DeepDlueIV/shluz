@@ -35,12 +35,12 @@ def build(target, manifest_path):
             blob = (LAUNCHER / name).read_bytes()
             if name.endswith(".cmd"):
                 blob = blob.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
-            output_name = "NoClip-SHLUZ/" + ("README.md" if name == "PORTABLE.md" else name)
+            output_name = "README.md" if name == "PORTABLE.md" else name
             archive.writestr(output_name, blob)
             checks.append((output_name, sha256(blob)))
         blob = (json.dumps(manifest, indent=2) + "\n").encode()
-        archive.writestr("NoClip-SHLUZ/trial-manifest.json", blob)
-        checks.append(("NoClip-SHLUZ/trial-manifest.json", sha256(blob)))
+        archive.writestr("trial-manifest.json", blob)
+        checks.append(("trial-manifest.json", sha256(blob)))
     with zipfile.ZipFile(target) as archive:
         if archive.testzip():
             raise ValueError("Portable archive failed integrity check")
