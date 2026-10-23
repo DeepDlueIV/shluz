@@ -8,8 +8,8 @@ from app.config import Settings
 from app.providers.base import (
     ChatMessage,
     ChatRequest,
-    ProviderAuthenticationError,
     ProviderAccessDeniedError,
+    ProviderAuthenticationError,
     ProviderError,
     ProviderInsufficientBalanceError,
     ProviderRateLimitError,
