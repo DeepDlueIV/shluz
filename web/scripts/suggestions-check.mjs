@@ -208,6 +208,10 @@ await check('More/Ещё preserves the same DOM and glass while opening, closing
   for (const locale of ['en', 'ru']) {
     await page.evaluate(value => localStorage.setItem('noclip.locale', value), locale);
     await home();
+    // A reload can leave the virtual pointer on More before React attaches handlers.
+    // Start outside the hover region so every test sends a real pointer-enter event.
+    await page.mouse.move(10, 100);
+    await page.waitForTimeout(220);
     const more = page.locator('[data-more-prompts]');
     const panel = page.locator('[data-additional-prompts]');
     assert.equal((await more.innerText()).trim(), locale === 'en' ? 'More' : 'Ещё');
