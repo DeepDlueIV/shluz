@@ -286,7 +286,8 @@ def probe_local_panel(name):
         "r=urllib.request.urlopen('http://127.0.0.1:8081/miniapp/health',timeout=3); "
         "assert json.load(r)=={'status':'ok'}; print('ready')"
     )
-    return docker("exec", name, "python", "-c", script, optional=True, timeout=12).strip() == "ready"
+    response = docker("exec", name, "python", "-c", script, optional=True, timeout=12)
+    return response.strip() == "ready"
 
 
 def probe_windows_https(url):
@@ -306,7 +307,8 @@ def probe_container_https(name, url):
         f"r=urllib.request.urlopen({(url + '/miniapp/health')!r},timeout=5); "
         "assert json.load(r)=={'status':'ok'}; print('ready')"
     )
-    return docker("exec", name, "python", "-c", script, optional=True, timeout=12).strip() == "ready"
+    response = docker("exec", name, "python", "-c", script, optional=True, timeout=12)
+    return response.strip() == "ready"
 
 
 def wait_ready(name, public_url, *, attempts=90):
