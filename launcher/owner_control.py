@@ -350,7 +350,7 @@ def backup_services(root):
         error = exc
     finally:
         # Возвращаем только то, что работало до backup. Никогда не пересоздаём.
-        for service, item in previous:
+        for _service, item in previous:
             inspected = json.loads(updater.docker("inspect", item["Id"]))[0]
             if not running(inspected):
                 updater.docker("start", item["Id"])
@@ -430,7 +430,8 @@ def status(root):
             elif not running(item):
                 label = "остановлен"
             else:
-                label = "запущен / " + str(item["State"].get("Health", {}).get("Status", "без health"))
+                health = item["State"].get("Health", {}).get("Status", "без health")
+                label = "запущен / " + str(health)
             print(service + ":", label)
         present = trial_occupied(root) or trial_state(legacy_home()).exists()
         print("Mini App:", "работает / требуется Stop" if present else "не активна")
