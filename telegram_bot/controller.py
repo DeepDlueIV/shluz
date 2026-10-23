@@ -40,6 +40,13 @@ class ClosedAccessMiddleware(BaseMiddleware):
             if callback:
                 await callback.answer("Работаю только в личном чате.", show_alert=True)
             return None
+        # Временная проверка закрыта ДО регистрации и любого обращения к шлюзу.
+        owner = self.controller.settings.trial_owner_id
+        if owner and sender.id != owner:
+            if callback:
+                with suppress(TelegramAPIError):
+                    await callback.answer("Сейчас идёт закрытая проверка.", show_alert=True)
+            return None
         self.controller.delivery.observe_message(message)
         token = self.controller.access.token_for(sender.id)
         if self.controller.settings.connector_file:

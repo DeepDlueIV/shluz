@@ -154,7 +154,11 @@
     clearTimeout(pollTimer); if(state.generation?.busy) pollTimer=setTimeout(()=>{if(!document.hidden&&!modal.open)refresh();},5000);
   }
   function go(next) { if(!state)return;page=next;render();window.scrollTo({top:0,behavior:"instant"}); }
-  function theme() { document.body.dataset.theme=tg?.colorScheme || "dark"; }
+  function theme() {
+    document.body.dataset.theme="dark";
+    // Палитра NoClip не зависит от темы чата Telegram.
+    try { tg?.setHeaderColor?.("#0c0d0f"); tg?.setBackgroundColor?.("#0c0d0f"); tg?.setBottomBarColor?.("#0c0d0f"); } catch (_) { /* Старый Telegram сохраняет собственную рамку. */ }
+  }
   async function start() {
     theme();tg?.ready();tg?.expand();tg?.onEvent?.("themeChanged",theme);tg?.BackButton?.onClick(()=>go("home"));
     if(!tg?.initData) {fatal("Управление доступно только из кнопки «Меню» вашего бота. Здесь не нужно вводить пароли или ключи.");return;}

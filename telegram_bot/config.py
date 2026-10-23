@@ -14,6 +14,7 @@ class ConfigurationError(ValueError):
 
 
 class BotSettings(BaseSettings):
+    trial_owner_id: int = Field(default=0, ge=0, le=2**52 - 1)
     interface: Literal["classic", "miniapp"] = "classic"
     miniapp_url: str = ""
     miniapp_host: str = "127.0.0.1"

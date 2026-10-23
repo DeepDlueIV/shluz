@@ -111,6 +111,8 @@ def create_miniapp(controller):
         )
 
     async def get_token(user):
+        if settings.trial_owner_id and user["id"] != settings.trial_owner_id:
+            raise HTTPException(403, "Сейчас идёт закрытая проверка.")
         legacy = controller.access.token_for(user["id"])
         if settings.connector_file:
             admission = await gateway.onboard(
@@ -327,6 +329,10 @@ def create_miniapp(controller):
                 session.results.pop(next(iter(session.results)))
             session.results[body.request_id] = (signature, True)
             return result
+
+    @app.get("/miniapp/health")
+    async def health():
+        return {"status": "ok"}
 
     @app.get("/miniapp")
     @app.get("/miniapp/")

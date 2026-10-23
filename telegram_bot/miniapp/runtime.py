@@ -13,7 +13,10 @@ async def configure_menu(bot, settings):
         if settings.interface == "miniapp"
         else MenuButtonCommands()
     )
-    await bot.set_chat_menu_button(menu_button=button)
+    if settings.trial_owner_id:
+        await bot.set_chat_menu_button(chat_id=settings.trial_owner_id, menu_button=button)
+    else:
+        await bot.set_chat_menu_button(menu_button=button)
 
 
 async def open_menu(message, controller):
@@ -21,7 +24,12 @@ async def open_menu(message, controller):
     old = controller.store.screen_id(message.bot.id, message.chat.id)
     if old:
         await controller.delivery.retire(message, old)
-    await message.bot.set_chat_menu_button(chat_id=message.chat.id, menu_button=MenuButtonDefault())
+    if controller.settings.trial_owner_id:
+        await configure_menu(message.bot, controller.settings)
+    else:
+        await message.bot.set_chat_menu_button(
+            chat_id=message.chat.id, menu_button=MenuButtonDefault()
+        )
     with suppress(TelegramAPIError):
         await message.delete()  # Только отправленная самим пользователем slash-команда.
 
