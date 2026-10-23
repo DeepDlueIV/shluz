@@ -39,7 +39,7 @@ jobs:
           cache: pip
       - run: python -m pip install -e '.[dev]'
       - name: Lint portable code
-        run: ruff check launcher/owner_control.py launcher/miniapp_trial.py launcher/updater.py scripts/package_owner_control.py tests/launcher/test_owner_control.py
+        run: ruff check launcher/miniapp_live.py launcher/owner_control.py launcher/miniapp_trial.py launcher/updater.py scripts/package_owner_control.py tests/launcher
       - name: Portable and original launcher regressions
         run: python -m pytest tests/launcher -q --noconftest
       - name: Telegram panel authorization regressions
@@ -57,7 +57,7 @@ jobs:
           python-version: '3.12'
       - name: Fetch immutable tested Mini App manifest only
         env:
-          PIN: fbaeb43b58c393d48d6000393f388e26991ecf34
+          PIN: ceac07cc88401dd99315a368a52d1c24f4f5d697
         run: |
           curl -fLsS --retry 3 --max-time 60 \
             "https://github.com/DeepDlueIV/shluz/releases/download/miniapp-test-$PIN/manifest.json" \
