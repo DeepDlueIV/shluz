@@ -1,0 +1,76 @@
+name: NoClip portable control candidate
+
+on:
+  push:
+    branches:
+      - feat/unified-portable-control-20261024
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows portable safety tests
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest pyyaml
+      - run: python -m pytest tests/launcher -q --noconftest
+      - name: Windows entry syntax and portable path
+        shell: pwsh
+        run: |
+          if (-not (Test-Path launcher/NoClip.cmd)) { throw "Missing entrypoint" }
+          if (-not (Select-String -Path launcher/NoClip.cmd -Pattern 'SHLUZ_HOME=%~dp0' -SimpleMatch)) { throw "Missing portable environment" }
+
+  linux:
+    name: Python, CLI and Mini App regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -e '.[dev]'
+      - name: Lint portable code
+        run: ruff check launcher/owner_control.py launcher/miniapp_trial.py launcher/updater.py scripts/package_owner_control.py tests/launcher/test_owner_control.py
+      - name: Portable and original launcher regressions
+        run: python -m pytest tests/launcher -q --noconftest
+      - name: Telegram panel authorization regressions
+        run: python -m pytest tests/telegram/test_miniapp.py -q --noconftest
+
+  package:
+    name: Verified ZIP for Windows, no secrets
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch immutable tested Mini App manifest only
+        env:
+          PIN: fbaeb43b58c393d48d6000393f388e26991ecf34
+        run: |
+          curl -fLsS --retry 3 --max-time 60 \
+            "https://github.com/DeepDlueIV/shluz/releases/download/miniapp-test-$PIN/manifest.json" \
+            -o pinned-miniapp-manifest.json
+      - name: Verify pinned manifest and package one portable launcher
+        run: python scripts/package_owner_control.py dist/NoClip-SHLUZ-Portable.zip pinned-miniapp-manifest.json
+      - name: Verify ZIP SHA256 checksum
+        run: cd dist && sha256sum -c NoClip-SHLUZ-Portable.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NoClip-SHLUZ-Portable-Windows
+          path: |
+            dist/NoClip-SHLUZ-Portable.zip
+            dist/NoClip-SHLUZ-Portable.sha256
+          retention-days: 30
+          if-no-files-found: error
