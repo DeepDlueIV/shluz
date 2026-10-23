@@ -14,6 +14,7 @@ import subprocess
 import sys
 import time
 import webbrowser
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -268,7 +269,10 @@ def restore_classic(root, state, *, restart=True):
         raise LiveError("Исходный контейнер не прошёл проверку принадлежности.")
     token = trial.env(old).get("TELEGRAM_BOT_TOKEN", "")
     try:
-        trial.telegram(token, "setChatMenuButton", menu_button=state.get("old_menu") or {"type": "commands"})
+        trial.telegram(
+            token, "setChatMenuButton",
+            menu_button=state.get("old_menu") or {"type": "commands"},
+        )
     except trial.TrialError:
         # Работающий бот важнее временно недоступного Telegram API.
         print("Telegram menu будет восстановлено при появлении сети.")
@@ -422,11 +426,9 @@ def start(root):
         if re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
             webbrowser.open("https://t.me/" + username)
     except Exception:
-        try:
+        with suppress(Exception):
+            # Не скрывать исходную ошибку; state сохраняется при ошибке отката.
             restore_classic(root, initial)
-        except Exception:
-            # Не скрывать исходную ошибку; state оставляем для следующего восстановления.
-            pass
         raise
 
 
