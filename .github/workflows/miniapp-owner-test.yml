@@ -3,16 +3,88 @@ on:
   push:
     branches: [feat/telegram-miniapp-owner-test]
 permissions:
-  contents: read
+  contents: write
 jobs:
-  source:
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - run: git archive --format=zip --prefix=shluz/ HEAD -o miniapp-owner-source.zip
-      - uses: actions/upload-artifact@v4
         with:
-          name: miniapp-owner-source
-          path: miniapp-owner-source.zip
+          ref: e25c3acc8621a2f6abb425090fdfcf7901b2ac1f
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Reconstruct exact isolated source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import base64, hashlib, json, lzma, os, pathlib, subprocess, urllib.request
+          root = 'https://api.github.com/repos/DeepDlueIV/shluz'
+          headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'User-Agent': 'NoClip-owner-test-source'}
+          chunks = []
+          for sha in ['5a39a6489e7485af4012bd733e9c8cb35cb33dc7', '511b68832852ba833223abbe195c86a453e0986a', 'f8c14927ebc10cdc0c8de76c98c55126f5c81ae5']:
+              with urllib.request.urlopen(urllib.request.Request(root + '/git/blobs/' + sha, headers=headers), timeout=30) as response:
+                  data = base64.b64decode(json.load(response)['content'])
+              assert hashlib.sha1(f'blob {len(data)}\0'.encode() + data).hexdigest() == sha
+              chunks.append(data)
+          compressed = base64.b64decode(b''.join(chunks), validate=True)
+          assert hashlib.sha256(compressed).hexdigest() == 'e626294c3cc015fbdd67991fd19778ef505ff2929ccb864bc2891fe3a3c6cca0'
+          patch = lzma.decompress(compressed)
+          assert hashlib.sha256(patch).hexdigest() == 'b2cd80354f7bb61ad5c34b706528b570abfc749a282116fc036c74583e801945'
+          pathlib.Path('/tmp/owner-trial.patch').write_bytes(patch)
+          subprocess.run(['git', 'apply', '--index', '/tmp/owner-trial.patch'], check=True)
+          tree = subprocess.check_output(['git', 'write-tree']).decode().strip()
+          assert tree == '84c84308575368eb31ba1aeb61134890e0f03b75', tree
+          print('Exact source verified:', tree)
+          PY
+      - name: Verify full source
+        shell: bash
+        run: |
+          python -m pip install -e '.[dev,ui]'
+          ruff check .
+          pytest -q | tee /tmp/owner-tests.log
+      - name: Verify actual Chromium interface
+        shell: bash
+        run: |
+          python -m playwright install --with-deps chromium
+          python scripts/verify_telegram_miniapp.py | tee /tmp/owner-browser.log
+      - name: Publish immutable verified source, no refs or deployments
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import base64, hashlib, json, os, pathlib, subprocess, urllib.request
+          root = 'https://api.github.com/repos/DeepDlueIV/shluz'
+          headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json', 'User-Agent': 'NoClip-owner-test-source'}
+          def post(path, data):
+              request = urllib.request.Request(root + path, data=json.dumps(data).encode(), headers=headers, method='POST')
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+          entries = []
+          for path in subprocess.check_output(['git', 'diff', '--cached', '--name-only']).decode().splitlines():
+              assert not path.startswith('.github/')
+              data = pathlib.Path(path).read_bytes()
+              expected = hashlib.sha1(f'blob {len(data)}\0'.encode() + data).hexdigest()
+              actual = post('/git/blobs', {'encoding': 'base64', 'content': base64.b64encode(data).decode()})['sha']
+              assert actual == expected
+              entries.append({'path': path, 'mode': '100644', 'type': 'blob', 'sha': actual})
+          tree = post('/git/trees', {'base_tree': 'cbf76d4a226459a5ccb44a9b10017c5207e0c4c7', 'tree': entries})['sha']
+          assert tree == '84c84308575368eb31ba1aeb61134890e0f03b75'
+          out = pathlib.Path('artifacts/miniapp'); out.mkdir(parents=True, exist_ok=True)
+          (out / 'objects.json').write_text(json.dumps({'tree': tree, 'entries': entries}, indent=2))
+          print('Verified immutable tree:', tree)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owner-trial-verified
+          path: |
+            artifacts/miniapp/
+            /tmp/owner-tests.log
+            /tmp/owner-browser.log
           retention-days: 7
