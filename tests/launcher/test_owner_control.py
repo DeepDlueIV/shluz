@@ -241,5 +241,5 @@ def test_new_bundle_has_one_entry_and_no_secrets(tmp_path):
         assert "NoClip.cmd" in names
         assert "trial-manifest.json" in names
         assert not any(".env" in n or "backups" in n or "config/" in n for n in names)
-        assert b"SHLUZ_HOME=%~dp0" in archive.read("NoClip-SHLUZ/NoClip.cmd")
+        assert b"SHLUZ_HOME=%~dp0" in archive.read("NoClip.cmd")
     assert dest.with_suffix(".sha256").is_file()
