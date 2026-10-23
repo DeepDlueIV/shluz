@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
+import webbrowser
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -142,7 +144,7 @@ def prepare_images(root):
 
 
 def environment_for(old, url):
-    if not url.startswith("https://") or not url.endswith(".trycloudflare.com"):
+    if not re.fullmatch(r"https://[a-z0-9]+(?:-[a-z0-9]+)*\.trycloudflare\.com", url):
         raise LiveError("Неподдерживаемый HTTPS-адрес Mini App.")
     values = {k: v for k, v in trial.env(old).items() if k.startswith("TELEGRAM_")}
     if not values.get("TELEGRAM_BOT_TOKEN"):
@@ -213,7 +215,7 @@ def ensure_preflight(old):
     if not me.get("id"):
         raise LiveError("Telegram не подтвердил исходного бота.")
     old_menu = trial.telegram(token, "getChatMenuButton")
-    return token, old_menu
+    return token, old_menu, me.get("username", "")
 
 
 def start_gateway(gateway):
@@ -331,12 +333,17 @@ def start(root):
     docker_platform = docker("info", "--format", "{{.OSType}}/{{.Architecture}}").strip()
     if docker_platform not in {"linux/amd64", "linux/x86_64"}:
         raise LiveError("Нужен Docker Desktop Linux/x64.")
-    old_trial = trial.root_folder() / "active.json"
-    if old_trial.exists():
-        raise LiveError(
-            "Найдена старая незавершённая owner-only Mini App. "
-            "Сначала восстановите её через Stop-MiniApp.cmd."
-        )
+    old_trial_root = trial.root_folder()
+    legacy_trial_root = Path(
+        os.environ.get("LOCALAPPDATA", str(Path.home() / ".local" / "share"))
+    ) / "Shluz" / "miniapp-trial"
+    for candidate in (old_trial_root, legacy_trial_root):
+        if (candidate / "active.json").exists():
+            with updater.update_lock(candidate):
+                trial.cleanup(candidate)  # Восстановить старый polling без удаления history.
+    leftover = trial.inspect("noclip-miniapp-trial-bot")
+    if leftover and is_running(leftover):
+        raise LiveError("Старая Mini App всё ещё работает; второй polling запрещён.")
     state = read_state(root)
     if state and state.get("phase") == "active":
         live, tunnel = owned(LIVE_BOT), owned(LIVE_TUNNEL)
@@ -354,7 +361,7 @@ def start(root):
         gateway, old = gateway_and_old()
     settings = current_settings(root, gateway, old)
     image_manifest, cloud_image = prepare_images(root)
-    token, previous_menu = ensure_preflight(old)
+    token, previous_menu, username = ensure_preflight(old)
     start_gateway(gateway)
     backup(root)  # До единого переключения всегда сохраняем SQLite и настройки.
     # Никаких удалений старых контейнеров и томов. Только свой HTTPS и bot.
@@ -392,6 +399,8 @@ def start(root):
         trial.wait_ready(LIVE_BOT, url)
         # Снять оставшийся personal MenuButtonCommands от owner-only теста.
         owner_file = trial.root_folder() / "owner.json"
+        if not owner_file.is_file():
+            owner_file = legacy_trial_root / "owner.json"
         if owner_file.is_file():
             owner_id = json.loads(owner_file.read_text(encoding="utf-8")).get("telegram_id")
             if type(owner_id) is int and 0 < owner_id < 2**52:
@@ -404,6 +413,8 @@ def start(root):
         save_state(root, initial)
         print("Готово: Gateway + новый Telegram с Mini App.")
         print("Откройте Telegram и кнопку «Меню». Старый бот сохранён для отката.")
+        if re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
+            webbrowser.open("https://t.me/" + username)
     except Exception:
         try:
             restore_classic(root, initial)
