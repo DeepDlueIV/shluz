@@ -1,0 +1,104 @@
+name: Verify Mini App source
+on:
+  push:
+    branches: [feat/telegram-miniapp-control]
+  pull_request:
+    branches: [implementation/telegram-beta-complete]
+permissions:
+  contents: write
+jobs:
+  verify:
+    if: github.repository == 'DeepDlueIV/shluz' && (github.event_name == 'push' || (github.event.pull_request.head.repo.full_name == 'DeepDlueIV/shluz' && github.head_ref == 'feat/telegram-miniapp-control'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: f7b6d8f17f1c4f0d403f33e966c836d09e6e373c
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Reconstruct exact source without changing refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import base64, hashlib, json, lzma, os, pathlib, subprocess, urllib.request
+          shas = ['cd064b28a462dd47dceebb9720817f45dc2816a4', 'c591078d53c0ff455c63b67b089e745704f3196c', 'faee18950566298896d33b3bcbe1b4dfbd4a24c9', '105e3af60323b2453131483b5e81ee8a6df97fc4', 'c88c3c51c61c5ef16e6cb72b1c23d991fc1453f5', '1892882432d067c33bbc6b5888e592349cd98b69']
+          root = 'https://api.github.com/repos/DeepDlueIV/shluz'
+          headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'User-Agent': 'NoClip-source-check'}
+          chunks = []
+          for sha in shas:
+              with urllib.request.urlopen(urllib.request.Request(root + '/git/blobs/' + sha, headers=headers), timeout=30) as response:
+                  part = base64.b64decode(json.load(response)['content'])
+              assert hashlib.sha1(f'blob {len(part)}\0'.encode() + part).hexdigest() == sha
+              chunks.append(part)
+          compressed = b''.join(chunks)
+          assert hashlib.sha256(compressed).hexdigest() == '819aa1c35235e8ee80bc190614a7dce96e17c63c951e992fb4dec4711669b0f6'
+          patch = lzma.decompress(compressed)
+          assert hashlib.sha256(patch).hexdigest() == '55e180b747ca22c44d65c54ccb08ba517461630ac7fdacf1e6aea78d3c19abd6'
+          pathlib.Path('/tmp/miniapp.patch').write_bytes(patch)
+          subprocess.run(['git', 'apply', '--index', '/tmp/miniapp.patch'], check=True)
+          tree = subprocess.check_output(['git', 'write-tree']).decode().strip()
+          assert tree == 'f48895fb1cb20850d16f9f745028362b88d67635', tree
+          print('Verified exact source:', tree)
+          PY
+      - name: Full regression and lint
+        shell: bash
+        run: |
+          python -m pip install -e '.[dev,ui]'
+          ruff check .
+          pytest -q | tee /tmp/miniapp-tests.log
+      - name: Actual Chromium and isolated HTTP API
+        shell: bash
+        run: |
+          python -m playwright install --with-deps chromium
+          python scripts/verify_telegram_miniapp.py | tee /tmp/miniapp-browser.log
+      - name: Verify installed static assets
+        run: |
+          python -m pip wheel --no-deps . -w /tmp/wheel
+          python - <<'PY'
+          import pathlib, zipfile
+          with zipfile.ZipFile(next(pathlib.Path('/tmp/wheel').glob('*.whl'))) as wheel:
+              for name in ('index.html', 'app.css', 'app.js'):
+                  assert 'telegram_bot/miniapp/static/' + name in wheel.namelist()
+          PY
+      - name: Publish immutable code objects, never refs or deployments
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import base64, hashlib, json, os, pathlib, subprocess, urllib.request
+          root = 'https://api.github.com/repos/DeepDlueIV/shluz'
+          headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json', 'User-Agent': 'NoClip-source-check'}
+          def post(path, data):
+              request = urllib.request.Request(root + path, data=json.dumps(data).encode(), headers=headers, method='POST')
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+          entries = []
+          for path in subprocess.check_output(['git', 'diff', '--cached', '--name-only']).decode().splitlines():
+              assert not path.startswith('.github/')
+              data = pathlib.Path(path).read_bytes()
+              expected = hashlib.sha1(f'blob {len(data)}\0'.encode() + data).hexdigest()
+              actual = post('/git/blobs', {'encoding': 'base64', 'content': base64.b64encode(data).decode()})['sha']
+              assert actual == expected
+              entries.append({'path': path, 'mode': '100644', 'type': 'blob', 'sha': actual})
+          tree = post('/git/trees', {'base_tree': 'e688aadc6bc0500605b8482c4228d970b8b1c47b', 'tree': entries})['sha']
+          assert tree == 'f48895fb1cb20850d16f9f745028362b88d67635'
+          out = pathlib.Path('artifacts/miniapp'); out.mkdir(parents=True, exist_ok=True)
+          (out / 'objects.json').write_text(json.dumps({'tree': tree, 'entries': entries}, indent=2))
+          print('Verified immutable code tree:', tree, 'Files:', len(entries))
+          print('No branch refs, releases, bot settings or real databases changed.')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: miniapp-verification
+          path: |
+            artifacts/miniapp/
+            /tmp/miniapp-tests.log
+            /tmp/miniapp-browser.log
+          retention-days: 7
