@@ -57,7 +57,7 @@ async function readLimitedBody(request: Request): Promise<Uint8Array<ArrayBuffer
 /** No authentication secrets, upstream URL, administrative routes or caller-defined hosts reach the browser. */
 export async function forwardGuestRequest(
   request: Request,
-  env: Env = process.env,
+  env: Env = process.env as Env,
   fetcher: typeof fetch = fetch,
 ): Promise<Response> {
   const url = new URL(request.url);
