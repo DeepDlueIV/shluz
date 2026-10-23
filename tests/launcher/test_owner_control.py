@@ -149,7 +149,9 @@ def test_start_only_existing_ids_after_gateway_health(tmp_path, monkeypatch):
     monkeypatch.setattr(m, "containers", lambda: current)
     monkeypatch.setattr(m, "settings_for", lambda *args: settings())
     monkeypatch.setattr(m, "check_volumes", lambda *args: {"gateway", "bot"})
-    monkeypatch.setattr(m, "wait_healthy", lambda identifier: events.append(("healthy", identifier)))
+    monkeypatch.setattr(
+        m, "wait_healthy", lambda identifier: events.append(("healthy", identifier))
+    )
     monkeypatch.setattr(m.updater, "docker", lambda *args, **kw: events.append(args) or "")
     m.start_services(tmp_path)
     assert events == [
