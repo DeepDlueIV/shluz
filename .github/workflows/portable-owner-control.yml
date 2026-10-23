@@ -45,9 +45,23 @@ jobs:
       - name: Telegram panel authorization regressions
         run: python -m pytest tests/telegram/test_miniapp.py -q
 
+  docker:
+    name: Real Docker SQLite and new bot container
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build isolated local image (no real secrets)
+        run: docker build --platform linux/amd64 -t noclip-portable-smoke:local .
+      - name: Test existing volumes, backup, permanent Mini App mode and stopping
+        run: python scripts/miniapp_live_docker_smoke.py
+
   package:
     name: Verified ZIP for Windows, no secrets
-    needs: [windows, linux]
+    needs: [windows, linux, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
