@@ -9,10 +9,40 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: backend-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      backend: ${{ steps.changes.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate routing
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+      - name: Identify backend changes
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 .github/scripts/ci_scope.py >> "$GITHUB_OUTPUT"
+
   test:
+    needs: scope
+    # При проблеме определения области не показываем ложный зелёный пропуск.
+    if: always() && (needs.scope.result != 'success' || needs.scope.outputs.backend != 'false')
     runs-on: ubuntu-latest
     steps:
+      - name: Require a valid scope result
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+        run: test "$SCOPE_RESULT" = 'success'
       - name: Checkout
         uses: actions/checkout@v4
 
