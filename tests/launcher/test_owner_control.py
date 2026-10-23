@@ -239,7 +239,13 @@ def test_new_bundle_has_one_entry_and_no_secrets(tmp_path):
         assert archive.testzip() is None
         names = archive.namelist()
         assert "NoClip.cmd" in names
+        assert "miniapp_live.py" in names
+        assert "Stop-NoClip.cmd" in names
+        assert "Status-NoClip.cmd" in names
+        assert "Backup-NoClip.cmd" in names
+        assert "owner_control.py" not in names
         assert "trial-manifest.json" in names
+        assert b"miniapp_live.py" in archive.read("NoClip.cmd")
         assert not any(".env" in n or "backups" in n or "config/" in n for n in names)
         assert b"SHLUZ_HOME=%~dp0" in archive.read("NoClip.cmd")
     assert dest.with_suffix(".sha256").is_file()
