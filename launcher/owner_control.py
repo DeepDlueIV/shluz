@@ -210,6 +210,12 @@ def check_volumes(settings, existing):
                 if mount.get("Type") != "volume" or mount.get("Name") != volumes["connector"]:
                     raise ControlError("Служебный Docker volume не совпадает.")
                 required.add("connector")
+    # После обновления Compose может создать отсутствующий том даже если контейнер
+    # бота пока не существует. Сверяем сохранённый проект целиком заранее.
+    if existing["shluz"]:
+        required.add("gateway")
+    if settings.get("telegram"):
+        required.update({"bot", "connector"})
     for kind in required:
         if not updater.docker("volume", "inspect", volumes[kind], optional=True):
             raise ControlError("Ожидаемый Docker volume отсутствует. Запуск запрещён.")
@@ -269,6 +275,8 @@ def start_services(root):
         updater.docker("start", gateway["Id"])
     wait_healthy(gateway["Id"])
     bot = current["telegram_bot"]
+    if not bot and settings.get("telegram"):
+        raise ControlError("Telegram настроен, но контейнер отсутствует. Автоустановки нет.")
     if bot:
         if not running(bot):
             updater.docker("start", bot["Id"])
@@ -309,7 +317,10 @@ def stop_miniapp(root):
 def stop_services(root):
     require_docker()
     if trial_occupied(root):
-        stop_miniapp(root)
+        source = legacy_home() if (
+            not trial_state(root).exists() and trial_state(legacy_home()).exists()
+        ) else root
+        stop_miniapp(source)
     current = containers()
     if current["shluz"]:
         settings = settings_for(root, current)
