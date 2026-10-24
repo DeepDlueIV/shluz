@@ -31,3 +31,9 @@ secrets/
 /local-check/
 /runtime.json
 /installed.json
+
+# Only the installer owns this runtime state; never publish backup snapshots.
+/.noclip-installer/
+/NoClip-OneClick*.zip
+/NoClip-OneClick*.sha256
+/installer/.build/
