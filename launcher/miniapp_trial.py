@@ -147,7 +147,7 @@ def candidate_args(old, manifest, state, env_file):
     return args + [manifest["image"], "python", "-m", "telegram_bot"]
 
 
-def telegram(token, method, **body):
+def telegram(token, method, *, request_timeout=20, **body):
     if method not in {"getMe", "getWebhookInfo", "getChatMenuButton", "setChatMenuButton"}:
         raise TrialError("Недопустимая операция Telegram.")
     req = urllib.request.Request(
@@ -156,7 +156,7 @@ def telegram(token, method, **body):
         headers={"Content-Type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=20) as response:
+        with urllib.request.urlopen(req, timeout=request_timeout) as response:
             result = json.load(response)
         if not result.get("ok"):
             raise ValueError()

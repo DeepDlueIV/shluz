@@ -502,7 +502,7 @@ def test_telegram_menu_confirmation_waits_for_current_web_app(monkeypatch):
         {"type": "web_app", "web_app": {"url": "https://current.trycloudflare.com/miniapp"}},
     ])
     calls = []
-    def telegram(token, method):
+    def telegram(token, method, **kwargs):
         calls.append((token, method))
         return next(responses)
     monkeypatch.setattr(m.trial, "telegram", telegram)
@@ -514,7 +514,7 @@ def test_telegram_menu_confirmation_waits_for_current_web_app(monkeypatch):
 def test_telegram_menu_confirmation_refuses_stale_or_missing_url(monkeypatch):
     m = load()
     calls = []
-    def telegram(token, method):
+    def telegram(token, method, **kwargs):
         calls.append(method)
         return {"type": "commands"}
     monkeypatch.setattr(m.trial, "telegram", telegram)
@@ -530,8 +530,82 @@ def test_telegram_menu_confirmation_deadline_is_bounded(monkeypatch):
     clock = iter([0, 0, 16, 16])
     calls = []
     monkeypatch.setattr(m.time, "monotonic", lambda: next(clock))
-    monkeypatch.setattr(m.trial, "telegram", lambda *a: calls.append(a) or {"type": "commands"})
+    monkeypatch.setattr(
+        m.trial, "telegram", lambda *a, **kw: calls.append(a) or {"type": "commands"}
+    )
     monkeypatch.setattr(m.time, "sleep", lambda _: pytest.fail("deadline expired"))
     with pytest.raises(m.LiveError):
         m.wait_menu("synthetic-ci-token", "https://current.trycloudflare.com")
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("failed_stage", ["current_settings", "prepare_images", "ensure_preflight"])
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_prejournal_failure_stops_owned_runtime(tmp_path, monkeypatch, failed_stage, corrupt):
+    m = load()
+    calls = []
+    if corrupt:
+        m.state_file(tmp_path).parent.mkdir(parents=True)
+        m.state_file(tmp_path).write_text("{broken", encoding="utf-8")
+    monkeypatch.setattr(m.trial, "root_folder", lambda: tmp_path / "unused-trial")
+    monkeypatch.setattr(m.trial, "inspect", lambda name: None)
+    monkeypatch.setattr(m, "gateway_and_old", lambda: (gateway(), old_bot()))
+    monkeypatch.setattr(m, "current_settings", lambda *a: settings())
+    monkeypatch.setattr(m, "prepare_images", lambda *a: ({"commit": m.PREVIEW_COMMIT}, "cloud"))
+    monkeypatch.setattr(m, "ensure_preflight", lambda *a: ("ci-token", {}, ""))
+    monkeypatch.setattr(m, "owned", lambda name: {"Id": name, "State": {"Running": True}})
+    monkeypatch.setattr(
+        m.updater, "inspect_container", lambda role: gateway() if role == "shluz" else old_bot()
+    )
+    monkeypatch.setattr(m, "save_state", lambda *a: pytest.fail("failure precedes journal"))
+    monkeypatch.setattr(m, "restore_classic", lambda *a, **kw: pytest.fail("no automatic classic"))
+
+    def docker(*args, **kwargs):
+        calls.append(args)
+        return "linux/amd64" if args[0] == "info" else ""
+
+    monkeypatch.setattr(m, "docker", docker)
+
+    def fail(*args):
+        raise m.LiveError("synthetic preflight failure")
+
+    monkeypatch.setattr(m, failed_stage, fail)
+    with pytest.raises(m.LiveError, match="preflight"):
+        m.start(tmp_path)
+    stopped = {c[3] for c in calls if c[:2] == ("stop", "--time")}
+    assert stopped == {m.LIVE_BOT, m.LIVE_TUNNEL, old_bot()["Id"], gateway()["Id"]}
+    assert not any(c[0] in {"start", "rm", "rename"} for c in calls)
+
+
+def test_menu_confirmation_rejects_correct_but_late_response(monkeypatch):
+    m = load()
+    clock = iter([0, 0, 16, 16])
+    received = []
+    monkeypatch.setattr(m.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(m.time, "sleep", lambda _: pytest.fail("expired budget"))
+
+    def telegram(token, method, **kwargs):
+        received.append(kwargs)
+        return {"type": "web_app", "web_app": {"url": "https://current.trycloudflare.com/miniapp"}}
+
+    monkeypatch.setattr(m.trial, "telegram", telegram)
+    with pytest.raises(m.LiveError):
+        m.wait_menu("synthetic-ci-token", "https://current.trycloudflare.com")
+    assert received[0]["request_timeout"] <= 15
+
+
+def test_telegram_request_timeout_never_enters_api_payload(monkeypatch):
+    import io
+
+    m = load()
+    observed = []
+
+    def urlopen(request, timeout):
+        observed.append((json.loads(request.data), timeout))
+        return io.BytesIO(b'{"ok":true,"result":{"type":"commands"}}')
+
+    monkeypatch.setattr(m.trial.urllib.request, "urlopen", urlopen)
+    assert m.trial.telegram("synthetic-ci-token", "getChatMenuButton", request_timeout=1.25) == {
+        "type": "commands"
+    }
+    assert observed == [({}, 1.25)]

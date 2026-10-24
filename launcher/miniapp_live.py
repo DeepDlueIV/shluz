@@ -241,13 +241,18 @@ def wait_menu(token, url, *, attempts=10, timeout_seconds=15):
     """Не объявлять запуск успешным до применения нового глобального меню Telegram."""
     deadline = time.monotonic() + timeout_seconds
     for attempt in range(attempts):
-        if time.monotonic() >= deadline:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
             break
         try:
-            menu = trial.telegram(token, "getChatMenuButton")
+            menu = trial.telegram(
+                token, "getChatMenuButton", request_timeout=min(5.0, remaining)
+            )
         except trial.TrialError:
             # Сырой ответ/исключение может содержать bot token; наружу только итог этапа.
             menu = {}
+        if time.monotonic() >= deadline:
+            break
         if (
             isinstance(menu, dict) and menu.get("type") == "web_app"
             and isinstance(menu.get("web_app"), dict)
@@ -433,60 +438,60 @@ def backup(root):
 
 
 def start(root):
-    docker_platform = docker("info", "--format", "{{.OSType}}/{{.Architecture}}").strip()
-    if docker_platform not in {"linux/amd64", "linux/x86_64"}:
-        raise LiveError("Нужен Docker Desktop Linux/x64.")
-    old_trial_root = trial.root_folder()
-    legacy_trial_root = Path(
-        os.environ.get("LOCALAPPDATA", str(Path.home() / ".local" / "share"))
-    ) / "Shluz" / "miniapp-trial"
-    for candidate in (old_trial_root, legacy_trial_root):
-        if (candidate / "active.json").exists():
-            with updater.update_lock(candidate):
-                # Старую тестовую копию лишь останавливаем; историю и контейнеры сохраняем.
-                for name in ("noclip-miniapp-trial-bot", "noclip-miniapp-trial-tunnel"):
-                    item = trial.inspect(name)
-                    if item and (item["Config"].get("Labels") or {}).get(trial.LABEL) != "1":
-                        raise LiveError("Имя прежней Mini App занято чужим контейнером.")
-                    if is_running(item):
-                        docker("stop", "--time", "25", name, timeout=60)
-    leftover = trial.inspect("noclip-miniapp-trial-bot")
-    if leftover and is_running(leftover):
-        raise LiveError("Старая Mini App всё ещё работает; второй polling запрещён.")
     try:
-        state = read_state(root)
-    except (OSError, ValueError):
-        state = None
-    if not isinstance(state, dict):
-        state = None
-    if state and state.get("phase") == "active":
-        live, tunnel = owned(LIVE_BOT), owned(LIVE_TUNNEL)
-        if (
-            is_running(live) and is_running(tunnel)
-            and live["State"].get("Health", {}).get("Status") == "healthy"
-        ):
-            gateway, old = gateway_and_old()
-            if is_running(gateway) and not is_running(old):
-                print("NoClip уже запущен: Gateway + новая Telegram Mini App.")
-                return
-    gateway, old = gateway_and_old()
-    if state:
-        stop(root)
+        docker_platform = docker("info", "--format", "{{.OSType}}/{{.Architecture}}").strip()
+        if docker_platform not in {"linux/amd64", "linux/x86_64"}:
+            raise LiveError("Нужен Docker Desktop Linux/x64.")
+        old_trial_root = trial.root_folder()
+        legacy_trial_root = Path(
+            os.environ.get("LOCALAPPDATA", str(Path.home() / ".local" / "share"))
+        ) / "Shluz" / "miniapp-trial"
+        for candidate in (old_trial_root, legacy_trial_root):
+            if (candidate / "active.json").exists():
+                with updater.update_lock(candidate):
+                    # Старую тестовую копию лишь останавливаем; историю и контейнеры сохраняем.
+                    for name in ("noclip-miniapp-trial-bot", "noclip-miniapp-trial-tunnel"):
+                        item = trial.inspect(name)
+                        if item and (item["Config"].get("Labels") or {}).get(trial.LABEL) != "1":
+                            raise LiveError("Имя прежней Mini App занято чужим контейнером.")
+                        if is_running(item):
+                            docker("stop", "--time", "25", name, timeout=60)
+        leftover = trial.inspect("noclip-miniapp-trial-bot")
+        if leftover and is_running(leftover):
+            raise LiveError("Старая Mini App всё ещё работает; второй polling запрещён.")
+        try:
+            state = read_state(root)
+        except (OSError, ValueError):
+            state = None
+        if not isinstance(state, dict):
+            state = None
+        if state and state.get("phase") == "active":
+            live, tunnel = owned(LIVE_BOT), owned(LIVE_TUNNEL)
+            if (
+                is_running(live) and is_running(tunnel)
+                and live["State"].get("Health", {}).get("Status") == "healthy"
+            ):
+                gateway, old = gateway_and_old()
+                if is_running(gateway) and not is_running(old):
+                    print("NoClip уже запущен: Gateway + новая Telegram Mini App.")
+                    return
         gateway, old = gateway_and_old()
-    settings = current_settings(root, gateway, old)
-    image_manifest, cloud_image = prepare_images(root)
-    token, previous_menu, username = ensure_preflight(old)
-    initial = {
-        "schema": 1,
-        "phase": "preparing",
-        "old_id": old["Id"],
-        "was_running": is_running(old),
-        "old_menu": previous_menu,
-        "image": image_manifest["commit"],
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    save_state(root, initial)  # ДО первой внешней модификации, для crash recovery.
-    try:
+        if state:
+            stop(root)
+            gateway, old = gateway_and_old()
+        settings = current_settings(root, gateway, old)
+        image_manifest, cloud_image = prepare_images(root)
+        token, previous_menu, username = ensure_preflight(old)
+        initial = {
+            "schema": 1,
+            "phase": "preparing",
+            "old_id": old["Id"],
+            "was_running": is_running(old),
+            "old_menu": previous_menu,
+            "image": image_manifest["commit"],
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        save_state(root, initial)  # ДО первой внешней модификации, для crash recovery.
         stop_owned()
         if is_running(old):
             docker("stop", "--time", "25", old["Id"], timeout=60)
