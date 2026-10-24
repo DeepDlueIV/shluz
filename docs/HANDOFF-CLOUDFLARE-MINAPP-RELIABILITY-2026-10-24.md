@@ -59,11 +59,18 @@ Tunnel обслуживает адрес: cloudflared может остават�
 - Windows-набор `tests/launcher`: **126 passed, 2 skipped**.
 - Ruff для изменённых Python-файлов: **passed**; `py_compile` и `git diff --check`:
   **passed**.
+- GitHub Actions [run 40091601284](https://github.com/DeepDlueIV/shluz/actions/runs/40091601284):
+  Windows **127 passed, 1 skipped**; Linux launcher **121 passed, 7 skipped**;
+  Telegram Mini App **21 passed, 1 warning**; Ruff passed; isolated Docker
+  SQLite/volume smoke passed; ZIP package and SHA256 verification passed.
+- CI artifact `NoClip-SHLUZ-Portable-Windows` создан, SHA-256 контейнера артефакта
+  `05c27f59078e06e889144d85aaf1724aeb7fec8ba02bd17568ec0f1a9157cdec`, действует
+  до 23.11.2026. Его можно скачать со страницы Actions run; это временный CI artifact,
+  а не release.
 - Живая локальная проверка: Gateway/Mini App health сохранены; публичный Tunnel
   **не прошёл** DNS после одного восстановления; Telegram menu read-back **stale**.
-- Изолированный Docker smoke и CI на GitHub для нового commit в этой проверке ещё не
-  запускались. prerelease ZIP не собирался и не публиковался, так как критерий
-  работающего HTTPS Tunnel не выполнен.
+  Поэтому pre-release **не публиковался**: критерий работающего HTTPS Tunnel на ПК
+  владельца не выполнен.
 
 ## Блокер и следующий безопасный шаг
 
