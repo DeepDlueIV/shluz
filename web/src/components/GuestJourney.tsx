@@ -40,7 +40,6 @@ const isChatPath = (pathname: string | null) => pathname === "/app" || pathname 
 type TurnstileAPI = {
   render(container: HTMLElement, options: Record<string, unknown>): string | undefined;
   remove(widgetId: string): void;
-  ready(callback: () => void): void;
 };
 
 declare global { interface Window { turnstile?: TurnstileAPI } }
@@ -65,7 +64,9 @@ function loadTurnstile(): Promise<TurnstileAPI> {
     script.onload = () => {
       const api = window.turnstile;
       if (!api) { fail(); return; }
-      api.ready(() => { window.clearTimeout(timeout); resolve(api); });
+      // Async api.js уже выполнен; ready() несовместим с async/defer.
+      window.clearTimeout(timeout);
+      resolve(api);
     };
     document.head.appendChild(script);
   });

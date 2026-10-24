@@ -130,7 +130,6 @@ export default function GuestChat() {
             <span className={styles.keyboardHint}>{t("Enter to send · Shift + Enter for a new line", "Enter — отправить · Shift + Enter — новая строка")}</span>
           </div>
           {!enabled ? <p className={styles.availability}>{t("The demo is not connected. Text remains in this tab.", "Демонстрация временно недоступна. Текст остаётся в этой вкладке.")}</p>
-            : remaining !== null && remaining > 0 ? <p className={styles.availability}>{t("Requests remaining:", "Осталось запросов:")} {remaining}. {t("No registration required.", "Без регистрации.")}</p>
             : <p className={styles.availability}>{t("Responses may contain errors. Verify important information.", "Ответ может содержать неточности. Важное стоит проверить.")}</p>}
         </div>
       </div>

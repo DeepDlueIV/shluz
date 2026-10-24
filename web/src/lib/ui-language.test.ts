@@ -18,3 +18,9 @@ import { GatewayError, getGatewayMessage } from "./gateway.ts";
     assert.doesNotMatch(message.message, /private server exception/);
   }
 });
+
+
+test("guest copy never exposes the numeric free-request allowance in either language", () => {
+  const component = readFileSync(new URL("../components/GuestChat.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(component, /Requests remaining|Осталось запросов/);
+});
