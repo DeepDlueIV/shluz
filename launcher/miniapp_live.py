@@ -1086,14 +1086,48 @@ def main(argv=None):
         with updater.update_lock(root):
             if operation in {"--start", "start"}:
                 start(root)
+                import site_bridge
+
+                if site_bridge.main([]) != 0:
+                    print("Telegram запущен, но сайт/его HTTPS-туннель не поднялся.")
+                    return 1
             elif operation in {"--stop", "stop"}:
+                import site_bridge
+
+                website_result = site_bridge.main(["stop"])
                 stop(root)
+                if website_result != 0:
+                    print("Telegram остановлен; проверьте состояние туннеля сайта.")
+                    return 1
             elif operation in {"--rollback", "rollback"}:
                 stop(root, rollback=True)
+                import site_bridge
+
+                site_bridge.main(["stop"])
             elif operation in {"--backup", "backup"}:
                 backup(root)
             elif operation in {"--status", "status"}:
                 status(root)
+                import site_bridge
+
+                item = site_bridge.inspect_gateway()
+                print("Gateway сайта:", "работает" if is_running(item) else "остановлен")
+                try:
+                    site_state = json.loads(
+                        (root / "config" / "site-bridge" / "state.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                    tunnel_up = (
+                        type(site_state.get("pid")) is int
+                        and site_state.get("phase") != "stopped"
+                    )
+                except (OSError, ValueError, TypeError):
+                    tunnel_up = False
+                print(
+                    "Туннель сайта:",
+                    "запущен" if tunnel_up else "остановлен/не подтверждён",
+                )
             else:
                 raise LiveError("Доступные команды: start, stop, status, backup, rollback.")
         return 0

@@ -115,6 +115,28 @@ def test_missing_state_restarts_only_owned_agent_without_duplicate(tmp_path, mon
     assert "https://noclip-web.vercel.app" in capsys.readouterr().out
 
 
+def test_repeated_start_keeps_current_public_tunnel_address(tmp_path, monkeypatch, capsys):
+    m, cfg = configured(tmp_path, monkeypatch)
+    current = agent(cfg, pid=81)
+    monkeypatch.setattr(m, "agents", lambda: [current])
+    monkeypatch.setattr(
+        m,
+        "local_tunnels",
+        lambda: [{"public_url": "https://assigned.ngrok-free.dev"}],
+    )
+    monkeypatch.setattr(m, "wait_gateway", lambda *_: None)
+    monkeypatch.setattr(
+        m, "prepare_policy", lambda *_: pytest.fail("idempotent start must not rotate tunnel")
+    )
+    (cfg["runtime"] / "state.json").write_text(
+        json.dumps({"schema": 1, "pid": 81, "https_url": "https://assigned.ngrok-free.dev"})
+    )
+
+    m.start(tmp_path)
+
+    assert "адрес сохранён" in capsys.readouterr().out
+
+
 def test_existing_foreign_agent_on_4040_is_not_reused(tmp_path, monkeypatch):
     m, cfg = configured(tmp_path, monkeypatch)
     foreign = agent(cfg)
@@ -168,6 +190,7 @@ def test_agent_ownership_requires_exact_policy_config_executable_and_inspection(
 
 def test_launch_command_hidden_and_never_contains_auth_values(tmp_path, monkeypatch):
     m, cfg = configured(tmp_path, monkeypatch)
+    cfg["domain"] = "assigned.ngrok-free.dev"
     calls = []
 
     class Process:
@@ -181,6 +204,7 @@ def test_launch_command_hidden_and_never_contains_auth_values(tmp_path, monkeypa
     assert "--inspect=false" in command
     assert command[command.index("--config") + 1] == str(cfg["config"])
     assert command[command.index("--traffic-policy-file") + 1] == str(cfg["policy"])
+    assert command[command.index("--url") + 1] == "https://assigned.ngrok-free.dev"
     assert "password" not in " ".join(command).lower()
     assert kwargs.get("creationflags", 0) != 0
 

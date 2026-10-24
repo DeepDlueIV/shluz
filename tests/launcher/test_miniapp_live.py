@@ -877,3 +877,21 @@ def test_telegram_request_timeout_never_enters_api_payload(monkeypatch):
         "type": "commands"
     }
     assert observed == [({}, 1.25)]
+
+
+def test_one_click_start_and_stop_include_website_bridge(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+
+    m = load()
+    import site_bridge
+
+    monkeypatch.setattr(m, "home", lambda: tmp_path)
+    monkeypatch.setattr(m.updater, "update_lock", lambda *_: nullcontext())
+    monkeypatch.setattr(m, "start", lambda *_: None)
+    monkeypatch.setattr(m, "stop", lambda *_args, **_kwargs: None)
+    calls = []
+    monkeypatch.setattr(site_bridge, "main", lambda args: calls.append(args) or 0)
+
+    assert m.main(["start"]) == 0
+    assert m.main(["stop"]) == 0
+    assert calls == [[], ["stop"]]

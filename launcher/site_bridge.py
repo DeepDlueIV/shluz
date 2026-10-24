@@ -6,6 +6,7 @@ import ctypes
 import errno
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -43,11 +44,19 @@ def settings(root):
         port = data["port"]
         config = Path(data["configPath"]).resolve()
         policy = Path(data["trafficPolicy"]).resolve()
+        domain = data.get("domain")
         if (
             type(port) is not int
             or not 1024 <= port <= 65535
             or config != root / "config" / "site-bridge" / "ngrok.yml"
             or policy != root / "config" / "site-bridge" / "traffic-policy.yml"
+            or (
+                domain is not None
+                and (
+                    not isinstance(domain, str)
+                    or not re.fullmatch(r"[a-z0-9-]+\.ngrok-free\.dev", domain)
+                )
+            )
         ):
             raise ValueError
     except (OSError, ValueError, TypeError, KeyError) as exc:
@@ -61,6 +70,7 @@ def settings(root):
         "policy": policy,
         "runtime": config.parent,
         "upstream": f"http://127.0.0.1:{port}",
+        "domain": domain,
     }
 
 
@@ -269,8 +279,7 @@ def spawn_agent(executable, cfg):
         env = dict(os.environ)
         for name in ("NGROK_AUTHTOKEN", "NGROK_API_KEY"):
             env.pop(name, None)
-        process = subprocess.Popen(
-            [
+        command = [
                 executable,
                 "http",
                 cfg["upstream"],
@@ -281,7 +290,11 @@ def spawn_agent(executable, cfg):
                 "--inspect=false",
                 "--log=stdout",
                 "--log-format=json",
-            ],
+            ]
+        if cfg.get("domain"):
+            command.extend(["--url", "https://" + cfg["domain"]])
+        process = subprocess.Popen(
+            command,
             stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -341,6 +354,21 @@ def start(root):
         raise BridgeError("Найдено несколько website-агентов; повторный запуск отменён.")
     if not owned and tunnels is not None:
         raise BridgeError("Порт ngrok 4040 занят другим агентом; ничего не остановлено.")
+    if owned and item["State"].get("Running") and isinstance(tunnels, list):
+        try:
+            saved = json.loads((cfg["runtime"] / "state.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            saved = {}
+        current_url = saved.get("https_url")
+        if (
+            saved.get("pid") == owned[0]["pid"]
+            and isinstance(current_url, str)
+            and any(tunnel.get("public_url") == current_url for tunnel in tunnels)
+        ):
+            wait_gateway(cfg)
+            print("Сайт и его HTTPS-туннель уже запущены; адрес сохранён.")
+            print("Сайт NoClip:", SITE_URL)
+            return
     # Аргументы старого процесса не доказывают содержимое загруженной policy.
     # Закрываем только подтверждённый собственный агент до подготовки новых файлов.
     for entry in owned:
