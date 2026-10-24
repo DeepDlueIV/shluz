@@ -829,16 +829,22 @@ def test_preflight_exception_does_not_stop_existing_healthy_services(tmp_path, m
     monkeypatch.setattr(m, "read_state", lambda *a: current)
     monkeypatch.setattr(m, "save_state", lambda *a: None)
     monkeypatch.setattr(m, "gateway_and_old", lambda: (gateway(), old_bot()))
-    monkeypatch.setattr(m, "owned", lambda name: {
-        m.LIVE_BOT: {
-            "Id": "live-id", "State": {
-                "Running": True, "Health": {"Status": "healthy"}
-            },
-        },
-        m.LIVE_TUNNEL: {
-            "Id": "tunnel-id", "State": {"Running": True}
-        },
-    }.get(name))
+    def owned(name):
+        if name == m.LIVE_BOT:
+            return {
+                "Id": "live-id", "State": {
+                    "Running": True, "Health": {"Status": "healthy"}
+                },
+            }
+        if name == m.LIVE_TUNNEL:
+            return {"Id": "tunnel-id", "State": {"Running": True}}
+        return None
+    monkeypatch.setattr(m, "owned", owned)
+    monkeypatch.setattr(
+        m, "current_settings", lambda *a: (_ for _ in ()).throw(
+            m.LiveError("safe synthetic read-only preflight failure")
+        ),
+    )
     def fail_before_mutation(*args, **kwargs):
         raise m.LiveError("safe synthetic read-only preflight failure")
     monkeypatch.setattr(m, "wait_menu", fail_before_mutation)
@@ -860,13 +866,14 @@ def test_stateful_preparing_failure_uses_existing_rollback(tmp_path, monkeypatch
     monkeypatch.setattr(m.trial, "inspect", lambda *a: None)
     monkeypatch.setattr(m, "read_state", lambda *a: states)
     monkeypatch.setattr(m, "stop", lambda *a: events.append("rollback"))
-    monkeypatch.setattr(m, "gateway_and_old", lambda: (None, None))
+    monkeypatch.setattr(m, "gateway_and_old", lambda: (gateway(), old_bot()))
     monkeypatch.setattr(m, "current_settings", lambda *a: settings())
     monkeypatch.setattr(m, "prepare_images", lambda *a: (
         {"commit": m.PREVIEW_COMMIT, "image": "shluz-preview:" + m.PREVIEW_COMMIT},
         "cloudflare/cloudflared@sha256:" + "a" * 64,
     ))
     monkeypatch.setattr(m, "ensure_preflight", lambda *a: ("ci-token", {}, ""))
+    monkeypatch.setattr(m, "source_volume", lambda *a: "historical-data")
     monkeypatch.setattr(m, "save_state", lambda _root, value: states.update(value))
     monkeypatch.setattr(m, "backup", lambda *a: None)
     monkeypatch.setattr(m, "retire_owned", lambda *a: None)
