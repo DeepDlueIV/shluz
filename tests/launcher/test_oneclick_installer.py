@@ -233,10 +233,9 @@ def test_empty_folder_or_git_checkout_refused_without_any_change(tmp_path):
 
 
 def test_real_packer_contains_only_named_files_no_runtime_secrets(tmp_path):
-    import package_oneclick_update
-
     root = Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(root / "scripts"))
+    import package_oneclick_update
     revision = "f" * 40
     dest = tmp_path / "NoClip-OneClick.zip"
     package_oneclick_update.build(dest, revision)
