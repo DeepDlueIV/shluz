@@ -21,3 +21,13 @@ secrets/
 *.sqlite-*
 *.heartbeat.json
 *.lock
+# Portable runtime: local credentials, databases and diagnostics never belong in Git.
+/config/
+/versions/
+/backups/
+/live-miniapp/
+/miniapp-trial/
+/reports/
+/local-check/
+/runtime.json
+/installed.json

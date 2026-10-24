@@ -136,11 +136,23 @@ def prepare_images(root):
     )
     # Preview уже содержит ТОЧНО ТЕ ЖЕ байты Mini App, но более свежий Gateway.
     # Проверено через сравнение 8 Git blob SHA; не загружаем устаревший image trial.
-    archive = Path(root) / "versions" / PREVIEW_COMMIT / "image.tar.gz"
-    archive.parent.mkdir(parents=True, exist_ok=True)
-    updater.download_image(preview, archive)
-    preview["local_image_id"] = updater.prepare_image(preview, archive)
-    docker("pull", panel["cloudflared_image"], timeout=300)
+    expected = preview.get("image_config_digest", preview.get("image_id"))
+    loaded = updater.inspect_image(preview["image"])
+    verified = False
+    if loaded and (loaded.get("Os"), loaded.get("Architecture")) == ("linux", "amd64"):
+        actual = loaded["Id"]
+        if actual != expected:
+            actual = updater.exported_config_digest(loaded["Id"])
+        verified = actual == expected
+    if verified:
+        preview["local_image_id"] = loaded["Id"]
+    else:
+        archive = Path(root) / "versions" / PREVIEW_COMMIT / "image.tar.gz"
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        updater.download_image(preview, archive)
+        preview["local_image_id"] = updater.prepare_image(preview, archive)
+    if not updater.inspect_image(panel["cloudflared_image"]):
+        docker("pull", panel["cloudflared_image"], timeout=300)
     return preview, panel["cloudflared_image"]
 
 
@@ -225,6 +237,34 @@ def ensure_preflight(old):
     return token, old_menu, me.get("username", "")
 
 
+def wait_menu(token, url, *, attempts=10, timeout_seconds=15):
+    """Не объявлять запуск успешным до применения нового глобального меню Telegram."""
+    deadline = time.monotonic() + timeout_seconds
+    for attempt in range(attempts):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        try:
+            menu = trial.telegram(
+                token, "getChatMenuButton", request_timeout=min(5.0, remaining)
+            )
+        except trial.TrialError:
+            # Сырой ответ/исключение может содержать bot token; наружу только итог этапа.
+            menu = {}
+        if time.monotonic() >= deadline:
+            break
+        if (
+            isinstance(menu, dict) and menu.get("type") == "web_app"
+            and isinstance(menu.get("web_app"), dict)
+            and menu["web_app"].get("url") == url + "/miniapp"
+        ):
+            return
+        remaining = deadline - time.monotonic()
+        if attempt + 1 < attempts and remaining > 0:
+            time.sleep(min(0.5, remaining))
+    raise LiveError("Telegram не подтвердил новое меню Mini App. Сервисы будут остановлены.")
+
+
 def start_gateway(gateway):
     if not is_running(gateway):
         docker("start", gateway["Id"])
@@ -242,18 +282,63 @@ def start_gateway(gateway):
 
 
 def stop_owned():
+    """Остановить собственные live-ресурсы, включая сохранённые предыдущие, без удаления."""
+    errors = []
+    targets = {}
     for name in (LIVE_BOT, LIVE_TUNNEL):
-        item = owned(name)
-        if item:
-            if is_running(item):
+        try:
+            item = owned(name)
+            if item:
+                targets[item.get("Id", name)] = (name, item)
+        except (LiveError, updater.UpdateError) as exc:
+            errors.append(type(exc).__name__)
+    try:
+        for identifier in docker("ps", "-aq", "--filter", "label=" + LIVE_LABEL + "=1").split():
+            if identifier in targets:
+                continue
+            item = inspect(identifier)
+            if item and (item["Config"].get("Labels") or {}).get(LIVE_LABEL) == "1":
+                targets[identifier] = (identifier, item)
+    except (LiveError, updater.UpdateError) as exc:
+        errors.append(type(exc).__name__)
+    for name, item in targets.values():
+        if is_running(item):
+            try:
                 docker("stop", "--time", "25", name, timeout=60)
-            docker("rm", name)
+            except updater.UpdateError as exc:
+                errors.append(type(exc).__name__)
+    if errors:
+        raise LiveError("Не все собственные Mini App сервисы удалось остановить. Повторите Stop.")
+
+
+def retire_owned():
+    """Освободить фиксированные имена, сохранив предыдущие контейнеры и их volumes."""
+    stop_owned()
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    for name in (LIVE_BOT, LIVE_TUNNEL):
+        if owned(name):
+            docker("rename", name, name + "-previous-" + stamp)
+
+
+def ensure_network():
     raw = docker("network", "inspect", LIVE_NETWORK, optional=True)
     if raw:
         network = json.loads(raw)[0]
         if (network.get("Labels") or {}).get(LIVE_LABEL) != "1":
             raise LiveError("Имя сети Mini App занято другим проектом.")
-        docker("network", "rm", LIVE_NETWORK)
+    else:
+        docker("network", "create", "--label", LIVE_LABEL + "=1", LIVE_NETWORK)
+
+
+def compose_owned(service):
+    item = updater.inspect_container(service)
+    if item:
+        labels = item["Config"].get("Labels") or {}
+        if (
+            labels.get("com.docker.compose.project"), labels.get("com.docker.compose.service")
+        ) != (updater.PROJECT, service):
+            raise LiveError("Docker-контейнер не прошёл проверку принадлежности SHLUZ.")
+    return item
 
 
 def restore_classic(root, state, *, restart=True):
@@ -284,28 +369,41 @@ def restore_classic(root, state, *, restart=True):
 
 
 def stop(root, *, rollback=False):
-    state = read_state(root)
-    if not state:
-        print("Новая Mini App ещё не установлена.")
-        return
+    try:
+        state = read_state(root)
+    except (OSError, ValueError):
+        # Journal помогает восстановлению, но не является разрешением на остановку.
+        state = None
+    if not isinstance(state, dict):
+        state = None
     if rollback:
-        restore_classic(root, state)
-        print("Классический бот восстановлен. Данные сохранены.")
+        gateway, old = compose_owned("shluz"), compose_owned("telegram_bot")
+        if not gateway or not old:
+            raise LiveError("Не найдены исходные сервисы для явного отката.")
+        start_gateway(gateway)
+        restore_classic(root, {**(state or {}), "old_id": old["Id"], "was_running": True})
+        print("Классический бот восстановлен по явному запросу. Данные сохранены.")
         return
-    for name in (LIVE_BOT, LIVE_TUNNEL):
-        item = owned(name)
-        if is_running(item):
-            docker("stop", "--time", "25", name, timeout=60)
-    gateway = updater.inspect_container("shluz")
-    if gateway and is_running(gateway):
-        docker("stop", "--time", "25", gateway["Id"], timeout=60)
-    old = inspect(state.get("old_id", ""))
-    if old and is_running(old):
-        docker("stop", "--time", "25", old["Id"], timeout=60)
-    # Не возвращаем прежний бот автоматически: новая версия остаётся основной.
-    state["phase"] = "stopped"
-    save_state(root, state)
-    print("SHLUZ и новая Mini App остановлены. Все Docker volumes сохранены.")
+    errors = []
+    try:
+        stop_owned()
+    except (LiveError, updater.UpdateError) as exc:
+        errors.append(type(exc).__name__)
+    for service in ("telegram_bot", "shluz"):
+        try:
+            item = compose_owned(service)
+            if is_running(item):
+                docker("stop", "--time", "25", item["Id"], timeout=60)
+        except (LiveError, updater.UpdateError) as exc:
+            errors.append(type(exc).__name__)
+    if state:
+        state["phase"] = "stop_failed" if errors else "stopped"
+        save_state(root, state)
+    if errors:
+        raise LiveError(
+            "Не все управляемые сервисы удалось остановить. Повторите Stop; данные сохранены."
+        )
+    print("SHLUZ и новая Mini App остановлены. Контейнеры и Docker volumes сохранены.")
 
 
 def backup(root):
@@ -340,65 +438,75 @@ def backup(root):
 
 
 def start(root):
-    docker_platform = docker("info", "--format", "{{.OSType}}/{{.Architecture}}").strip()
-    if docker_platform not in {"linux/amd64", "linux/x86_64"}:
-        raise LiveError("Нужен Docker Desktop Linux/x64.")
-    old_trial_root = trial.root_folder()
-    legacy_trial_root = Path(
-        os.environ.get("LOCALAPPDATA", str(Path.home() / ".local" / "share"))
-    ) / "Shluz" / "miniapp-trial"
-    for candidate in (old_trial_root, legacy_trial_root):
-        if (candidate / "active.json").exists():
-            with updater.update_lock(candidate):
-                trial.cleanup(candidate)  # Восстановить старый polling без удаления history.
-    leftover = trial.inspect("noclip-miniapp-trial-bot")
-    if leftover and is_running(leftover):
-        raise LiveError("Старая Mini App всё ещё работает; второй polling запрещён.")
-    state = read_state(root)
-    if state and state.get("phase") == "active":
-        live, tunnel = owned(LIVE_BOT), owned(LIVE_TUNNEL)
-        if (
-            is_running(live) and is_running(tunnel)
-            and live["State"].get("Health", {}).get("Status") == "healthy"
-        ):
-            gateway, old = gateway_and_old()
-            if is_running(gateway) and not is_running(old):
-                print("NoClip уже запущен: Gateway + новая Telegram Mini App.")
-                return
-    gateway, old = gateway_and_old()
-    if state:
-        restore_classic(root, state, restart=False)
-        gateway, old = gateway_and_old()
-    settings = current_settings(root, gateway, old)
-    image_manifest, cloud_image = prepare_images(root)
-    token, previous_menu, username = ensure_preflight(old)
-    start_gateway(gateway)
-    backup(root)  # До единого переключения всегда сохраняем SQLite и настройки.
-    # Никаких удалений старых контейнеров и томов. Только свой HTTPS и bot.
-    if owned(LIVE_BOT) or owned(LIVE_TUNNEL):
-        raise LiveError("Остались live-контейнеры без state; нужна безопасная диагностика.")
-    if docker("network", "inspect", LIVE_NETWORK, optional=True):
-        raise LiveError("Сеть Mini App занята. Не запускаю два polling-процесса.")
-    initial = {
-        "schema": 1,
-        "phase": "preparing",
-        "old_id": old["Id"],
-        "was_running": is_running(old),
-        "old_menu": previous_menu,
-        "image": image_manifest["commit"],
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    save_state(root, initial)  # ДО первой внешней модификации, для crash recovery.
     try:
-        docker("network", "create", "--label", LIVE_LABEL + "=1", LIVE_NETWORK)
+        docker_platform = docker("info", "--format", "{{.OSType}}/{{.Architecture}}").strip()
+        if docker_platform not in {"linux/amd64", "linux/x86_64"}:
+            raise LiveError("Нужен Docker Desktop Linux/x64.")
+        old_trial_root = trial.root_folder()
+        legacy_trial_root = Path(
+            os.environ.get("LOCALAPPDATA", str(Path.home() / ".local" / "share"))
+        ) / "Shluz" / "miniapp-trial"
+        for candidate in (old_trial_root, legacy_trial_root):
+            if (candidate / "active.json").exists():
+                with updater.update_lock(candidate):
+                    # Старую тестовую копию лишь останавливаем; историю и контейнеры сохраняем.
+                    for name in ("noclip-miniapp-trial-bot", "noclip-miniapp-trial-tunnel"):
+                        item = trial.inspect(name)
+                        if item and (item["Config"].get("Labels") or {}).get(trial.LABEL) != "1":
+                            raise LiveError("Имя прежней Mini App занято чужим контейнером.")
+                        if is_running(item):
+                            docker("stop", "--time", "25", name, timeout=60)
+        leftover = trial.inspect("noclip-miniapp-trial-bot")
+        if leftover and is_running(leftover):
+            raise LiveError("Старая Mini App всё ещё работает; второй polling запрещён.")
+        try:
+            state = read_state(root)
+        except (OSError, ValueError):
+            state = None
+        if not isinstance(state, dict):
+            state = None
+        if state and state.get("phase") == "active":
+            live, tunnel = owned(LIVE_BOT), owned(LIVE_TUNNEL)
+            if (
+                is_running(live) and is_running(tunnel)
+                and live["State"].get("Health", {}).get("Status") == "healthy"
+            ):
+                gateway, old = gateway_and_old()
+                if is_running(gateway) and not is_running(old):
+                    print("NoClip уже запущен: Gateway + новая Telegram Mini App.")
+                    return
+        gateway, old = gateway_and_old()
+        if state:
+            stop(root)
+            gateway, old = gateway_and_old()
+        settings = current_settings(root, gateway, old)
+        image_manifest, cloud_image = prepare_images(root)
+        token, previous_menu, username = ensure_preflight(old)
+        initial = {
+            "schema": 1,
+            "phase": "preparing",
+            "old_id": old["Id"],
+            "was_running": is_running(old),
+            "old_menu": previous_menu,
+            "image": image_manifest["commit"],
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        save_state(root, initial)  # ДО первой внешней модификации, для crash recovery.
+        stop_owned()
+        if is_running(old):
+            docker("stop", "--time", "25", old["Id"], timeout=60)
+        start_gateway(gateway)
+        backup(root)
+        retire_owned()
+        ensure_network()
         docker(
             "run", "-d", "--name", LIVE_TUNNEL, "--label", LIVE_LABEL + "=1",
             "--restart=no", "--network", LIVE_NETWORK, "--cap-drop=ALL",
             "--security-opt", "no-new-privileges", cloud_image,
-            "tunnel", "--no-autoupdate", "--protocol", "http2",
+            "tunnel", "--no-autoupdate", "--protocol", "auto",
             "--url", "http://miniapp:8081",
         )
-        url = trial.wait_tunnel(LIVE_TUNNEL)
+        url = trial.wait_tunnel(LIVE_TUNNEL, require_registered=True)
         config = secure_env(root, environment_for(old, url))
         args = safe_candidate_args(old, image_manifest, settings, config)
         if is_running(old):
@@ -421,6 +529,7 @@ def start(root):
                         token, "setChatMenuButton",
                         chat_id=owner_id, menu_button={"type": "default"},
                     )
+        wait_menu(token, url)
         initial["phase"] = "active"
         initial["origin"] = url  # HTTPS адрес не секрет; необходим для диагностики.
         save_state(root, initial)
@@ -431,8 +540,8 @@ def start(root):
                 webbrowser.open("https://t.me/" + username)
     except Exception:
         with suppress(Exception):
-            # Не скрывать исходную ошибку; state сохраняется при ошибке отката.
-            restore_classic(root, initial)
+            # Ошибка не включает classic: он доступен только через явный rollback.
+            stop(root)
         raise
 
 
