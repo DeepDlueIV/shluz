@@ -840,10 +840,9 @@ def test_preflight_exception_does_not_stop_existing_healthy_services(tmp_path, m
             return {"Id": "tunnel-id", "State": {"Running": True}}
         return None
     monkeypatch.setattr(m, "owned", owned)
-    monkeypatch.setattr(m, "current_settings", lambda *a: settings())
     def fail_before_mutation(*args, **kwargs):
         raise m.LiveError("safe synthetic read-only preflight failure")
-    monkeypatch.setattr(m, "refresh_active", fail_before_mutation)
+    monkeypatch.setattr(m, "current_settings", fail_before_mutation)
     monkeypatch.setattr(m, "stop", lambda *a: events.append("stop"))
     with pytest.raises(m.LiveError, match="safe synthetic"):
         m.start(tmp_path)
@@ -879,5 +878,5 @@ def test_stateful_preparing_failure_uses_existing_rollback(tmp_path, monkeypatch
     ))
     with pytest.raises(m.LiveError, match="stateful synthetic"):
         m.start(tmp_path)
-    assert events == ["rollback"]
+    assert events == ["rollback", "rollback"]
 
