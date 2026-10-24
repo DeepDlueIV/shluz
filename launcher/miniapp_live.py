@@ -601,12 +601,21 @@ def start(root):
                         print("NoClip уже запущен: Gateway + новая Telegram Mini App.")
                     return
         gateway, old = gateway_and_old()
-        if state:
-            stop(root)
-            gateway, old = gateway_and_old()
+        # Resolve every read-only dependency before any stop or container mutation.
+        # A stale persisted state can be recovered only after the new configuration,
+        # gateway identity and candidate image have passed preflight.
         settings = current_settings(root, gateway, old)
         image_manifest, cloud_image = prepare_images(root)
         token, previous_menu, username = ensure_preflight(old)
+        # Only after preflight succeeds may an old, incomplete deployment be stopped.
+        # Healthy active/menu_unverified deployments are handled above and are never
+        # stopped just because a read-only refresh failed.
+        if state:
+            stop(root)
+            gateway, old = gateway_and_old()
+            settings = current_settings(root, gateway, old)
+            image_manifest, cloud_image = prepare_images(root)
+            token, previous_menu, username = ensure_preflight(old)
         initial = {
             "schema": 1,
             "phase": "preparing",
