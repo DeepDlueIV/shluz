@@ -237,6 +237,29 @@ def ensure_preflight(old):
     return token, old_menu, me.get("username", "")
 
 
+def wait_menu(token, url, *, attempts=10, timeout_seconds=15):
+    """Не объявлять запуск успешным до применения нового глобального меню Telegram."""
+    deadline = time.monotonic() + timeout_seconds
+    for attempt in range(attempts):
+        if time.monotonic() >= deadline:
+            break
+        try:
+            menu = trial.telegram(token, "getChatMenuButton")
+        except trial.TrialError:
+            # Сырой ответ/исключение может содержать bot token; наружу только итог этапа.
+            menu = {}
+        if (
+            isinstance(menu, dict) and menu.get("type") == "web_app"
+            and isinstance(menu.get("web_app"), dict)
+            and menu["web_app"].get("url") == url + "/miniapp"
+        ):
+            return
+        remaining = deadline - time.monotonic()
+        if attempt + 1 < attempts and remaining > 0:
+            time.sleep(min(0.5, remaining))
+    raise LiveError("Telegram не подтвердил новое меню Mini App. Сервисы будут остановлены.")
+
+
 def start_gateway(gateway):
     if not is_running(gateway):
         docker("start", gateway["Id"])
@@ -501,6 +524,7 @@ def start(root):
                         token, "setChatMenuButton",
                         chat_id=owner_id, menu_button={"type": "default"},
                     )
+        wait_menu(token, url)
         initial["phase"] = "active"
         initial["origin"] = url  # HTTPS адрес не секрет; необходим для диагностики.
         save_state(root, initial)

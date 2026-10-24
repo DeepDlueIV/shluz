@@ -177,7 +177,10 @@ def test_stop_never_starts_old_bot_and_keeps_volumes(tmp_path, monkeypatch):
     assert not any(c[:2] == ("volume", "rm") for c in calls)
 
 
-def test_error_after_journal_stops_everything_without_automatic_classic(tmp_path, monkeypatch):
+@pytest.mark.parametrize("failed_stage", ["panel", "menu"])
+def test_error_after_journal_stops_everything_without_automatic_classic(
+    tmp_path, monkeypatch, failed_stage
+):
     m = load()
     events = []
 
@@ -209,14 +212,17 @@ def test_error_after_journal_stops_everything_without_automatic_classic(tmp_path
     monkeypatch.setattr(m.trial, "wait_tunnel", lambda *a, **kw: "https://test.trycloudflare.com")
     monkeypatch.setattr(m, "secure_env", lambda *a: tmp_path / "env")
     monkeypatch.setattr(m, "safe_candidate_args", lambda *a: ("create", "candidate"))
-    monkeypatch.setattr(m.trial, "wait_ready", lambda *a: (
-        _ for _ in ()).throw(m.trial.TrialError("CI failure"))
+    def fail_stage(*args):
+        raise m.LiveError("CI menu failure")
+    monkeypatch.setattr(
+        m.trial, "wait_ready", fail_stage if failed_stage == "panel" else lambda *a: None
     )
+    monkeypatch.setattr(m, "wait_menu", fail_stage)
     monkeypatch.setattr(
         m, "restore_classic", lambda *a, **kw: pytest.fail("automatic classic rollback")
     )
     monkeypatch.setattr(m, "stop", lambda *a, **kw: events.append(("stop-all",)))
-    with pytest.raises(m.trial.TrialError):
+    with pytest.raises(m.LiveError):
         m.start(tmp_path)
     assert events.index(("journal", "preparing")) < events.index(("gateway-ready",))
     assert events.index(("backup-done",)) < events.index((
@@ -268,12 +274,13 @@ def test_healthy_new_bot_survives_failure_to_open_telegram_browser(tmp_path, mon
     monkeypatch.setattr(m, "secure_env", lambda *a: tmp_path / "env")
     monkeypatch.setattr(m, "safe_candidate_args", lambda *a: ("create", "candidate"))
     monkeypatch.setattr(m.trial, "wait_ready", lambda *a: None)
+    monkeypatch.setattr(m, "wait_menu", lambda *a: events.append("menu-confirmed"))
     monkeypatch.setattr(m, "restore_classic", lambda *a: pytest.fail("unexpected rollback"))
     monkeypatch.setattr(
         m.webbrowser, "open", lambda *a: (_ for _ in ()).throw(OSError("no browser"))
     )
     m.start(tmp_path)
-    assert events == ["preparing", "active"]
+    assert events == ["preparing", "menu-confirmed", "active"]
     tunnel = next(c for c in commands if c[:2] == ("run", "-d"))
     assert tunnel[tunnel.index("--protocol") + 1] == "auto"
     assert "--no-tls-verify" not in tunnel
@@ -485,3 +492,46 @@ def test_stop_catches_archived_labelled_polling_without_removing_it(tmp_path, mo
     m.stop_owned()
     assert ("stop", "--time", "25", identifier) in calls
     assert not any(c[0] in {"rm", "rename"} for c in calls)
+
+
+
+def test_telegram_menu_confirmation_waits_for_current_web_app(monkeypatch):
+    m = load()
+    responses = iter([
+        {"type": "web_app", "web_app": {"url": "https://old.trycloudflare.com/miniapp"}},
+        {"type": "web_app", "web_app": {"url": "https://current.trycloudflare.com/miniapp"}},
+    ])
+    calls = []
+    def telegram(token, method):
+        calls.append((token, method))
+        return next(responses)
+    monkeypatch.setattr(m.trial, "telegram", telegram)
+    monkeypatch.setattr(m.time, "sleep", lambda _: None)
+    m.wait_menu("synthetic-ci-token", "https://current.trycloudflare.com")
+    assert calls == [("synthetic-ci-token", "getChatMenuButton")] * 2
+
+
+def test_telegram_menu_confirmation_refuses_stale_or_missing_url(monkeypatch):
+    m = load()
+    calls = []
+    def telegram(token, method):
+        calls.append(method)
+        return {"type": "commands"}
+    monkeypatch.setattr(m.trial, "telegram", telegram)
+    monkeypatch.setattr(m.time, "sleep", lambda _: None)
+    with pytest.raises(m.LiveError, match="меню"):
+        m.wait_menu("synthetic-ci-token", "https://current.trycloudflare.com", attempts=3)
+    assert calls == ["getChatMenuButton"] * 3
+
+
+
+def test_telegram_menu_confirmation_deadline_is_bounded(monkeypatch):
+    m = load()
+    clock = iter([0, 0, 16, 16])
+    calls = []
+    monkeypatch.setattr(m.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(m.trial, "telegram", lambda *a: calls.append(a) or {"type": "commands"})
+    monkeypatch.setattr(m.time, "sleep", lambda _: pytest.fail("deadline expired"))
+    with pytest.raises(m.LiveError):
+        m.wait_menu("synthetic-ci-token", "https://current.trycloudflare.com")
+    assert len(calls) == 1
