@@ -21,7 +21,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install pytest pyyaml ruff
-      - run: ruff check installer/bootstrap.py scripts/package_oneclick_update.py tests/launcher/test_oneclick_installer.py
+      - run: ruff check installer/bootstrap.py launcher/miniapp_live.py launcher/miniapp_trial.py scripts/package_oneclick_update.py tests/launcher
       - run: python -m pytest tests/launcher -q --noconftest
       - name: Validate one-click Windows entrypoint
         shell: pwsh
@@ -42,7 +42,7 @@ jobs:
           python-version: '3.12'
           cache: pip
       - run: python -m pip install -e '.[dev]'
-      - run: ruff check installer/bootstrap.py scripts/package_oneclick_update.py tests/launcher/test_oneclick_installer.py
+      - run: ruff check installer/bootstrap.py launcher/miniapp_live.py launcher/miniapp_trial.py scripts/package_oneclick_update.py tests/launcher
       - run: python -m pytest tests/launcher -q --noconftest
       - run: python -m pytest tests/telegram/test_miniapp.py -q
 
