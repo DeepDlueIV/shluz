@@ -114,3 +114,17 @@ jobs:
             echo '### Quick: tests and types; browser/build verification NOT performed' >> "$GITHUB_STEP_SUMMARY"
             echo 'Before merging, mark the PR Ready and wait for a successful full run on its current revision.' >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  deployment-filter-windows:
+    name: Deployment filter on Windows
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify backend-only commits skip web without CMD caret corruption
+        run: node --experimental-strip-types --test web/src/lib/deployment-filter.test.ts
