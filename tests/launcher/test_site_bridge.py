@@ -85,7 +85,7 @@ def test_foreign_label_image_or_nonlocal_port_is_rejected():
             m.validate_gateway(item, 18001)
 
 
-def test_missing_state_reuses_owned_agent_instead_of_duplicate(tmp_path, monkeypatch):
+def test_missing_state_restarts_only_owned_agent_without_duplicate(tmp_path, monkeypatch):
     m, cfg = configured(tmp_path, monkeypatch)
     monkeypatch.setattr(m, "agents", lambda: [agent(cfg)])
     monkeypatch.setattr(
@@ -100,10 +100,16 @@ def test_missing_state_reuses_owned_agent_instead_of_duplicate(tmp_path, monkeyp
     )
     monkeypatch.setattr(m, "wait_gateway", lambda *a: None)
     monkeypatch.setattr(m, "prepare_policy", lambda *a: None)
-    monkeypatch.setattr(m, "spawn_agent", lambda *a: pytest.fail("duplicate agent"))
+    killed, spawned = [], []
+    monkeypatch.setattr(m.os, "kill", lambda pid, sig: killed.append(pid))
+    monkeypatch.setattr(m, "wait_stopped", lambda *a: None)
+    monkeypatch.setattr(m, "spawn_agent", lambda *a: spawned.append(a) or 81)
+    monkeypatch.setattr(m, "wait_agent", lambda *a: (81, "https://assigned.ngrok-free.dev"))
     m.start(tmp_path)
     state = json.loads((cfg["runtime"] / "state.json").read_text())
-    assert state["pid"] == 31
+    assert killed == [31]
+    assert len(spawned) == 1
+    assert state["pid"] == 81
     assert state["https_url"] == "https://assigned.ngrok-free.dev"
     assert "password" not in state
 
@@ -289,3 +295,87 @@ def test_native_windows_parser_preserves_paths_with_spaces():
         "--inspect=false",
     ]
     assert m.windows_args(subprocess.list2cmdline(args)) == args
+
+
+@pytest.mark.parametrize(
+    "field,filename", [("trafficPolicy", "other-policy.yml"), ("configPath", "other-ngrok.yml")]
+)
+def test_settings_refuse_noncanonical_config_or_policy(tmp_path, monkeypatch, field, filename):
+    m, cfg = configured(tmp_path, monkeypatch)
+    path = tmp_path / "config" / "site-bridge.json"
+    data = json.loads(path.read_text())
+    data[field] = str(cfg["runtime"] / filename)
+    path.write_text(json.dumps(data))
+    with pytest.raises(m.BridgeError):
+        m.settings(tmp_path)
+
+
+def test_repeated_start_stops_verified_agent_before_policy_failure(tmp_path, monkeypatch):
+    m, cfg = configured(tmp_path, monkeypatch)
+    monkeypatch.setattr(m, "agents", lambda: [agent(cfg)])
+    monkeypatch.setattr(m, "local_tunnels", lambda: [])
+    monkeypatch.setattr(m, "wait_gateway", lambda *a: None)
+    stopped = []
+    monkeypatch.setattr(m.os, "kill", lambda pid, sig: stopped.append(pid))
+    monkeypatch.setattr(m, "wait_stopped", lambda *a: None, raising=False)
+
+    def fail(*a):
+        raise m.BridgeError("policy refused")
+
+    monkeypatch.setattr(m, "prepare_policy", fail)
+    monkeypatch.setattr(m, "spawn_agent", lambda *a: pytest.fail("unsafe spawn"))
+    with pytest.raises(m.BridgeError, match="policy refused"):
+        m.start(tmp_path)
+    assert stopped == [31]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows credentials ACL")
+def test_prepare_only_secures_explicit_external_ngrok_config(tmp_path):
+    import os
+    import subprocess
+
+    runtime = tmp_path / "private"
+    runtime.mkdir()
+    (runtime / "bridge-password.txt").write_text("a" * 64)
+    credential = tmp_path / "ngrok.yml"
+    credential.write_text("version: 3\nagent:\n  authtoken: fake-test-token\n")
+    subprocess.run(
+        ["icacls", str(credential), "/grant", "*S-1-1-0:R"], capture_output=True, check=True
+    )
+    script = Path(__file__).resolve().parents[2] / "web" / "tunnel" / "start-windows.ps1"
+    shell = str(Path(os.environ["SYSTEMROOT"]) / "System32/WindowsPowerShell/v1.0/powershell.exe")
+    result = subprocess.run(
+        [
+            shell,
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            str(script),
+            "-RuntimeDirectory",
+            str(runtime),
+            "-NgrokConfig",
+            str(credential),
+            "-PrepareOnly",
+        ],
+        capture_output=True,
+        timeout=20,
+        check=False,
+    )
+    assert result.returncode == 0
+    query = (
+        "[IO.File]::GetAccessControl('"
+        + str(credential).replace("'", "''")
+        + "').GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])|"
+        "ForEach-Object {$_.IdentityReference.Value}|ConvertTo-Json"
+    )
+    result = subprocess.run(
+        [shell, "-NoProfile", "-NonInteractive", "-Command", query],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    identities = set(json.loads(result.stdout))
+    assert "S-1-1-0" not in identities
+    assert "S-1-5-18" in identities
+    assert len(identities) == 2
+    assert credential.read_text() == "version: 3\nagent:\n  authtoken: fake-test-token\n"

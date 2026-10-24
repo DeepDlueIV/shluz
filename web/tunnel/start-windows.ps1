@@ -20,6 +20,25 @@ foreach ($identity in @($sid, [Security.Principal.SecurityIdentifier]'S-1-5-18')
 }
 # Статический .NET API не требует автозагрузки несовместимого Set-Acl модуля.
 [IO.Directory]::SetAccessControl($RuntimeDirectory, $acl)
+if (-not $NgrokConfig -and -not $PrepareOnly) {
+    throw 'Нужен явный NgrokConfig; небезопасная конфигурация по умолчанию не используется.'
+}
+if ($NgrokConfig) {
+    if (-not [IO.Path]::IsPathRooted($NgrokConfig) -or -not (Test-Path -LiteralPath $NgrokConfig -PathType Leaf)) {
+        throw 'Явный NgrokConfig не найден; туннель не запущен.'
+    }
+    if ([IO.File]::GetAttributes($NgrokConfig) -band [IO.FileAttributes]::ReparsePoint) {
+        throw 'NgrokConfig не должен быть ссылкой на другой файл.'
+    }
+    # Явный внешний config допустим, но его DACL также заменяется целиком.
+    $fileAcl = New-Object Security.AccessControl.FileSecurity
+    $fileAcl.SetAccessRuleProtection($true, $false)
+    foreach ($identity in @($sid, [Security.Principal.SecurityIdentifier]'S-1-5-18')) {
+        $rule = New-Object Security.AccessControl.FileSystemAccessRule($identity, 'FullControl', 'Allow')
+        $fileAcl.AddAccessRule($rule)
+    }
+    [IO.File]::SetAccessControl($NgrokConfig, $fileAcl)
+}
 $passwordPath = Join-Path $RuntimeDirectory 'bridge-password.txt'
 $policyPath = Join-Path $RuntimeDirectory 'traffic-policy.yml'
 if (-not (Test-Path -LiteralPath $passwordPath)) {

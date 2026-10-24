@@ -44,8 +44,8 @@ def settings(root):
         if (
             type(port) is not int
             or not 1024 <= port <= 65535
-            or config.parent != policy.parent
-            or not config.is_relative_to(root / "config")
+            or config != root / "config" / "site-bridge" / "ngrok.yml"
+            or policy != root / "config" / "site-bridge" / "traffic-policy.yml"
         ):
             raise ValueError
     except (OSError, ValueError, TypeError, KeyError) as exc:
@@ -320,6 +320,15 @@ def wait_agent(cfg, executable, timeout=25):
     )
 
 
+def wait_stopped(pid, timeout=10):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not any(entry["pid"] == pid for entry in agents()):
+            return
+        time.sleep(0.2)
+    raise BridgeError("Прежний website-агент ещё завершается; второй агент не запущен.")
+
+
 def start(root):
     cfg = settings(root)
     item = validate_gateway(inspect_gateway(), cfg["port"])
@@ -330,12 +339,17 @@ def start(root):
         raise BridgeError("Найдено несколько website-агентов; повторный запуск отменён.")
     if not owned and tunnels is not None:
         raise BridgeError("Порт ngrok 4040 занят другим агентом; ничего не остановлено.")
+    # Аргументы старого процесса не доказывают содержимое загруженной policy.
+    # Закрываем только подтверждённый собственный агент до подготовки новых файлов.
+    for entry in owned:
+        with suppress(ProcessLookupError):
+            os.kill(entry["pid"], signal.SIGTERM)
+        wait_stopped(entry["pid"])
+    prepare_policy(cfg)
     if not item["State"]["Running"]:
         docker("start", item["Id"], timeout=20)
     wait_gateway(cfg)
-    if not owned:
-        prepare_policy(cfg)
-        spawn_agent(launch, cfg)
+    spawn_agent(launch, cfg)
     pid, url = wait_agent(cfg, executable)
     updater.write_json(
         cfg["runtime"] / "state.json",
