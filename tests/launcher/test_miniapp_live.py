@@ -840,14 +840,10 @@ def test_preflight_exception_does_not_stop_existing_healthy_services(tmp_path, m
             return {"Id": "tunnel-id", "State": {"Running": True}}
         return None
     monkeypatch.setattr(m, "owned", owned)
-    monkeypatch.setattr(
-        m, "current_settings", lambda *a: (_ for _ in ()).throw(
-            m.LiveError("safe synthetic read-only preflight failure")
-        ),
-    )
+    monkeypatch.setattr(m, "current_settings", lambda *a: settings())
     def fail_before_mutation(*args, **kwargs):
         raise m.LiveError("safe synthetic read-only preflight failure")
-    monkeypatch.setattr(m, "wait_menu", fail_before_mutation)
+    monkeypatch.setattr(m, "refresh_active", fail_before_mutation)
     monkeypatch.setattr(m, "stop", lambda *a: events.append("stop"))
     with pytest.raises(m.LiveError, match="safe synthetic"):
         m.start(tmp_path)
@@ -873,7 +869,7 @@ def test_stateful_preparing_failure_uses_existing_rollback(tmp_path, monkeypatch
         "cloudflare/cloudflared@sha256:" + "a" * 64,
     ))
     monkeypatch.setattr(m, "ensure_preflight", lambda *a: ("ci-token", {}, ""))
-    monkeypatch.setattr(m, "source_volume", lambda *a: "historical-data")
+    monkeypatch.setattr(m, "current_settings", lambda *a: settings())
     monkeypatch.setattr(m, "save_state", lambda _root, value: states.update(value))
     monkeypatch.setattr(m, "backup", lambda *a: None)
     monkeypatch.setattr(m, "retire_owned", lambda *a: None)
