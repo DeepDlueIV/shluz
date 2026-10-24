@@ -550,6 +550,18 @@ def install(source, root, *, docker_check=docker_preflight, launch=run_existing)
     existing_install(root)
     control = root / CONTROL
     control.mkdir(parents=True, exist_ok=True)
+    # An owner may have cloned Git into the same folder. Keep snapshots and any
+    # future runtime secrets invisible to git add -A, even with an older root
+    # .gitignore. This does not touch .git or the Git commit history.
+    local_ignore = control / ".gitignore"
+    if is_link(local_ignore):
+        raise InstallError("Служебный файл .gitignore является ссылкой.")
+    if not local_ignore.exists():
+        try:
+            with local_ignore.open("x", encoding="utf-8") as stream:
+                stream.write("*\\n!.gitignore\\n")
+        except FileExistsError:
+            pass
     with runtime_lock(root):
         recover_interrupted(root)
         state = load_state(root)
