@@ -528,7 +528,9 @@ def test_telegram_menu_confirmation_repairs_known_stale_menu_once(monkeypatch):
     assert actions.count("set") == 1
 
 
-def test_telegram_menu_confirmation_refuses_stale_or_missing_url(monkeypatch):
+def test_telegram_stale_menu_is_unverified_not_a_reason_to_stop_gateway(
+    monkeypatch, capsys
+):
     m = load()
     operations = []
     monkeypatch.setattr(
@@ -537,9 +539,14 @@ def test_telegram_menu_confirmation_refuses_stale_or_missing_url(monkeypatch):
     )
     monkeypatch.setattr(m, "host_menu_probe", lambda *a, **kw: "stale")
     monkeypatch.setattr(m.time, "sleep", lambda _: None)
-    with pytest.raises(m.LiveError, match="устаревшее меню|устаревшее"):
-        m.wait_menu("ci-token", "https://current.trycloudflare.com", attempts=3)
+    assert m.wait_menu(
+        "ci-token", "https://current.trycloudflare.com", attempts=3
+    ) is False
     assert operations.count("set") == 1
+    warning = capsys.readouterr().out
+    assert "прежнее меню" in warning
+    assert "НЕ подтверждена" in warning
+    assert "будут остановлены" not in warning
 
 
 def test_telegram_menu_confirmation_network_outage_preserves_healthy_bot(monkeypatch):
@@ -556,6 +563,24 @@ def test_telegram_menu_confirmation_network_outage_preserves_healthy_bot(monkeyp
     monkeypatch.setattr(m.time, "sleep", lambda _: None)
     assert m.wait_menu("ci-token", "https://current.trycloudflare.com", attempts=2) is False
     assert attempts == ["docker", "windows", "docker", "windows"]
+
+
+
+def test_menu_ultimately_becomes_current_after_initial_stale_readback(monkeypatch):
+    m = load()
+    calls = []
+    events = iter(["stale", "stale", "match"])
+
+    def inside(url, *, action="read", **kwargs):
+        calls.append(action)
+        return "stale" if action == "set" else next(events)
+
+    monkeypatch.setattr(m, "container_menu_probe", inside)
+    monkeypatch.setattr(m, "host_menu_probe", lambda *a, **kw: "stale")
+    monkeypatch.setattr(m.time, "sleep", lambda _: None)
+    assert m.wait_menu("synthetic-ci-token", "https://current.trycloudflare.com") is True
+    assert "set" in calls
+    assert calls.index("set") < len(calls) - 1
 
 
 def test_telegram_menu_confirmation_deadline_is_bounded(monkeypatch):
@@ -689,8 +714,9 @@ def test_host_menu_probe_distinguishes_transport_error_from_stale_menu(monkeypat
     assert m.host_menu_probe("ci-token", url) == "match"
 
 
-def test_start_does_not_stop_healthy_bot_just_for_unreachable_menu_api(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize("menu_state", ["unreachable", "stale", "api_error", "api_auth"])
+def test_start_does_not_stop_healthy_bot_just_for_unverified_menu(
+    tmp_path, monkeypatch, menu_state
 ):
     m = load()
     phases = []
@@ -728,7 +754,15 @@ def test_start_does_not_stop_healthy_bot_just_for_unreachable_menu_api(
     monkeypatch.setattr(m, "secure_env", lambda *a: tmp_path / "env")
     monkeypatch.setattr(m, "safe_candidate_args", lambda *a: ("create", "candidate"))
     monkeypatch.setattr(m.trial, "wait_ready", lambda *a: None)
-    monkeypatch.setattr(m, "wait_menu", lambda *a: False)
+    monkeypatch.setattr(
+        m, "container_menu_probe",
+        lambda *a, **kw: menu_state,
+    )
+    monkeypatch.setattr(
+        m, "host_menu_probe",
+        lambda *a, **kw: menu_state,
+    )
+    monkeypatch.setattr(m.time, "sleep", lambda _: None)
     monkeypatch.setattr(m, "stop", lambda *a: pytest.fail("healthy bot stopped"))
     m.start(tmp_path)
     assert phases == ["preparing", "menu_unverified"]
