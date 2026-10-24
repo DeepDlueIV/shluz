@@ -270,7 +270,12 @@ try:
         else:
             print('api_error')
 except urllib.error.HTTPError as err:
-    print('api_auth' if err.code in (401,403) else 'api_error')
+    if err.code in (401,403):
+        print('api_auth')
+    elif err.code == 429 or err.code >= 500:
+        print('unreachable')
+    else:
+        print('api_error')
 except (OSError,ValueError,TypeError,IndexError,KeyError):
     print('unreachable')
 """
