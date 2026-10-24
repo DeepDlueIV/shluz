@@ -49,10 +49,12 @@ def gateway():
         "State": {"Running": True, "Health": {"Status": "healthy"}},
         "Mounts": [{"Destination": "/app/data", "Type": "volume", "Name": "gw-data"}],
         "Image": "sha256:" + "f" * 64,
-        "Config": {"Labels": {
-            "com.docker.compose.project": "shluz-owner-check",
-            "com.docker.compose.service": "shluz",
-        }},
+        "Config": {
+            "Labels": {
+                "com.docker.compose.project": "shluz-owner-check",
+                "com.docker.compose.service": "shluz",
+            }
+        },
     }
 
 
@@ -84,7 +86,9 @@ def test_new_mode_is_global_persistent_with_same_bot_and_no_venice_key():
 def test_old_history_volume_is_reused_and_live_label_not_trial(tmp_path):
     m = load()
     args = m.safe_candidate_args(
-        old_bot(), {"image": "shluz-preview:" + "b" * 40}, settings(),
+        old_bot(),
+        {"image": "shluz-preview:" + "b" * 40},
+        settings(),
         tmp_path / "live.env",
     )
     joined = " ".join(args)
@@ -107,9 +111,7 @@ def test_docker_env_file_does_not_quote_telegram_bot_token(tmp_path, monkeypatch
             return CompletedProcess(args, 0)
 
         monkeypatch.setattr(m.subprocess, "run", fake_run)
-    path = m.secure_env(tmp_path, m.environment_for(
-        old_bot(), "https://test.trycloudflare.com"
-    ))
+    path = m.secure_env(tmp_path, m.environment_for(old_bot(), "https://test.trycloudflare.com"))
     text = path.read_text(encoding="utf-8")
     assert "TELEGRAM_BOT_TOKEN=123456:" + "X" * 35 in text
     assert "TELEGRAM_BOT_TOKEN='" not in text
@@ -121,9 +123,9 @@ def test_runtime_uses_existing_gateway_mounts_and_no_blank_volumes(tmp_path, mon
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / ".env.owner").write_text("KEY=value")
     (tmp_path / "runtime.json").write_text(json.dumps(settings()))
-    monkeypatch.setattr(m, "docker", lambda *args, **kwargs: "[]" if args[:2] == (
-        "volume", "inspect"
-    ) else "")
+    monkeypatch.setattr(
+        m, "docker", lambda *args, **kwargs: "[]" if args[:2] == ("volume", "inspect") else ""
+    )
     assert m.current_settings(tmp_path, gateway(), old_bot()) == settings()
     wrong = settings()
     wrong["volumes"]["bot"] = "wrong-empty"
@@ -142,9 +144,9 @@ def test_start_healthy_live_is_idempotent_and_never_starts_old(tmp_path, monkeyp
     monkeypatch.setattr(m.trial, "inspect", lambda *a: None)
     monkeypatch.setattr(m, "read_state", lambda root: state)
     monkeypatch.setattr(m, "owned", lambda n: active if n == m.LIVE_BOT else tunnel)
-    monkeypatch.setattr(m, "gateway_and_old", lambda: (
-        gateway(), {**old_bot(), "State": {"Running": False}}
-    ))
+    monkeypatch.setattr(
+        m, "gateway_and_old", lambda: (gateway(), {**old_bot(), "State": {"Running": False}})
+    )
     monkeypatch.setattr(m, "prepare_images", lambda *a: pytest.fail("must not update"))
     m.start(tmp_path)
 
@@ -164,9 +166,11 @@ def test_stop_never_starts_old_bot_and_keeps_volumes(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(m, "read_state", lambda *a: state)
     monkeypatch.setattr(m, "owned", lambda *a: {"State": {"Running": True}})
-    monkeypatch.setattr(m.updater, "inspect_container", lambda s: (
-        gateway() if s == "shluz" else {**old_bot(), "State": {"Running": False}}
-    ))
+    monkeypatch.setattr(
+        m.updater,
+        "inspect_container",
+        lambda s: gateway() if s == "shluz" else {**old_bot(), "State": {"Running": False}},
+    )
     monkeypatch.setattr(m, "inspect", lambda *a: {**old_bot(), "State": {"Running": False}})
     monkeypatch.setattr(m, "docker", lambda *a, **kw: calls.append(a) or "")
     monkeypatch.setattr(m, "save_state", lambda *a: calls.append(("state", "stopped")))
@@ -196,24 +200,37 @@ def test_error_after_journal_stops_everything_without_automatic_classic(
     monkeypatch.setattr(m, "read_state", lambda *a: None)
     monkeypatch.setattr(m, "gateway_and_old", lambda: (gateway(), old_bot()))
     monkeypatch.setattr(m, "current_settings", lambda *a: settings())
-    monkeypatch.setattr(m, "prepare_images", lambda *a: (
-        {"commit": m.PREVIEW_COMMIT, "image": "shluz-preview:" + m.PREVIEW_COMMIT},
-        "cloudflare/cloudflared@sha256:" + "a" * 64,
-    ))
+    monkeypatch.setattr(
+        m,
+        "prepare_images",
+        lambda *a: (
+            {"commit": m.PREVIEW_COMMIT, "image": "shluz-preview:" + m.PREVIEW_COMMIT},
+            "cloudflare/cloudflared@sha256:" + "a" * 64,
+        ),
+    )
     monkeypatch.setattr(
         m, "ensure_preflight", lambda *a: ("ci-bot-token", {"type": "commands"}, "")
     )
     monkeypatch.setattr(m, "start_gateway", lambda *a: events.append(("gateway-ready",)))
     monkeypatch.setattr(m, "backup", lambda *a: events.append(("backup-done",)))
     monkeypatch.setattr(m, "owned", lambda *a: None)
-    monkeypatch.setattr(m, "save_state", lambda root, state: events.append((
-        "journal", state["phase"],
-    )))
+    monkeypatch.setattr(
+        m,
+        "save_state",
+        lambda root, state: events.append(
+            (
+                "journal",
+                state["phase"],
+            )
+        ),
+    )
     monkeypatch.setattr(m.trial, "wait_tunnel", lambda *a, **kw: "https://test.trycloudflare.com")
     monkeypatch.setattr(m, "secure_env", lambda *a: tmp_path / "env")
     monkeypatch.setattr(m, "safe_candidate_args", lambda *a: ("create", "candidate"))
+
     def fail_stage(*args):
         raise m.LiveError("CI menu failure")
+
     monkeypatch.setattr(
         m.trial, "wait_ready", fail_stage if failed_stage == "panel" else lambda *a: None
     )
@@ -225,56 +242,68 @@ def test_error_after_journal_stops_everything_without_automatic_classic(
     with pytest.raises(m.LiveError):
         m.start(tmp_path)
     assert events.index(("journal", "preparing")) < events.index(("gateway-ready",))
-    assert events.index(("backup-done",)) < events.index((
-        "network", "create", "--label", m.LIVE_LABEL + "=1", m.LIVE_NETWORK
-    ))
-    assert events.index(("journal", "preparing")) < events.index((
-        "network", "create", "--label", m.LIVE_LABEL + "=1", m.LIVE_NETWORK
-    ))
+    assert events.index(("backup-done",)) < events.index(
+        ("network", "create", "--label", m.LIVE_LABEL + "=1", m.LIVE_NETWORK)
+    )
+    assert events.index(("journal", "preparing")) < events.index(
+        ("network", "create", "--label", m.LIVE_LABEL + "=1", m.LIVE_NETWORK)
+    )
     assert ("stop-all",) in events
     assert not any(e[:2] == ("volume", "rm") for e in events)
-
 
 
 def test_healthy_new_bot_survives_failure_to_open_telegram_browser(tmp_path, monkeypatch):
     m = load()
     events = []
     commands = []
-    monkeypatch.setattr(
-        m, "docker",
-        lambda *a, **kw: commands.append(a) or (
-            "linux/amd64" if a[:2] == ("info", "--format") else ""
-        ),
-    )
+    tunnel_created = [False]
+
+    def docker(*args, **kwargs):
+        commands.append(args)
+        if args[:2] == ("run", "-d"):
+            tunnel_created[0] = True
+        return "linux/amd64" if args[:2] == ("info", "--format") else ""
+
+    monkeypatch.setattr(m, "docker", docker)
     monkeypatch.setattr(m.trial, "root_folder", lambda: tmp_path / "miniapp-trial")
     monkeypatch.setattr(m.trial, "inspect", lambda *a: None)
     monkeypatch.setattr(m, "read_state", lambda *a: None)
     monkeypatch.setattr(m, "gateway_and_old", lambda: (gateway(), old_bot()))
     monkeypatch.setattr(m, "current_settings", lambda *a: settings())
     monkeypatch.setattr(
-        m, "prepare_images",
+        m,
+        "prepare_images",
         lambda *a: (
             {"commit": m.PREVIEW_COMMIT, "image": "shluz-preview:" + m.PREVIEW_COMMIT},
             "cloudflare/cloudflared@sha256:" + "a" * 64,
         ),
     )
     monkeypatch.setattr(
-        m, "ensure_preflight",
+        m,
+        "ensure_preflight",
         lambda *a: ("ci-bot-token", {"type": "commands"}, "NoClipTestBot"),
     )
     monkeypatch.setattr(m, "start_gateway", lambda *a: None)
     monkeypatch.setattr(m, "backup", lambda *a: None)
-    monkeypatch.setattr(m, "owned", lambda *a: None)
     monkeypatch.setattr(
-        m, "save_state", lambda _root, data: events.append(data["phase"])
+        m,
+        "owned",
+        lambda name: (
+            {
+                "Id": "tunnel-id",
+                "Config": {"Labels": {m.LIVE_LABEL: "1"}},
+                "State": {"Running": True, "StartedAt": "new"},
+            }
+            if name == m.LIVE_TUNNEL and tunnel_created[0]
+            else None
+        ),
     )
-    monkeypatch.setattr(
-        m.trial, "wait_tunnel", lambda *a, **kw: "https://test.trycloudflare.com"
-    )
+    monkeypatch.setattr(m, "save_state", lambda _root, data: events.append(data["phase"]))
+    monkeypatch.setattr(m.trial, "wait_tunnel", lambda *a, **kw: "https://test.trycloudflare.com")
     monkeypatch.setattr(m, "secure_env", lambda *a: tmp_path / "env")
     monkeypatch.setattr(m, "safe_candidate_args", lambda *a: ("create", "candidate"))
     monkeypatch.setattr(m.trial, "wait_ready", lambda *a: None)
-    monkeypatch.setattr(m, "wait_menu", lambda *a: events.append("menu-confirmed"))
+    monkeypatch.setattr(m, "wait_menu", lambda *a: events.append("menu-confirmed") or "verified")
     monkeypatch.setattr(m, "restore_classic", lambda *a: pytest.fail("unexpected rollback"))
     monkeypatch.setattr(
         m.webbrowser, "open", lambda *a: (_ for _ in ()).throw(OSError("no browser"))
@@ -284,6 +313,7 @@ def test_healthy_new_bot_survives_failure_to_open_telegram_browser(tmp_path, mon
     tunnel = next(c for c in commands if c[:2] == ("run", "-d"))
     assert tunnel[tunnel.index("--protocol") + 1] == "auto"
     assert "--no-tls-verify" not in tunnel
+
 
 def test_pinned_preview_and_trial_revisions_are_different_but_explicit():
     m = load()
@@ -494,49 +524,280 @@ def test_stop_catches_archived_labelled_polling_without_removing_it(tmp_path, mo
     assert not any(c[0] in {"rm", "rename"} for c in calls)
 
 
-
 def test_telegram_menu_confirmation_waits_for_current_web_app(monkeypatch):
     m = load()
-    responses = iter([
-        {"type": "web_app", "web_app": {"url": "https://old.trycloudflare.com/miniapp"}},
-        {"type": "web_app", "web_app": {"url": "https://current.trycloudflare.com/miniapp"}},
-    ])
+    responses = iter(
+        [
+            {"type": "web_app", "web_app": {"url": "https://old.trycloudflare.com/miniapp"}},
+            {"type": "web_app", "web_app": {"url": "https://current.trycloudflare.com/miniapp"}},
+        ]
+    )
     calls = []
+
     def telegram(token, method, **kwargs):
         calls.append((token, method))
-        return next(responses)
+        return True if method == "setChatMenuButton" else next(responses)
+
     monkeypatch.setattr(m.trial, "telegram", telegram)
     monkeypatch.setattr(m.time, "sleep", lambda _: None)
-    m.wait_menu("synthetic-ci-token", "https://current.trycloudflare.com")
-    assert calls == [("synthetic-ci-token", "getChatMenuButton")] * 2
+    assert m.wait_menu("synthetic-ci-token", "https://current.trycloudflare.com") == "verified"
+    assert calls == [
+        ("synthetic-ci-token", "getChatMenuButton"),
+        ("synthetic-ci-token", "setChatMenuButton"),
+        ("synthetic-ci-token", "getChatMenuButton"),
+    ]
+
+
+def test_wait_menu_repairs_stale_global_url_and_reads_it_back(monkeypatch):
+    m = load()
+    reads = iter(
+        [
+            {"type": "web_app", "web_app": {"url": "https://old.trycloudflare.com/miniapp"}},
+            {"type": "web_app", "web_app": {"url": "https://current.trycloudflare.com/miniapp"}},
+        ]
+    )
+    calls = []
+
+    def telegram(token, method, **body):
+        calls.append((method, body))
+        return next(reads) if method == "getChatMenuButton" else True
+
+    monkeypatch.setattr(m.trial, "telegram", telegram)
+    monkeypatch.setattr(m, "container_menu_probe", lambda *a, **kw: "unreachable")
+    assert m.wait_menu("synthetic-ci-token", "https://current.trycloudflare.com") == "verified"
+    assert [method for method, _ in calls] == [
+        "getChatMenuButton",
+        "setChatMenuButton",
+        "getChatMenuButton",
+    ]
+    assert calls[1][1]["menu_button"]["web_app"]["url"] == (
+        "https://current.trycloudflare.com/miniapp"
+    )
+
+
+def test_wait_menu_distinguishes_telegram_unavailable_and_rejected(monkeypatch):
+    m = load()
+    monkeypatch.setattr(m, "host_menu_probe", lambda *a, **kw: "unreachable")
+    monkeypatch.setattr(m, "container_menu_probe", lambda *a, **kw: "unreachable")
+    assert (
+        m.wait_menu(
+            "synthetic-ci-token",
+            "https://current.trycloudflare.com",
+            attempts=1,
+            timeout_seconds=1,
+        )
+        == "telegram_unavailable"
+    )
+
+    monkeypatch.setattr(m, "host_menu_probe", lambda *a, **kw: "rejected")
+    assert (
+        m.wait_menu(
+            "synthetic-ci-token",
+            "https://current.trycloudflare.com",
+            attempts=8,
+            timeout_seconds=10,
+        )
+        == "telegram_rejected"
+    )
+
+
+def test_active_start_revalidates_https_without_recreating_pollers(tmp_path, monkeypatch):
+    m = load()
+    state = {
+        "phase": "active",
+        "origin": "https://same.trycloudflare.com",
+        "tunnel_id": "tunnel-id",
+        "tunnel_started_at": "2026-10-24T10:00:00.000000000Z",
+        "cloudflared_image": "cloudflare/cloudflared@sha256:" + "a" * 64,
+    }
+    live = {"Id": "bot-id", "State": {"Running": True, "Health": {"Status": "healthy"}}}
+    tunnel = {
+        "Id": "tunnel-id",
+        "State": {"Running": True, "StartedAt": state["tunnel_started_at"]},
+    }
+    probes = []
+    public_checks = []
+    commands = []
+    monkeypatch.setattr(m, "docker", lambda *a, **kw: commands.append(a) or "linux/amd64")
+    monkeypatch.setattr(m.trial, "root_folder", lambda: tmp_path / "miniapp-trial")
+    monkeypatch.setattr(m.trial, "inspect", lambda *a: None)
+    monkeypatch.setattr(m, "read_state", lambda root: state)
+    monkeypatch.setattr(m, "owned", lambda name: live if name == m.LIVE_BOT else tunnel)
+    monkeypatch.setattr(
+        m, "gateway_and_old", lambda: (gateway(), {**old_bot(), "State": {"Running": False}})
+    )
+    monkeypatch.setattr(m.trial, "wait_tunnel", lambda *a, **kw: state["origin"])
+    monkeypatch.setattr(
+        m,
+        "public_status",
+        lambda *a, **kw: public_checks.append((a, kw)) or "ready",
+    )
+    monkeypatch.setattr(m.trial, "wait_ready", lambda *a, **kw: probes.append((a, kw)))
+    monkeypatch.setattr(m, "wait_menu", lambda *a, **kw: "verified")
+    monkeypatch.setattr(m, "save_state", lambda *a: None)
+    monkeypatch.setattr(
+        m, "prepare_images", lambda *a: pytest.fail("healthy retry must not rebuild")
+    )
+    m.start(tmp_path)
+    assert public_checks and public_checks[0][0][1] == state["origin"]
+    assert probes == []
+    assert not any(args and args[0] in {"run", "create", "rm"} for args in commands)
+
+
+def test_active_start_uses_url_from_restarted_tunnel_process(tmp_path, monkeypatch):
+    m = load()
+    state = {
+        "phase": "active",
+        "origin": "https://old.trycloudflare.com",
+        "tunnel_id": "tunnel-id",
+        "tunnel_started_at": "2026-10-24T09:00:00.000000000Z",
+        "cloudflared_image": "cloudflare/cloudflared@sha256:" + "a" * 64,
+    }
+    new_url = "https://new.trycloudflare.com"
+    live = {"Id": "bot-id", "State": {"Running": True, "Health": {"Status": "healthy"}}}
+    tunnel = {
+        "Id": "tunnel-id",
+        "State": {"Running": True, "StartedAt": "2026-10-24T10:00:00.000000000Z"},
+    }
+    menu_urls = []
+    saved = []
+    monkeypatch.setattr(m, "docker", lambda *a, **kw: "linux/amd64")
+    monkeypatch.setattr(m.trial, "root_folder", lambda: tmp_path / "miniapp-trial")
+    monkeypatch.setattr(m.trial, "inspect", lambda *a: None)
+    monkeypatch.setattr(m, "read_state", lambda root: state)
+    monkeypatch.setattr(m, "owned", lambda name: live if name == m.LIVE_BOT else tunnel)
+    monkeypatch.setattr(
+        m, "gateway_and_old", lambda: (gateway(), {**old_bot(), "State": {"Running": False}})
+    )
+    monkeypatch.setattr(m.trial, "wait_tunnel", lambda *a, **kw: new_url)
+    monkeypatch.setattr(m, "public_status", lambda *a, **kw: "ready")
+    monkeypatch.setattr(m, "wait_menu", lambda token, url: menu_urls.append(url) or "verified")
+    monkeypatch.setattr(m, "save_state", lambda _root, value: saved.append(dict(value)))
+    monkeypatch.setattr(m, "prepare_images", lambda *a: pytest.fail("must reuse current services"))
+    m.start(tmp_path)
+    assert menu_urls == [new_url]
+    assert saved[-1]["origin"] == new_url
+    assert saved[-1]["tunnel_started_at"] == tunnel["State"]["StartedAt"]
+
+
+def test_restart_tunnel_reuses_the_same_managed_container(monkeypatch):
+    m = load()
+    old = {
+        "Id": "d" * 64,
+        "Config": {"Labels": {m.LIVE_LABEL: "1"}},
+        "State": {"Running": True, "StartedAt": "old"},
+    }
+    restarted = {**old, "State": {"Running": True, "StartedAt": "new"}}
+    calls = []
+    seen = []
+    monkeypatch.setattr(m, "docker", lambda *a, **kw: calls.append(a) or "")
+    monkeypatch.setattr(m, "owned", lambda _name: restarted)
+    monkeypatch.setattr(
+        m.trial,
+        "wait_tunnel",
+        lambda name, **kw: seen.append((name, kw)) or "https://rotated.trycloudflare.com",
+    )
+    url, item = m.restart_tunnel(old, "cloudflare/cloudflared@sha256:" + "a" * 64)
+    assert url == "https://rotated.trycloudflare.com"
+    assert item["Id"] == old["Id"]
+    assert calls == [("stop", "--time", "25", old["Id"]), ("start", old["Id"])]
+    assert seen[0][1]["since"] == "new"
+    assert not any(call[0] == "run" for call in calls)
+
+
+def test_active_dns_failure_keeps_gateway_bot_and_volumes(tmp_path, monkeypatch, capsys):
+    m = load()
+    old_url = "https://old.trycloudflare.com"
+    state = {
+        "phase": "active",
+        "origin": old_url,
+        "tunnel_id": "tunnel-id",
+        "tunnel_started_at": "same",
+        "cloudflared_image": "cloudflare/cloudflared@sha256:" + "a" * 64,
+    }
+    live = {"Id": "bot-id", "State": {"Running": True, "Health": {"Status": "healthy"}}}
+    tunnel = {"Id": "tunnel-id", "State": {"Running": True, "StartedAt": "same"}}
+    calls = []
+    saved = []
+    checks = iter(["dns", "dns"])
+    monkeypatch.setattr(m, "docker", lambda *a, **kw: calls.append(a) or "linux/amd64")
+    monkeypatch.setattr(m.trial, "root_folder", lambda: tmp_path / "miniapp-trial")
+    monkeypatch.setattr(m.trial, "inspect", lambda *a: None)
+    monkeypatch.setattr(m, "read_state", lambda root: state)
+    monkeypatch.setattr(m, "owned", lambda name: live if name == m.LIVE_BOT else tunnel)
+    monkeypatch.setattr(
+        m, "gateway_and_old", lambda: (gateway(), {**old_bot(), "State": {"Running": False}})
+    )
+    monkeypatch.setattr(m.trial, "wait_tunnel", lambda *a, **kw: old_url)
+    monkeypatch.setattr(m, "public_status", lambda *a, **kw: next(checks))
+    monkeypatch.setattr(
+        m, "restart_tunnel", lambda *a, **kw: ("https://new.trycloudflare.com", tunnel)
+    )
+    monkeypatch.setattr(
+        m.trial, "wait_ready", lambda *a, **kw: (_ for _ in ()).throw(m.trial.TrialError("dns"))
+    )
+    monkeypatch.setattr(m, "clear_managed_menu", lambda *a, **kw: "cleared")
+    monkeypatch.setattr(m, "save_state", lambda _root, value: saved.append(dict(value)))
+    monkeypatch.setattr(
+        m, "prepare_images", lambda *a: pytest.fail("must not rebuild healthy Gateway/bot")
+    )
+    m.start(tmp_path)
+    assert saved[-1]["phase"] == "tunnel_unavailable"
+    assert saved[-1]["origin"] is None
+    assert saved[-1]["tunnel_status"] == "dns"
+    assert saved[-1]["menu_status"] == "cleared"
+    assert any(call[:2] == ("stop", "--time") and call[-1] == tunnel["Id"] for call in calls)
+    assert not any(call and call[0] in {"run", "rm", "down", "start"} for call in calls)
+    assert not any(call and call[0] in {"volume", "compose"} for call in calls)
+    output = capsys.readouterr().out
+    assert (
+        "synthetic-ci-token" not in output
+        and old_bot()["Config"]["Env"][0].split("=", 1)[1] not in output
+    )
 
 
 def test_telegram_menu_confirmation_refuses_stale_or_missing_url(monkeypatch):
     m = load()
     calls = []
+
     def telegram(token, method, **kwargs):
         calls.append(method)
-        return {"type": "commands"}
+        return True if method == "setChatMenuButton" else {"type": "commands"}
+
     monkeypatch.setattr(m.trial, "telegram", telegram)
     monkeypatch.setattr(m.time, "sleep", lambda _: None)
-    with pytest.raises(m.LiveError, match="меню"):
+    assert (
         m.wait_menu("synthetic-ci-token", "https://current.trycloudflare.com", attempts=3)
-    assert calls == ["getChatMenuButton"] * 3
-
+        == "menu_stale"
+    )
+    assert calls == ["getChatMenuButton", "setChatMenuButton"] + ["getChatMenuButton"] * 3
 
 
 def test_telegram_menu_confirmation_deadline_is_bounded(monkeypatch):
     m = load()
-    clock = iter([0, 0, 16, 16])
+    clock = [0.0]
     calls = []
-    monkeypatch.setattr(m.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(m.time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(
-        m.trial, "telegram", lambda *a, **kw: calls.append(a) or {"type": "commands"}
+        m.trial,
+        "telegram",
+        lambda token, method, **kw: (
+            calls.append(method)
+            or (True if method == "setChatMenuButton" else {"type": "commands"})
+        ),
     )
-    monkeypatch.setattr(m.time, "sleep", lambda _: pytest.fail("deadline expired"))
-    with pytest.raises(m.LiveError):
-        m.wait_menu("synthetic-ci-token", "https://current.trycloudflare.com")
-    assert len(calls) == 1
+    monkeypatch.setattr(m.time, "sleep", lambda value: clock.__setitem__(0, clock[0] + value))
+    assert (
+        m.wait_menu(
+            "synthetic-ci-token",
+            "https://current.trycloudflare.com",
+            attempts=20,
+            timeout_seconds=1,
+        )
+        == "menu_stale"
+    )
+    assert clock[0] <= 1
+    assert calls.count("setChatMenuButton") == 1
 
 
 @pytest.mark.parametrize("failed_stage", ["current_settings", "prepare_images", "ensure_preflight"])
@@ -585,13 +846,20 @@ def test_menu_confirmation_rejects_correct_but_late_response(monkeypatch):
     monkeypatch.setattr(m.time, "sleep", lambda _: pytest.fail("expired budget"))
 
     def telegram(token, method, **kwargs):
-        received.append(kwargs)
-        return {"type": "web_app", "web_app": {"url": "https://current.trycloudflare.com/miniapp"}}
+        received.append((method, kwargs))
+        if method == "getChatMenuButton":
+            return {
+                "type": "web_app",
+                "web_app": {"url": "https://current.trycloudflare.com/miniapp"},
+            }
+        return True
 
     monkeypatch.setattr(m.trial, "telegram", telegram)
-    with pytest.raises(m.LiveError):
-        m.wait_menu("synthetic-ci-token", "https://current.trycloudflare.com")
-    assert received[0]["request_timeout"] <= 15
+    assert (
+        m.wait_menu("synthetic-ci-token", "https://current.trycloudflare.com", timeout_seconds=15)
+        == "telegram_unavailable"
+    )
+    assert received[0][1]["request_timeout"] <= 4
 
 
 def test_telegram_request_timeout_never_enters_api_payload(monkeypatch):
@@ -609,3 +877,21 @@ def test_telegram_request_timeout_never_enters_api_payload(monkeypatch):
         "type": "commands"
     }
     assert observed == [({}, 1.25)]
+
+
+def test_one_click_start_and_stop_include_website_bridge(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+
+    m = load()
+    import site_bridge
+
+    monkeypatch.setattr(m, "home", lambda: tmp_path)
+    monkeypatch.setattr(m.updater, "update_lock", lambda *_: nullcontext())
+    monkeypatch.setattr(m, "start", lambda *_: None)
+    monkeypatch.setattr(m, "stop", lambda *_args, **_kwargs: None)
+    calls = []
+    monkeypatch.setattr(site_bridge, "main", lambda args: calls.append(args) or 0)
+
+    assert m.main(["start"]) == 0
+    assert m.main(["stop"]) == 0
+    assert calls == [[], ["stop"]]

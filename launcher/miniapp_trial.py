@@ -31,6 +31,20 @@ class TrialError(RuntimeError):
     pass
 
 
+class TelegramApiError(TrialError):
+    """Безопасная категория отказа Telegram без URL запроса с токеном."""
+
+    def __init__(self, category, status=None):
+        self.category = category
+        self.status = status
+        label = f"HTTP {status}" if status else "сеть"
+        if category == "rejected":
+            message = f"Telegram Bot API отклонил запрос ({label})."
+        else:
+            message = "Telegram Bot API временно недоступен."
+        super().__init__(message)
+
+
 def docker(*args, **kwargs):
     return updater.docker(*args, **kwargs)
 
@@ -158,12 +172,23 @@ def telegram(token, method, *, request_timeout=20, **body):
     try:
         with urllib.request.urlopen(req, timeout=request_timeout) as response:
             result = json.load(response)
-        if not result.get("ok"):
-            raise ValueError()
-        return result["result"]
-    except (OSError, ValueError, KeyError) as exc:
-        # Исключение urlopen содержит URL с секретом — никогда не печатаем его.
-        raise TrialError("Telegram не отвечает. Проверьте соединение/VPN и повторите.") from exc
+    except urllib.error.HTTPError as exc:
+        category = "rejected" if 400 <= exc.code < 500 and exc.code != 429 else "unavailable"
+        raise TelegramApiError(category, exc.code) from None
+    except (OSError, ValueError, KeyError):
+        # Не включать в ошибку исходное исключение: оно содержит URL с bot token.
+        raise TelegramApiError("unavailable") from None
+    if not isinstance(result, dict):
+        raise TelegramApiError("unavailable")
+    if not result.get("ok"):
+        code = result.get("error_code")
+        category = (
+            "rejected" if type(code) is int and 400 <= code < 500 and code != 429 else "unavailable"
+        )
+        raise TelegramApiError(category, code if type(code) is int else None)
+    if "result" not in result:
+        raise TelegramApiError("unavailable")
+    return result["result"]
 
 
 def save_state(root, state):
@@ -269,20 +294,32 @@ def _budget(deadline, maximum):
     return min(maximum, remaining)
 
 
-def wait_tunnel(name, *, require_registered=False, timeout_seconds=90):
-    """URL выдаётся до соединения с edge: live-запуск ждёт регистрацию отдельно."""
+def wait_tunnel(name, *, require_registered=False, timeout_seconds=90, since=None):
+    """Return the hostname logged by this tunnel process, not an old log tail.
+
+    A repeated start supplies Docker's current StartedAt so a restarted Quick
+    Tunnel cannot reuse a hostname from an earlier process instance.
+    """
     deadline = time.monotonic() + timeout_seconds
     allocated = None
     while time.monotonic() < deadline:
         try:
+            command = ["docker", "logs"]
+            if since:
+                command += ["--since", since, "--tail=all"]
+            else:
+                command += ["--tail=120"]
+            command.append(name)
             result = subprocess.run(
-                ["docker", "logs", "--tail=120", name], capture_output=True,
-                timeout=_budget(deadline, 10), check=False,
+                command,
+                capture_output=True,
+                timeout=_budget(deadline, 10),
+                check=False,
             )
             logs = (result.stdout + result.stderr).decode("utf-8", "replace")
-            match = re.search(r"https://[a-z0-9]+(?:-[a-z0-9]+)*\.trycloudflare\.com", logs)
-            if match:
-                allocated = match.group()
+            matches = re.findall(r"https://[a-z0-9]+(?:-[a-z0-9]+)*\.trycloudflare\.com", logs)
+            if matches:
+                allocated = matches[-1]
             if allocated and (not require_registered or "Registered tunnel connection" in logs):
                 return allocated
             status = inspect(name, timeout=_budget(deadline, 5))
@@ -293,8 +330,8 @@ def wait_tunnel(name, *, require_registered=False, timeout_seconds=90):
             break
     if allocated and require_registered:
         raise TrialError(
-            "Cloudflare edge не зарегистрирован: URL уже выделен, но защищённое "
-            "соединение туннеля не установлено. Проверьте DNS/VPN/TLS и порт 7844."
+            "Cloudflare edge не зарегистрирован: URL выделен, но соединение "
+            "туннеля не подтверждено."
         )
     raise TrialError("Не удалось получить временный HTTPS URL Cloudflare.")
 
@@ -340,7 +377,7 @@ def probe_container_https(name, url, *, timeout=7, diagnostics=None):
     # Публичный URL получен из проверенного имени trycloudflare; секретов здесь нет.
     script = f"""import json,socket,ssl,urllib.request,urllib.error
 try:
-    with urllib.request.urlopen({(url + '/miniapp/health')!r},timeout={min(5, timeout)!r}) as r:
+    with urllib.request.urlopen({(url + "/miniapp/health")!r},timeout={min(5, timeout)!r}) as r:
         print('ready' if json.load(r)=={{'status':'ok'}} else 'response')
 except urllib.error.HTTPError as e:
     print('http:'+str(e.code))
@@ -376,11 +413,13 @@ def wait_ready(name, public_url, *, attempts=90, timeout_seconds=120):
                 seen_healthy = True
                 if probe_local_panel(name, timeout=_budget(deadline, 5)):
                     seen_local_panel = True
-                    if probe_windows_https(public_url, timeout=_budget(deadline, 5),
-                                           diagnostics=diagnostics):
+                    if probe_windows_https(
+                        public_url, timeout=_budget(deadline, 5), diagnostics=diagnostics
+                    ):
                         return
-                    if probe_container_https(name, public_url, timeout=_budget(deadline, 7),
-                                             diagnostics=diagnostics):
+                    if probe_container_https(
+                        name, public_url, timeout=_budget(deadline, 7), diagnostics=diagnostics
+                    ):
                         return
             time.sleep(_budget(deadline, 1))
         except TimeoutError:
@@ -390,15 +429,16 @@ def wait_ready(name, public_url, *, attempts=90, timeout_seconds=120):
                 break
             raise
     if not seen_healthy:
-        raise TrialError(
-            "Не запустился Telegram-бот (проверка heartbeat). Это не ошибка HTTPS."
-        )
+        raise TrialError("Не запустился Telegram-бот (проверка heartbeat). Это не ошибка HTTPS.")
     if not seen_local_panel:
         raise TrialError("Бот запущен, но его локальная HTTP-панель не ответила.")
     raise TrialError(
         "Бот и HTTP-панель работают, но HTTPS-туннель Cloudflare недоступен. "
-        "Диагностика: Windows=" + diagnostics.get("windows", "not_checked")
-        + "; контейнер=" + diagnostics.get("container", "not_checked") + ". "
+        "Диагностика: Windows="
+        + diagnostics.get("windows", "not_checked")
+        + "; контейнер="
+        + diagnostics.get("container", "not_checked")
+        + ". "
         "Готовность Mini App не подтверждена; защита HTTPS не отключалась."
     )
 
