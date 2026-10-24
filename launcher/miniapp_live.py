@@ -354,16 +354,24 @@ def wait_menu(token, url, *, attempts=8, timeout_seconds=30):
         if attempt + 1 < attempts and remaining > 0:
             time.sleep(min(0.5, remaining))
 
-    if "stale" in failures or "api_auth" in failures or "api_error" in failures:
-        raise LiveError(
-            "Telegram вернул неверное/устаревшее меню либо ошибку Bot API. "
-            "Проверены Windows и Docker, ключи не раскрыты. "
-            "Запуск не подтверждён; сервисы будут безопасно остановлены."
-        )
+    # A stale response is not proof that startup failed: Bot API can expose the
+    # previous MenuButton until the new button is visible to subsequent reads.
+    # The independent bot heartbeat, local panel and public HTTPS were already
+    # verified by wait_ready(). Preserve healthy service, but do NOT report the
+    # menu as confirmed. The next ordinary NoClip.cmd run can recheck in place.
+    if "stale" in failures:
+        detail = "Telegram пока возвращает прежнее меню."
+    elif "api_auth" in failures:
+        detail = "Telegram Bot API отклонил проверку меню (401/403)."
+    elif "api_error" in failures:
+        detail = "Telegram Bot API не подтвердил операцию с меню."
+    else:
+        detail = "Подтверждение меню не получено из Windows и Docker."
     print(
-        "ПРЕДУПРЕЖДЕНИЕ: Telegram API недоступен для проверки меню "
-        "из Windows и Docker. Бот и HTTPS-панель запущены, "
-        "но меню не подтверждено; сервисы оставлены работающими."
+        "ПРЕДУПРЕЖДЕНИЕ: " + detail + " Gateway, бот и HTTPS-панель "
+        "работают, но актуальная кнопка Mini App НЕ подтверждена. "
+        "Сервисы сохраняются; повторный запуск проверит меню "
+        "без нового переключения и резервного копирования."
     )
     return False
 
@@ -588,7 +596,7 @@ def start(root):
                             save_state(root, state)
                             print("Telegram подтвердил актуальную Mini App.")
                         else:
-                            print("Telegram API пока недоступен; новая Mini App работает.")
+                            print("Меню Telegram всё ещё не подтверждено; Mini App работает, повторите проверку позже.")
                     else:
                         print("NoClip уже запущен: Gateway + новая Telegram Mini App.")
                     return
