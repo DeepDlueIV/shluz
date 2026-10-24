@@ -201,7 +201,9 @@ def test_failure_after_transaction_started_rolls_back_owned_runtime(
         {"commit": m.PREVIEW_COMMIT, "image": "shluz-preview:" + m.PREVIEW_COMMIT},
         "cloudflare/cloudflared@sha256:" + ("a" * 64),
     ))
-    monkeypatch.setattr(m, "ensure_preflight", lambda *a: ("ci-bot-token", {"type": "commands"}, ""))
+    monkeypatch.setattr(
+        m, "ensure_preflight", lambda *a: ("ci-bot-token", {"type": "commands"}, "")
+    )
     monkeypatch.setattr(m, "start_gateway", lambda *a: events.append(("gateway-ready",)))
     monkeypatch.setattr(m, "backup", lambda *a: events.append(("backup-done",)))
     monkeypatch.setattr(m, "owned", lambda *a: None)
