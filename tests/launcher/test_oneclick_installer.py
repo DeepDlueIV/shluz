@@ -271,6 +271,13 @@ def test_real_git_checkout_is_accepted_without_changing_git_history(tmp_path):
     )
     # Git has noticed the new runtime files, but installer did not stage or commit.
     assert git("diff", "--name-only", "--", "launcher/miniapp_live.py")
+    # Existing Git checkout without a new root .gitignore must not accidentally
+    # add code snapshots, journals or installer state when Codex stages files.
+    local_ignore = root / bootstrap.CONTROL / ".gitignore"
+    assert local_ignore.read_text(encoding="utf-8") == "*\\n!.gitignore\\n"
+    untracked = git("status", "--porcelain=v1", "--untracked-files=all")
+    assert ".noclip-installer/current.json" not in untracked
+    assert ".noclip-installer/history/" not in untracked
 
 
 def test_git_checkout_preserves_uncommitted_codex_changes(tmp_path):
