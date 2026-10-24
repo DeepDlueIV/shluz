@@ -4,7 +4,8 @@
     {% set current = request.url.path.rstrip('/') %}
     {% for path, name in [('/admin', 'Обзор'), ('/admin/users', 'Пользователи'), ('/admin/plans', 'Тарифы'), ('/admin/wallets', 'Кошельки'), ('/admin/access', 'Демо и модели'), ('/admin/web-access', 'Защита демо'), ('/admin/telegram', 'Telegram'), ('/admin/usage', 'Расходы'), ('/admin/diagnostics', 'Диагностика'), ('/admin/logs', 'Журнал'), ('/admin/test', 'Проверка запроса'), ('/admin/providers/venice', 'Поставщик')] %}
     {% set selected = current == path or (path != '/admin' and current.startswith(path + '/')) or (path == '/admin/users' and current.startswith('/admin/tokens/')) %}
-    <a href="{{ path }}" {% if selected %}aria-current="page"{% endif %}>{{ name }}</a>
+    {% set scoped = '?scope=site' if admin_scope is defined and admin_scope == 'site' and path in ['/admin/access', '/admin/web-access'] else '' %}
+    <a href="{{ path }}{{ scoped }}" {% if selected %}aria-current="page"{% endif %}>{{ name }}</a>
     {% endfor %}
   </nav>
 </div>

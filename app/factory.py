@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -7,6 +8,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import inspect, text
+from sqlalchemy.engine import make_url
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException
 
@@ -38,6 +41,8 @@ from app.webaccess.settings import WebSettings
 from app.webaccess.telegram_login import TelegramVerifier
 from app.webaccess.telegram_login import router as telegram_login_router
 
+logger = logging.getLogger(__name__)
+
 
 def build_provider_registry(settings: Settings) -> ProviderRegistry:
     """Создать провайдер без внешних запросов во время запуска."""
@@ -61,6 +66,7 @@ def create_app(
     web_settings: WebSettings | None = None,
     web_captcha=None,
     web_mailer=None,
+    site_demo_database: Database | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     resolved_web = web_settings or WebSettings()
@@ -73,6 +79,54 @@ def create_app(
     resolved_database.create_schema()
     with resolved_database.session() as session:
         ensure_bootstrap_account(session)
+
+    owns_site_demo_database = False
+    resolved_site_demo_database = site_demo_database
+    if resolved_site_demo_database is None and resolved_settings.site_demo_database_url:
+        site_url = make_url(resolved_settings.site_demo_database_url.get_secret_value())
+        site_file_ready = (
+            site_url.get_backend_name() != "sqlite"
+            or site_url.database in {None, "", ":memory:"}
+            or Path(site_url.database).is_file()
+        )
+        if site_file_ready:
+            site_settings = resolved_settings.model_copy(
+                update={"database_url": resolved_settings.site_demo_database_url}
+            )
+            candidate = Database(site_settings)
+            try:
+                with candidate.engine.connect() as connection:
+                    tables = set(inspect(connection).get_table_names())
+                    if {"product_policy", "demo_control", "demo_model_bounds"} <= tables:
+                        policy_row = connection.execute(
+                            text("SELECT id FROM product_policy WHERE id = 'default'")
+                        ).first()
+                        if policy_row:
+                            resolved_site_demo_database = candidate
+                            owns_site_demo_database = True
+                        else:
+                            candidate.dispose()
+                            logger.warning(
+                                "Guest-site admin database has no default product policy; "
+                                "owner scope remains available."
+                            )
+                    else:
+                        candidate.dispose()
+                        logger.warning(
+                            "Guest-site admin database schema is incomplete; "
+                            "owner scope remains available."
+                        )
+            except Exception as exc:
+                candidate.dispose()
+                logger.warning(
+                    "Guest-site admin database could not be validated (%s); "
+                    "owner scope remains available.",
+                    type(exc).__name__,
+                )
+        else:
+            logger.warning(
+                "Guest-site admin database file is missing; it will not be created automatically."
+            )
 
     if resolved_settings.telegram_connector_file:
         ensure_connector_key(resolved_settings.telegram_connector_file)
@@ -91,6 +145,8 @@ def create_app(
             if worker:
                 worker.cancel()
                 await asyncio.gather(worker, return_exceptions=True)
+            if owns_site_demo_database and resolved_site_demo_database:
+                resolved_site_demo_database.dispose()
             telemetry.close()
 
     app = FastAPI(
@@ -108,6 +164,7 @@ def create_app(
     app.state.settings = resolved_settings
     app.state.provider_registry = resolved_registry
     app.state.database = resolved_database
+    app.state.site_demo_database = resolved_site_demo_database
     app.state.usage_service = UsageService(resolved_database, resolved_settings)
     app.add_exception_handler(HTTPException, web_http_error)
     app.add_exception_handler(RequestValidationError, web_validation_error)

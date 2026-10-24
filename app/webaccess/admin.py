@@ -10,7 +10,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 
 from app.admin.forms import _read_form
-from app.admin.routes import _admin_csrf_token, _require_admin, _require_csrf, templates
+from app.admin.routes import (
+    _admin_csrf_token,
+    _database_for_scope,
+    _require_admin,
+    _require_csrf,
+    templates,
+)
 from app.db.audit import record_admin_event
 from app.product.service import locked_session
 from app.webaccess.models import DemoModelBound
@@ -35,6 +41,7 @@ FIELDS = [
     ("otp_global_daily", "Писем на весь сайт за 24 часа", 1, 10000),
     ("otp_verify_minute", "Проверок кода с сети в минуту", 1, 60),
 ]
+SITE_FIELD_MAXIMA = {"concurrent": 1, "network_daily": 10, "sessions_global_daily": 10}
 
 
 def decimal_value(value):
@@ -51,10 +58,20 @@ def decimal_value(value):
 
 @router.get("", response_class=HTMLResponse)
 def dashboard(request: Request, _: Admin):
-    db = request.app.state.database
+    scope = request.query_params.get("scope")
+    db = _database_for_scope(request, scope)
     with locked_session(db) as s:
         cfg = control(s)
-        fields = [(name, label, getattr(cfg, name), lo, hi) for name, label, lo, hi in FIELDS]
+        fields = [
+            (
+                name,
+                label,
+                getattr(cfg, name),
+                lo,
+                min(hi, SITE_FIELD_MAXIMA.get(name, hi)) if scope == "site" else hi,
+            )
+            for name, label, lo, hi in FIELDS
+        ]
         bounds = list(s.scalars(select(DemoModelBound).order_by(DemoModelBound.id)))
     web = request.app.state.web_settings
     return templates.TemplateResponse(
@@ -72,6 +89,12 @@ def dashboard(request: Request, _: Admin):
             "mail_ready": bool(web.smtp_host and web.smtp_sender),
             "secure_cookie": web.secure_cookie,
             "telegram_login_ready": bool(web.telegram_client_id),
+            "admin_scope": scope or "owner",
+            "daily_usd_max": "0.02" if scope == "site" else "10000",
+            "bound_cost_max": "0.02" if scope == "site" else "10000",
+            "bound_chars_max": 1000 if scope == "site" else 200000,
+            "bound_tokens_max": 512 if scope == "site" else 4096,
+            "bound_model_default": "mistral-small-3-2-24b-instruct" if scope == "site" else "",
         },
         headers={"Cache-Control": "no-store"},
     )
@@ -81,6 +104,7 @@ def dashboard(request: Request, _: Admin):
 async def save_control(request: Request, actor: Admin):
     form = await _read_form(request)
     _require_csrf(form.get("csrf_token", ""), request.app.state.settings)
+    scope = form.get("scope")
     values = {}
     for name, label, low, high in FIELDS:
         try:
@@ -93,7 +117,20 @@ async def save_control(request: Request, actor: Admin):
     if values["idle_seconds"] > values["timeout_seconds"]:
         raise HTTPException(422, detail="Пауза без текста не может превышать общее время")
     amount = decimal_value(form.get("daily_usd", ""))
-    with locked_session(request.app.state.database) as s:
+    if scope == "site" and (
+        amount > Decimal("0.02")
+        or values["concurrent"] > 1
+        or values["network_daily"] > 10
+        or values["sessions_global_daily"] > 10
+    ):
+        raise HTTPException(
+            422,
+            detail=(
+                "Для сайта действуют пределы: $0.02/сутки, 1 генерация одновременно, "
+                "10 запросов с сети и 10 гостевых сессий в сутки."
+            ),
+        )
+    with locked_session(_database_for_scope(request, scope)) as s:
         cfg = control(s)
         for name, value in values.items():
             setattr(cfg, name, value)
@@ -107,13 +144,14 @@ async def save_control(request: Request, actor: Admin):
             target_id="default",
             details={},
         )
-    return RedirectResponse("/admin/web-access", 303)
+    return RedirectResponse("/admin/web-access" + ("?scope=site" if scope == "site" else ""), 303)
 
 
 @router.post("/model")
 async def save_model(request: Request, actor: Admin):
     form = await _read_form(request)
     _require_csrf(form.get("csrf_token", ""), request.app.state.settings)
+    scope = form.get("scope")
     provider, model = form.get("provider", ""), form.get("model", "")
     if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", provider) or not re.fullmatch(
         r"[A-Za-z0-9_./:-]{1,200}", model
@@ -128,7 +166,21 @@ async def save_model(request: Request, actor: Admin):
             raise ValueError()
     except ValueError:
         raise HTTPException(422, detail="Проверьте ограничения символов и токенов") from None
-    with locked_session(request.app.state.database) as s:
+    if scope == "site" and (
+        provider != "venice"
+        or model != "mistral-small-3-2-24b-instruct"
+        or amount > Decimal("0.02")
+        or chars > 1000
+        or tokens > 512
+    ):
+        raise HTTPException(
+            422,
+            detail=(
+                "Для сайта разрешена только согласованная модель Venice Mistral с "
+                "пределами $0.02, 1000 символов и 512 токенов."
+            ),
+        )
+    with locked_session(_database_for_scope(request, scope)) as s:
         key = provider + ":" + model
         row = s.get(DemoModelBound, key) or DemoModelBound(id=key)
         row.max_cost_usd, row.max_input_chars, row.max_output_tokens = amount, chars, tokens
@@ -142,4 +194,4 @@ async def save_model(request: Request, actor: Admin):
             target_id=hashlib.sha256(key.encode()).hexdigest(),
             details={},
         )
-    return RedirectResponse("/admin/web-access", 303)
+    return RedirectResponse("/admin/web-access" + ("?scope=site" if scope == "site" else ""), 303)

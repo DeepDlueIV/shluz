@@ -47,6 +47,19 @@ def _database(request: Request) -> Database:
     return request.app.state.database
 
 
+def _database_for_scope(request: Request, scope: str | None) -> Database:
+    if scope in (None, "owner"):
+        return _database(request)
+    if scope == "site":
+        database = getattr(request.app.state, "site_demo_database", None)
+        if database is None:
+            raise HTTPException(
+                503, detail="База гостевого сайта не подключена к локальной админке"
+            )
+        return database
+    raise HTTPException(422, detail="Неизвестная область настроек")
+
+
 def _require_admin(
     request: Request,
     credentials: Annotated[HTTPBasicCredentials, Depends(security)],
@@ -170,6 +183,7 @@ def users_dashboard(
             if row.account_id
         }
         from app.telegram.service import access_is_active
+
         active_telegram = {row.id for row in telegram_by_account.values()
                            if access_is_active(session, row)}
     return templates.TemplateResponse(

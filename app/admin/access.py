@@ -11,7 +11,7 @@ from sqlalchemy import select
 from app.admin.forms import _read_form
 from app.admin.routes import (
     _admin_csrf_token,
-    _database,
+    _database_for_scope,
     _require_admin,
     _require_csrf,
     _settings,
@@ -36,13 +36,18 @@ def parse_models(value):
 
 @router.get("", response_class=HTMLResponse)
 def dashboard(request: Request, _: Admin):
-    with _database(request).session() as s:
+    scope = request.query_params.get("scope")
+    with _database_for_scope(request, scope).session() as s:
         settings = policy(s)
         rows = {
             r.id: "\n".join(sorted(models_in(r.models_json)))
             for r in s.scalars(select(ModelPolicy))
         }
-        plans = list(s.scalars(select(Plan).where(Plan.active.is_(True)).order_by(Plan.name)))
+        plans = (
+            []
+            if scope == "site"
+            else list(s.scalars(select(Plan).where(Plan.active.is_(True)).order_by(Plan.name)))
+        )
     return templates.TemplateResponse(
         request=request,
         name="admin/access.html",
@@ -54,6 +59,14 @@ def dashboard(request: Request, _: Admin):
             "default_models": "\n".join(sorted(DEFAULT_MODELS)),
             "plans": plans,
             "csrf_token": _admin_csrf_token(_settings(request)),
+            "admin_scope": scope or "owner",
+            "site_scope": scope == "site",
+            "site_demo_limits": {
+                "demo_max_input_chars": 1000,
+                "demo_max_output_tokens": 512,
+                "demo_daily_requests": 10,
+                "requests_per_minute": 2,
+            },
         },
     )
 
@@ -62,6 +75,7 @@ def dashboard(request: Request, _: Admin):
 async def save_demo(request: Request, actor: Admin):
     form = await _read_form(request)
     _require_csrf(form.get("csrf_token", ""), _settings(request))
+    scope = form.get("scope")
     if form.get("mode") not in {"demo", "closed"}:
         raise HTTPException(422, detail="Выберите режим регистрации")
     values = {}
@@ -80,7 +94,30 @@ async def save_demo(request: Request, actor: Admin):
             raise HTTPException(422, detail=f"Поле {name}: допустимо от {low} до {high}") from exc
         values[name] = value
     models = parse_models(form.get("demo_models", ""))
-    with locked_session(_database(request)) as s:
+    if scope == "site":
+        if not set(json.loads(models)).issubset({"mistral-small-3-2-24b-instruct"}):
+            raise HTTPException(
+                422,
+                detail=(
+                    "В гостевом демо сайта разрешена только согласованная модель Venice Mistral."
+                ),
+            )
+        site_maxima = {
+            "demo_requests": 1,
+            "demo_max_input_chars": 1000,
+            "demo_max_output_tokens": 512,
+            "demo_daily_requests": 10,
+            "requests_per_minute": 2,
+        }
+        if any(values[name] > maximum for name, maximum in site_maxima.items()):
+            raise HTTPException(
+                422,
+                detail=(
+                    "Лимит гостевого сайта нельзя поднять выше согласованных границ "
+                    "(1 запрос, 10/сутки, 1000 символов, 512 токенов)."
+                ),
+            )
+    with locked_session(_database_for_scope(request, scope)) as s:
         row = policy(s)
         for name, value in values.items():
             setattr(row, name, value)
@@ -95,15 +132,22 @@ async def save_demo(request: Request, actor: Admin):
             target_id="default",
             details={"mode": row.mode, "demo_requests": row.demo_requests},
         )
-    return RedirectResponse("/admin/access", status_code=303)
+    return RedirectResponse(
+        "/admin/access" + ("?scope=site" if scope == "site" else ""), status_code=303
+    )
 
 
 @router.post("/models")
 async def save_models(request: Request, actor: Admin):
     form = await _read_form(request)
     _require_csrf(form.get("csrf_token", ""), _settings(request))
+    scope = form.get("scope")
     subject = form.get("subject", "")
-    with locked_session(_database(request)) as s:
+    if scope == "site" and subject.startswith("plan:"):
+        raise HTTPException(
+            422, detail="Правила отдельных тарифов не применяются к гостевому демо сайта."
+        )
+    with locked_session(_database_for_scope(request, scope)) as s:
         if subject.startswith("channel:"):
             if subject[8:] not in CHANNELS:
                 raise HTTPException(422, detail="Неизвестный канал")
@@ -115,6 +159,17 @@ async def save_models(request: Request, actor: Admin):
                 s.delete(existing)
         else:
             models = parse_models(form.get("models", ""))
+            if (
+                scope == "site"
+                and subject == "channel:web"
+                and not set(json.loads(models)).issubset({"mistral-small-3-2-24b-instruct"})
+            ):
+                raise HTTPException(
+                    422,
+                    detail=(
+                        "Для канала сайта разрешена только согласованная модель Venice Mistral."
+                    ),
+                )
             row = existing or ModelPolicy(id=subject)
             row.models_json = models
             s.add(row)
@@ -126,4 +181,6 @@ async def save_models(request: Request, actor: Admin):
             target_id=subject,
             details={},
         )
-    return RedirectResponse("/admin/access", status_code=303)
+    return RedirectResponse(
+        "/admin/access" + ("?scope=site" if scope == "site" else ""), status_code=303
+    )

@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password: SecretStr = SecretStr("change-me")
     database_url: SecretStr = SecretStr("sqlite+pysqlite:///./data/shluz.db")
+    site_demo_database_url: SecretStr | None = None
 
     telegram_connector_file: Path | None = None
     telegram_pending_limit: int = Field(default=500, ge=1, le=10000)
