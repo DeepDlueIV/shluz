@@ -379,3 +379,49 @@ def test_prepare_only_secures_explicit_external_ngrok_config(tmp_path):
     assert "S-1-5-18" in identities
     assert len(identities) == 2
     assert credential.read_text() == "version: 3\nagent:\n  authtoken: fake-test-token\n"
+
+
+@pytest.mark.parametrize("name", ["Start-Website.cmd", "Stop-Website.cmd"])
+def test_website_cmd_files_have_only_crlf_without_bom(name):
+    root = Path(__file__).resolve().parents[2]
+    raw = (root / name).read_bytes()
+    assert not raw.startswith(b"\xef\xbb\xbf")
+    assert b"\n" not in raw.replace(b"\r\n", b"")
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Real cmd.exe execution")
+@pytest.mark.parametrize(
+    "name,expected", [("Start-Website.cmd", []), ("Stop-Website.cmd", ["stop"])]
+)
+def test_website_cmd_executes_stub_helper_without_services(tmp_path, name, expected):
+    import os
+    import shutil
+    import subprocess
+
+    root = Path(__file__).resolve().parents[2]
+    portable = tmp_path / "portable folder with spaces"
+    (portable / "launcher").mkdir(parents=True)
+    for filename in ["Start-Website.cmd", "Stop-Website.cmd"]:
+        shutil.copyfile(root / filename, portable / filename)
+    (portable / "launcher" / "site_bridge.py").write_text(
+        "import json,os,sys\nfrom pathlib import Path\n"
+        "Path('received.json').write_text(json.dumps({'args':sys.argv[1:],"
+        "'home':os.environ.get('SHLUZ_HOME')}))\n",
+        encoding="utf8",
+    )
+    env = dict(os.environ)
+    env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
+    result = subprocess.run(
+        [os.environ.get("COMSPEC", r"C:\Windows\System32\cmd.exe"), "/d", "/c", name],
+        cwd=portable,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        timeout=15,
+        check=False,
+        creationflags=0x08000000,
+    )
+    assert result.returncode == 0, (result.stdout + result.stderr).decode("utf8", "replace")
+    received = json.loads((portable / "received.json").read_text())
+    assert received["args"] == expected
+    assert Path(received["home"]).resolve() == portable.resolve()
