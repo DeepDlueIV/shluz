@@ -237,32 +237,130 @@ def ensure_preflight(old):
     return token, old_menu, me.get("username", "")
 
 
-def wait_menu(token, url, *, attempts=10, timeout_seconds=15):
-    """Не объявлять запуск успешным до применения нового глобального меню Telegram."""
+MENU_INSIDE_DOCKER = """
+import json,os,sys,urllib.request,urllib.error
+try:
+    operation,expected=sys.argv[1:3]
+    token=os.environ.get('TELEGRAM_BOT_TOKEN','')
+    if not token or operation not in ('read','set'):
+        print('unavailable')
+    else:
+        def send(method,body):
+            req=urllib.request.Request(
+                'https://api.telegram.org/bot'+token+'/'+method,
+                data=json.dumps(body).encode('utf-8'),
+                headers={'Content-Type':'application/json'})
+            with urllib.request.urlopen(req,timeout=4) as result:
+                response=json.load(result)
+            return response.get('result') if response.get('ok') else None
+        if operation=='set':
+            success=send('setChatMenuButton',{
+                'menu_button':{'type':'web_app','text':'Меню',
+                               'web_app':{'url':expected}}})
+            if success is not True:
+                print('api_error')
+                sys.exit(0)
+        menu=send('getChatMenuButton',{})
+        if isinstance(menu,dict) and menu.get('type')=='web_app' and (
+            (menu.get('web_app') or {}).get('url')==expected):
+            print('match')
+        elif isinstance(menu,dict) and menu.get('type') in (
+            'web_app','commands','default'):
+            print('stale')
+        else:
+            print('api_error')
+except urllib.error.HTTPError as err:
+    print('api_auth' if err.code in (401,403) else 'api_error')
+except (OSError,ValueError,TypeError,IndexError,KeyError):
+    print('unreachable')
+"""
+
+
+def container_menu_probe(url, *, action="read", timeout=7):
+    """Network check from live bot: no Telegram token in Docker CLI or stdout."""
+    item = owned(LIVE_BOT)
+    if not is_running(item):
+        return "unavailable"
+    try:
+        result = docker(
+            "exec", item["Id"], "python", "-c", MENU_INSIDE_DOCKER,
+            action, url + "/miniapp", optional=True, timeout=timeout,
+        ).strip()
+    except (OSError, subprocess.TimeoutExpired, updater.UpdateError):
+        return "unreachable"
+    allowed = {"match", "stale", "unavailable", "api_error", "api_auth", "unreachable"}
+    return result if result in allowed else "unreachable"
+
+
+def host_menu_probe(token, url, *, timeout=4):
+    try:
+        menu = trial.telegram(token, "getChatMenuButton", request_timeout=timeout)
+    except trial.TrialError:
+        return "unreachable"
+    if (
+        isinstance(menu, dict)
+        and menu.get("type") == "web_app"
+        and isinstance(menu.get("web_app"), dict)
+        and menu["web_app"].get("url") == url + "/miniapp"
+    ):
+        return "match"
+    if isinstance(menu, dict) and menu.get("type") in ("commands", "default", "web_app"):
+        return "stale"
+    return "api_error"
+
+
+def wait_menu(token, url, *, attempts=8, timeout_seconds=30):
+    """Confirm exact global MenuButton; container can work when Windows VPN cannot.
+
+    Observational network failure is not a reason to kill an otherwise healthy
+    Telegram bot and HTTPS Mini App. A stale/wrong URL is repaired once from the
+    running bot, then must be confirmed. Never claim unverified UI is ready.
+    """
     deadline = time.monotonic() + timeout_seconds
+    failures = set()
+    repair_attempted = False
     for attempt in range(attempts):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
-        try:
-            menu = trial.telegram(
-                token, "getChatMenuButton", request_timeout=min(5.0, remaining)
-            )
-        except trial.TrialError:
-            # Сырой ответ/исключение может содержать bot token; наружу только итог этапа.
-            menu = {}
-        if time.monotonic() >= deadline:
+        # First try within the same Docker network namespace as the bot.
+        inside = container_menu_probe(url, timeout=min(7, remaining))
+        if inside == "match":
+            return True
+        failures.add(inside)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
             break
-        if (
-            isinstance(menu, dict) and menu.get("type") == "web_app"
-            and isinstance(menu.get("web_app"), dict)
-            and menu["web_app"].get("url") == url + "/miniapp"
-        ):
-            return
+        outside = host_menu_probe(token, url, timeout=min(4, remaining))
+        if outside == "match":
+            return True
+        failures.add(outside)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        if ("stale" in failures and not repair_attempted and attempt >= 1
+                and remaining >= 5):
+            repair_attempted = True
+            fixed = container_menu_probe(url, action="set", timeout=min(7, remaining))
+            if fixed == "match":
+                return True
+            failures.add(fixed)
         remaining = deadline - time.monotonic()
         if attempt + 1 < attempts and remaining > 0:
             time.sleep(min(0.5, remaining))
-    raise LiveError("Telegram не подтвердил новое меню Mini App. Сервисы будут остановлены.")
+
+    if "stale" in failures or "api_auth" in failures or "api_error" in failures:
+        raise LiveError(
+            "Telegram вернул неверное/устаревшее меню либо ошибку Bot API. "
+            "Проверены Windows и Docker, ключи не раскрыты. "
+            "Запуск не подтверждён; сервисы будут безопасно остановлены."
+        )
+    print(
+        "ПРЕДУПРЕЖДЕНИЕ: Telegram API недоступен для проверки меню "
+        "из Windows и Docker. Бот и HTTPS-панель запущены, "
+        "но меню не подтверждено; сервисы оставлены работающими."
+    )
+    return False
 
 
 def start_gateway(gateway):
