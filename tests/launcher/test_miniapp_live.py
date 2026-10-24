@@ -841,7 +841,7 @@ def test_preflight_exception_does_not_stop_existing_healthy_services(tmp_path, m
     }.get(name))
     def fail_before_mutation(*args, **kwargs):
         raise m.LiveError("safe synthetic read-only preflight failure")
-    monkeypatch.setattr(m, "refresh_active_tunnel", fail_before_mutation)
+    monkeypatch.setattr(m, "refresh_tunnel_and_menu", fail_before_mutation)
     monkeypatch.setattr(m, "stop", lambda *a: events.append("stop"))
     with pytest.raises(m.LiveError, match="safe synthetic"):
         m.start(tmp_path)
