@@ -27,7 +27,7 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install pytest ruff
       - run: ruff check diagnostics/telegram_menu.py scripts/package_telegram_diagnostic.py tests/launcher/test_telegram_menu_diagnostic.py
-      - run: python -m pytest tests/launcher/test_telegram_menu_diagnostic.py -q
+      - run: python -m pytest tests/launcher/test_telegram_menu_diagnostic.py --noconftest -q
       - name: Verify Windows one-click entry
         shell: pwsh
         run: |
@@ -47,7 +47,7 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install pytest ruff
       - run: ruff check diagnostics/telegram_menu.py scripts/package_telegram_diagnostic.py tests/launcher/test_telegram_menu_diagnostic.py
-      - run: python -m pytest tests/launcher/test_telegram_menu_diagnostic.py -q
+      - run: python -m pytest tests/launcher/test_telegram_menu_diagnostic.py --noconftest -q
 
   package:
     name: Build checksum-verified standalone ZIP
