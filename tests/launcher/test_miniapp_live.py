@@ -205,7 +205,9 @@ def test_failure_after_transaction_started_rolls_back_owned_runtime(
     monkeypatch.setattr(m, "start_gateway", lambda *a: events.append(("gateway-ready",)))
     monkeypatch.setattr(m, "backup", lambda *a: events.append(("backup-done",)))
     monkeypatch.setattr(m, "owned", lambda *a: None)
-    monkeypatch.setattr(m, "save_state", lambda root, value: events.append(("journal", value["phase"])))
+    monkeypatch.setattr(
+        m, "save_state", lambda root, value: events.append(("journal", value["phase"]))
+    )
     monkeypatch.setattr(m.trial, "wait_tunnel", lambda *a, **kw: "https://test.trycloudflare.com")
     monkeypatch.setattr(m, "secure_env", lambda *a: tmp_path / "env")
     monkeypatch.setattr(m, "safe_candidate_args", lambda *a: ("create", "candidate"))
