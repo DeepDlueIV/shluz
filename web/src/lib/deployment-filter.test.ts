@@ -13,7 +13,12 @@ test('Vercel builds web changes but skips unrelated repository changes', () => {
     const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
   };
-  const ignore = () => spawnSync(config.ignoreCommand, { cwd: join(root, 'web'), shell: true }).status;
+  // CMD consumes ^ as an escape character, so HEAD^ becomes HEAD on Windows.
+  // Preserve Vercel's actual shell command on POSIX; pass literal git args on Windows.
+  const ignore = () => process.platform === 'win32'
+    ? spawnSync('git', ['diff', 'HEAD^', 'HEAD', '--quiet', '--', '.'],
+        { cwd: join(root, 'web'), encoding: 'utf8' }).status
+    : spawnSync(config.ignoreCommand, { cwd: join(root, 'web'), shell: true }).status;
   try {
     mkdirSync(join(root, 'web')); mkdirSync(join(root, 'telegram_bot'));
     writeFileSync(join(root, 'web', 'page.tsx'), 'first');
