@@ -220,15 +220,98 @@ def test_symlink_in_download_or_runtime_is_rejected(tmp_path):
         install(source, root)
 
 
-def test_empty_folder_or_git_checkout_refused_without_any_change(tmp_path):
+def test_missing_install_reports_actual_problem_without_creating_database(tmp_path):
     source, root, _, _ = setup_case(tmp_path)
+    missing = tmp_path / "absent"
+    with pytest.raises(bootstrap.InstallError, match="не найдена"):
+        install(source, missing)
+    assert not missing.exists()
     other = tmp_path / "empty"
     other.mkdir()
-    with pytest.raises(bootstrap.InstallError, match="рабочая установка|прежняя"):
+    with pytest.raises(bootstrap.InstallError, match="NoClip.cmd"):
         install(source, other)
     (root / ".git").mkdir()
-    with pytest.raises(bootstrap.InstallError, match="рабочая установка"):
+    with pytest.raises(bootstrap.InstallError, match="Git-копия"):
         install(source, root)
+
+
+def init_git_checkout(root):
+    import subprocess
+
+    def git(*args):
+        result = subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True, text=True, encoding="utf-8",
+            timeout=30, check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip()
+
+    git("init", "-q")
+    git("config", "user.email", "testing@example.invalid")
+    git("config", "user.name", "Test")
+    git("add", "--", *sorted(bootstrap.FILES))
+    git("commit", "-qm", "existing local source checkpoint")
+    return git
+
+
+def test_real_git_checkout_is_accepted_without_changing_git_history(tmp_path):
+    source, root, manifest, payload = setup_case(tmp_path)
+    git = init_git_checkout(root)
+    original_head = git("rev-parse", "HEAD")
+    (root / "notes.txt").write_text("locally private notes")
+    install(source, root)
+    assert git("rev-parse", "HEAD") == original_head
+    assert (root / ".git").is_dir()
+    assert (root / "launcher" / "miniapp_live.py").read_bytes() == (
+        payload["launcher/miniapp_live.py"]
+    )
+    assert (root / "config" / ".env.owner").read_text() == (
+        "VENICE_API_KEY=KEEP_THIS_LOCAL\n"
+    )
+    # Git has noticed the new runtime files, but installer did not stage or commit.
+    assert git("diff", "--name-only", "--", "launcher/miniapp_live.py")
+
+
+def test_git_checkout_preserves_uncommitted_codex_changes(tmp_path):
+    source, root, _, _ = setup_case(tmp_path)
+    git = init_git_checkout(root)
+    current = root / "launcher" / "miniapp_live.py"
+    current.write_text("Codex local edit which must be committed\n")
+    expected = current.read_bytes()
+    revision = git("rev-parse", "HEAD")
+    with pytest.raises(bootstrap.InstallError, match="локальные правки Codex"):
+        install(source, root)
+    assert current.read_bytes() == expected
+    assert git("rev-parse", "HEAD") == revision
+    assert not (root / bootstrap.CONTROL / "current.json").exists()
+
+
+def test_git_checkout_does_not_block_unrelated_local_changes(tmp_path):
+    source, root, _, _ = setup_case(tmp_path)
+    git = init_git_checkout(root)
+    (root / "readme-project.txt").write_text("baseline")
+    git("add", "readme-project.txt")
+    git("commit", "-qm", "tracked non-launcher file")
+    (root / "readme-project.txt").write_text("in-progress unrelated work")
+    install(source, root)
+    assert (root / "readme-project.txt").read_text() == "in-progress unrelated work"
+
+
+def test_git_checkout_second_update_recognizes_own_installed_files(tmp_path):
+    source, root, manifest, _ = setup_case(tmp_path)
+    git = init_git_checkout(root)
+    revision = git("rev-parse", "HEAD")
+    install(source, root)
+    manifest["revision"] = "b" * 40
+    for name in sorted(bootstrap.FILES):
+        data = ("new edition: " + name).encode("utf-8")
+        (source / "payload" / name).write_bytes(data)
+        manifest["files"][name] = checksum(data)
+    (source / "package-manifest.json").write_text(json.dumps(manifest))
+    install(source, root)
+    assert bootstrap.load_state(root)["revision"] == "b" * 40
+    assert git("rev-parse", "HEAD") == revision
 
 
 def test_real_packer_contains_only_named_files_no_runtime_secrets(tmp_path):
