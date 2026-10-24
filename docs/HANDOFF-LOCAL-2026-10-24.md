@@ -159,7 +159,7 @@ Preservation содержит все6 исходных volumes и важные �
 
 ## 10. Architecture review and GitHub synchronization — 24.10.2026
 
-**Факты:** production Vercel подтверждён на `fd58ca705832a9095ac7753693479d7922cf05cb` и READY. `main` по-прежнему `3035e66dcbc246fc2fc266dd70eae6ca780fd28a`; расхождение — риск повторной публикации устаревшего Turnstile. PR #38 переведён в Ready; `deployment-filter` исправлен для Windows (CMD экранировал `^`), Windows CI успешен. Перед merge дождаться полного Ready CI и отдельного разрешения владельца на production-деплой. Серверные ветки не трогать.
+**Факты:** production Vercel подтверждён на `fd58ca705832a9095ac7753693479d7922cf05cb` и READY. `main` по-прежнему `3035e66dcbc246fc2fc266dd70eae6ca780fd28a`; расхождение — риск повторной публикации устаревшего Turnstile. PR #38 переведён в Ready; `deployment-filter` исправлен для Windows (CMD экранировал `^`). Полный Ready CI для HEAD `c6edeb7634671913475303eda62d7d5a0c33911a` успешен: 61/61 unit, TypeScript, production build, все браузерные проверки, Windows deployment-filter и 10 CI routing tests; https://github.com/DeepDlueIV/shluz/actions/runs/40062703825. Перед merge остаётся получить отдельное разрешение владельца на production-деплой. Серверные ветки не трогать.
 
 **PR-канонизация:** #35 — историческая основа portable, #36 — её Windows/Cloudflare исправления, #37 — текущая проверенная цепочка с отдельным website bridge. Заголовки/описания в GitHub обновлены, ветки и Docker без изменений. Нельзя объединять #37 в `main` ради «чистоты»: сравнение затрагивает основной API, миграции БД и финансы.
 
