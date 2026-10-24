@@ -1,7 +1,7 @@
 """NoClip one-click code updater for the existing Windows owner installation.
 
 Installer runs from an extracted, immutable ZIP. It updates ONLY listed program files
-under D:\NoClip\Shluz, NEVER Docker volumes, databases, secrets, site settings or backups.
+under the canonical Windows install directory, NEVER Docker volumes, databases, secrets, site settings or backups.
 Source revisions and file SHA256 values are checked before any mutation.
 """
 
