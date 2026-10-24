@@ -327,7 +327,7 @@ def format_report(info):
         "menu_configured", "global_menu_not_web_app", "global_web_app_url_mismatch",
         "owner_chat_menu_override", "telegram_readback_unavailable",
         "needs_detailed_local_codex_review", "active", "menu_unverified",
-        "preparing", "stop_failed", "unknown",
+        "preparing", "stop_failed",
     }
     ordered = [
         "diagnostic", "time_utc", "root_present", "root_has_git", "state",
