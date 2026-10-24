@@ -1,0 +1,103 @@
+name: NoClip Telegram menu read-only diagnostic
+
+on:
+  push:
+    branches: [feat/one-click-local-updates-20261024]
+    paths:
+      - diagnostics/**
+      - scripts/package_telegram_diagnostic.py
+      - tests/launcher/test_telegram_menu_diagnostic.py
+      - .github/workflows/telegram-menu-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows secure diagnostic tests
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest ruff
+      - run: ruff check diagnostics/telegram_menu.py scripts/package_telegram_diagnostic.py tests/launcher/test_telegram_menu_diagnostic.py
+      - run: python -m pytest tests/launcher/test_telegram_menu_diagnostic.py -q
+      - name: Verify Windows one-click entry
+        shell: pwsh
+        run: |
+          if (-not (Test-Path diagnostics/Diagnose-NoClip.cmd)) { throw 'Missing CMD' }
+          if (-not (Select-String -Path diagnostics/Diagnose-NoClip.cmd -Pattern 'telegram_menu.py' -SimpleMatch)) { throw 'Missing diagnostic' }
+
+  linux:
+    name: Linux read-only and security tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest ruff
+      - run: ruff check diagnostics/telegram_menu.py scripts/package_telegram_diagnostic.py tests/launcher/test_telegram_menu_diagnostic.py
+      - run: python -m pytest tests/launcher/test_telegram_menu_diagnostic.py -q
+
+  package:
+    name: Build checksum-verified standalone ZIP
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python scripts/package_telegram_diagnostic.py dist/NoClip-Telegram-Diagnostic.zip "$GITHUB_SHA"
+      - run: cd dist && sha256sum -c NoClip-Telegram-Diagnostic.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NoClip-Telegram-Diagnostic-Windows
+          path: |
+            dist/NoClip-Telegram-Diagnostic.zip
+            dist/NoClip-Telegram-Diagnostic.sha256
+          retention-days: 14
+          if-no-files-found: error
+
+  publish:
+    name: Immutable diagnostic prerelease (no deployment)
+    needs: [package]
+    if: >-
+      github.event_name == 'push' &&
+      github.repository == 'DeepDlueIV/shluz' &&
+      github.ref == 'refs/heads/feat/one-click-local-updates-20261024'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: NoClip-Telegram-Diagnostic-Windows
+          path: dist
+      - run: cd dist && sha256sum -c NoClip-Telegram-Diagnostic.sha256
+      - name: Publish diagnostics only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="noclip-menu-diagnostic-${GITHUB_SHA}"
+          gh release create "$TAG" \
+            dist/NoClip-Telegram-Diagnostic.zip \
+            dist/NoClip-Telegram-Diagnostic.sha256 \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --prerelease --latest=false \
+            --title "NoClip Telegram read-only diagnostics — ${GITHUB_SHA:0:10}" \
+            --notes "Read-only Windows package. Extract anywhere, run Diagnose-NoClip.cmd, send sanitized NoClip-Telegram-Diagnostic.txt. Does not start/stop containers or change Telegram menu. No credentials, user data, Venice requests, Vercel deployment or main merge."
