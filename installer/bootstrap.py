@@ -277,7 +277,7 @@ def ensure_local_changes_safe(root, state):
             )
 
 
-def take_snapshot(root, folder, manifest):
+def take_snapshot(root, folder, manifest, previous_state):
     before = {}
     data = Path(folder) / "before"
     for relative in FILES:
@@ -299,6 +299,7 @@ def take_snapshot(root, folder, manifest):
         "candidate": manifest["files"],
         "revision": manifest["revision"],
         "created_at": now(),
+        "previous_state": previous_state,
     }
     put_json(Path(folder) / "snapshot.json", snapshot)
     return snapshot
@@ -335,6 +336,51 @@ def restore_files(root, folder, snapshot):
             temporary.unlink(missing_ok=True)
 
 
+def restore_installed_state(root, snapshot):
+    state = Path(root) / CONTROL / "current.json"
+    previous = snapshot.get("previous_state")
+    if previous is None:
+        state.unlink(missing_ok=True)
+    else:
+        put_json(state, previous)
+
+
+def prune_managed_history(root, keep=2):
+    """Remove only older, checksum-verified code snapshots created by this installer."""
+    history = Path(root) / CONTROL / "history"
+    if not history.is_dir() or is_link(history):
+        return
+    snapshots = sorted((p for p in history.iterdir() if p.is_dir()), reverse=True)
+    for folder in snapshots[keep:]:
+        if is_link(folder):
+            continue
+        record = folder / "snapshot.json"
+        if is_link(record) or not record.is_file():
+            continue
+        try:
+            meta = json.loads(record.read_text(encoding="utf-8"))
+            if meta.get("product") != PRODUCT or set(meta["before"]) != FILES:
+                continue
+            # If a developer added files inside the directory, preserve it.
+            allowed = {"snapshot.json"} | {
+                str(Path("before") / p) for p in FILES if meta["before"][p]
+            }
+            actual = {
+                str(p.relative_to(folder)) for p in folder.rglob("*") if p.is_file()
+            }
+            if actual != allowed or any(is_link(p) for p in folder.rglob("*")):
+                continue
+            if any(
+                sha256(folder / "before" / p) != digest
+                for p, digest in meta["before"].items() if digest
+            ):
+                continue
+            shutil.rmtree(folder)
+        except (OSError, ValueError, TypeError, KeyError):
+            # Housekeeping cannot prevent a working update.
+            pass
+
+
 def recover_interrupted(root):
     journal_file = Path(root) / CONTROL / "journal.json"
     if not journal_file.exists():
@@ -351,7 +397,24 @@ def recover_interrupted(root):
             raise ValueError("snapshot")
         if set(snapshot["candidate"]) != FILES:
             raise ValueError("candidate")
+        state = load_state(root)
+        completed = (
+            state is not None
+            and state["revision"] == snapshot["revision"]
+            and state["files"] == snapshot["candidate"]
+            and all(
+                safe_path(root, name).is_file()
+                and sha256(safe_path(root, name)) == digest
+                for name, digest in snapshot["candidate"].items()
+            )
+        )
+        if completed:
+            # Commit marker is only written after successful NoClip.cmd launch.
+            journal_file.unlink()
+            print("Проверенная установка восстановлена после прерывания.")
+            return
         restore_files(root, folder, snapshot)
+        restore_installed_state(root, snapshot)
         journal_file.unlink()
         print("Незавершённое обновление откатилось к предыдущему коду.")
     except (OSError, ValueError, TypeError, KeyError) as exc:
@@ -382,12 +445,8 @@ def write_candidate(root, source, manifest):
 
 def commit_snapshot(root, operation, manifest, snapshot):
     control = Path(root) / CONTROL
-    history = control / "history"
-    history.mkdir(parents=True, exist_ok=True)
-    item = history / (datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ") + "-" + operation)
-    source = control / "work" / operation
-    # Keep old program files locally. No databases or secrets are stored here.
-    source.rename(item)
+    # Write marker only AFTER successful NoClip startup, with journal still
+    # available to make a crash between these operations recoverable.
     put_json(control / "current.json", {
         "product": PRODUCT,
         "revision": manifest["revision"],
@@ -396,8 +455,14 @@ def commit_snapshot(root, operation, manifest, snapshot):
         "installed_at": now(),
     })
     (control / "journal.json").unlink(missing_ok=True)
-    # Never delete user files or old Docker resources. Limited rotation of installer-owned
-    # code snapshots is optional and deliberately left for later acceptance.
+    history = control / "history"
+    history.mkdir(parents=True, exist_ok=True)
+    item = history / (
+        datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ") + "-" + operation
+    )
+    # Clean up only installer-owned, verified old CODE snapshots: keep latest two.
+    (control / "work" / operation).rename(item)
+    prune_managed_history(root, keep=2)
     return item
 
 
@@ -445,12 +510,13 @@ def install(source, root, *, docker_check=docker_preflight, launch=run_existing)
             operation = uuid.uuid4().hex
             work = control / "work" / operation
             work.mkdir(parents=True, exist_ok=False)
-            snapshot = take_snapshot(root, work, manifest)
+            snapshot = take_snapshot(root, work, manifest, state)
             put_json(control / "journal.json", {"operation": operation})
             try:
                 write_candidate(root, source, manifest)
             except Exception:
                 restore_files(root, work, snapshot)
+                restore_installed_state(root, snapshot)
                 (control / "journal.json").unlink(missing_ok=True)
                 raise
             changed = True
@@ -462,6 +528,7 @@ def install(source, root, *, docker_check=docker_preflight, launch=run_existing)
         if changed:
             with runtime_lock(root):
                 restore_files(root, work, snapshot)
+                restore_installed_state(root, snapshot)
                 (control / "journal.json").unlink(missing_ok=True)
             print("Код прежней версии восстановлен; пользовательские базы не затронуты.")
         raise
