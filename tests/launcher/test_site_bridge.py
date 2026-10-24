@@ -85,7 +85,7 @@ def test_foreign_label_image_or_nonlocal_port_is_rejected():
             m.validate_gateway(item, 18001)
 
 
-def test_missing_state_restarts_only_owned_agent_without_duplicate(tmp_path, monkeypatch):
+def test_missing_state_restarts_only_owned_agent_without_duplicate(tmp_path, monkeypatch, capsys):
     m, cfg = configured(tmp_path, monkeypatch)
     monkeypatch.setattr(m, "agents", lambda: [agent(cfg)])
     monkeypatch.setattr(
@@ -112,6 +112,7 @@ def test_missing_state_restarts_only_owned_agent_without_duplicate(tmp_path, mon
     assert state["pid"] == 81
     assert state["https_url"] == "https://assigned.ngrok-free.dev"
     assert "password" not in state
+    assert "https://noclip-web.vercel.app" in capsys.readouterr().out
 
 
 def test_existing_foreign_agent_on_4040_is_not_reused(tmp_path, monkeypatch):
@@ -425,3 +426,52 @@ def test_website_cmd_executes_stub_helper_without_services(tmp_path, name, expec
     received = json.loads((portable / "received.json").read_text())
     assert received["args"] == expected
     assert Path(received["home"]).resolve() == portable.resolve()
+
+
+@pytest.mark.parametrize(
+    "arguments,opens_site", [([], True), (["start"], False), (["stop"], False)]
+)
+def test_only_successful_default_start_opens_actual_site(
+    tmp_path, monkeypatch, arguments, opens_site
+):
+    from types import SimpleNamespace
+
+    m, cfg = configured(tmp_path, monkeypatch)
+    monkeypatch.setenv("SHLUZ_HOME", str(tmp_path))
+    monkeypatch.setattr(m.sys, "argv", ["site_bridge.py"])
+    events = []
+    monkeypatch.setattr(m, "start", lambda root: events.append("started"))
+    monkeypatch.setattr(m, "stop", lambda root: events.append("stopped"))
+    monkeypatch.setattr(
+        m,
+        "webbrowser",
+        SimpleNamespace(Error=RuntimeError, open=lambda url: events.append(("browser", url))),
+        raising=False,
+    )
+    assert m.main(arguments) == 0
+    expected = ["stopped"] if arguments == ["stop"] else ["started"]
+    if opens_site:
+        expected.append(("browser", "https://noclip-web.vercel.app"))
+    assert events == expected
+
+
+def test_failed_default_start_never_opens_browser(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    m, cfg = configured(tmp_path, monkeypatch)
+    monkeypatch.setenv("SHLUZ_HOME", str(tmp_path))
+    monkeypatch.setattr(m.sys, "argv", ["site_bridge.py"])
+
+    def fail(root):
+        raise m.BridgeError("not ready")
+
+    monkeypatch.setattr(m, "start", fail)
+    monkeypatch.setattr(
+        m,
+        "webbrowser",
+        SimpleNamespace(
+            Error=RuntimeError, open=lambda url: pytest.fail("browser must stay closed")
+        ),
+        raising=False,
+    )
+    assert m.main([]) == 1

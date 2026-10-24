@@ -14,11 +14,13 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import webbrowser
 from contextlib import suppress
 from pathlib import Path
 
 import updater
 
+SITE_URL = "https://noclip-web.vercel.app"
 CONTAINER = "noclip-site-gateway"
 LABEL = "io.noclip.site-bridge"
 IMAGE = "sha256:d681c163ed411b2e82df6e4d67a83faf44019253da9fb5c938b997fcff6bd50b"
@@ -364,7 +366,8 @@ def start(root):
         },
     )
     print("Website Gateway и защищённый HTTPS запущены.")
-    print(url)
+    print("Сайт NoClip:", SITE_URL)
+    print("Технический HTTPS-туннель:", url)
     print("Vercel и публичный гостевой режим автоматически не изменялись.")
 
 
@@ -400,16 +403,21 @@ def main(argv=None):
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     root = Path(os.environ.get("SHLUZ_HOME", Path(__file__).resolve().parents[1]))
+    arguments = sys.argv[1:] if argv is None else argv
     try:
         cfg = settings(root)
         with updater.update_lock(cfg["runtime"]):
-            operation = (argv or sys.argv[1:] or ["start"])[0]
+            operation = arguments[0] if arguments else "start"
             if operation == "start":
                 start(root)
             elif operation == "stop":
                 stop(root)
             else:
                 raise BridgeError("Допустимы только start и stop.")
+        if not arguments:
+            # Браузер открывается только после подтверждённого успешного запуска.
+            with suppress(OSError, webbrowser.Error):
+                webbrowser.open(SITE_URL)
         return 0
     except BridgeError as exc:
         print("Website не готов:", str(exc))
