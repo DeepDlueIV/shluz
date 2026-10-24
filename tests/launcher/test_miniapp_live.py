@@ -767,3 +767,13 @@ def test_pending_menu_state_rechecks_without_docker_recreate(tmp_path, monkeypat
     assert ("saved", "active") in events
     assert not any(a[0] in {"stop", "start", "run", "rm"} for a in events)
 
+
+def test_docker_telegram_script_is_syntactically_valid_and_bounded():
+    m = load()
+    compile(m.MENU_INSIDE_DOCKER, "<docker-telegram-check>", "exec")
+    assert "getChatMenuButton" in m.MENU_INSIDE_DOCKER
+    assert "setChatMenuButton" in m.MENU_INSIDE_DOCKER
+    assert "err.code == 429" in m.MENU_INSIDE_DOCKER
+    assert "token=os.environ.get('TELEGRAM_BOT_TOKEN'" in m.MENU_INSIDE_DOCKER
+    assert "123456:" not in m.MENU_INSIDE_DOCKER
+
