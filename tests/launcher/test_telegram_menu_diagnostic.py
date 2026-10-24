@@ -5,10 +5,8 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
-import sys
 import urllib.error
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
