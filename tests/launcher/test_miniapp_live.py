@@ -777,3 +777,58 @@ def test_docker_telegram_script_is_syntactically_valid_and_bounded():
     assert "token=os.environ.get('TELEGRAM_BOT_TOKEN'" in m.MENU_INSIDE_DOCKER
     assert "123456:" not in m.MENU_INSIDE_DOCKER
 
+
+@pytest.mark.parametrize("response_url,expected", [
+    ("https://current.trycloudflare.com/miniapp", "match"),
+    ("https://old.trycloudflare.com/miniapp", "stale"),
+])
+def test_docker_readback_script_uses_internal_token_only(
+    monkeypatch, capsys, response_url, expected
+):
+    import io
+    import urllib.request
+
+    m = load()
+    secret = "bot-secret-protected-by-container-env"
+    menu_url = "https://current.trycloudflare.com/miniapp"
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", secret)
+    monkeypatch.setattr(sys, "argv", ["python", "read", menu_url])
+    seen = []
+
+    def fake_urlopen(request, timeout):
+        seen.append((request.full_url, json.loads(request.data), timeout))
+        return io.BytesIO(json.dumps({
+            "ok": True, "result": {
+                "type": "web_app",
+                "web_app": {"url": response_url},
+            },
+        }).encode("utf-8"))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    exec(m.MENU_INSIDE_DOCKER, {"__name__": "__main__"})
+    captured = capsys.readouterr()
+    assert captured.out.strip() == expected
+    assert secret not in captured.out and secret not in captured.err
+    assert len(seen) == 1
+    assert seen[0][0].endswith("/getChatMenuButton")
+    assert seen[0][1] == {}
+    assert seen[0][2] <= 4
+
+
+def test_docker_readback_rate_limit_is_transient(monkeypatch, capsys):
+    import urllib.error
+    import urllib.request
+
+    m = load()
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-only")
+    monkeypatch.setattr(
+        sys, "argv", ["python", "read", "https://current.trycloudflare.com/miniapp"]
+    )
+
+    def rate_limited(request, timeout):
+        raise urllib.error.HTTPError(request.full_url, 429, "Too Many Requests", {}, None)
+
+    monkeypatch.setattr(urllib.request, "urlopen", rate_limited)
+    exec(m.MENU_INSIDE_DOCKER, {"__name__": "__main__"})
+    assert capsys.readouterr().out.strip() == "unreachable"
+
