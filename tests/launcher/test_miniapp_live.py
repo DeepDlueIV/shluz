@@ -871,7 +871,7 @@ def test_stateful_preparing_failure_uses_existing_rollback(tmp_path, monkeypatch
     monkeypatch.setattr(m, "backup", lambda *a: None)
     monkeypatch.setattr(m, "retire_owned", lambda *a: None)
     monkeypatch.setattr(m, "start_gateway", lambda *a: None)
-    monkeypatch.setattr(m, "create_tunnel", lambda *a: (_ for _ in ()).throw(
+    monkeypatch.setattr(m, "restart_tunnel", lambda *a, **kw: (_ for _ in ()).throw(
         m.LiveError("stateful synthetic")
     ))
     with pytest.raises(m.LiveError, match="stateful synthetic"):
