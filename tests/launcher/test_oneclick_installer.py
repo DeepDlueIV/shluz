@@ -274,7 +274,7 @@ def test_real_git_checkout_is_accepted_without_changing_git_history(tmp_path):
     # Existing Git checkout without a new root .gitignore must not accidentally
     # add code snapshots, journals or installer state when Codex stages files.
     local_ignore = root / bootstrap.CONTROL / ".gitignore"
-    assert local_ignore.read_text(encoding="utf-8") == "*\\n!.gitignore\\n"
+    assert local_ignore.read_text(encoding="utf-8") == "*\n!.gitignore\n"
     untracked = git("status", "--porcelain=v1", "--untracked-files=all")
     assert ".noclip-installer/current.json" not in untracked
     assert ".noclip-installer/history/" not in untracked
