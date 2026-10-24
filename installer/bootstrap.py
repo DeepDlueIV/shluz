@@ -177,18 +177,82 @@ def runtime_lock(root):
 
 def existing_install(root):
     root = Path(root)
-    if is_link(root) or not root.is_dir() or (root / ".git").exists():
+    if is_link(root):
+        raise InstallError("Каталог SHLUZ является ссылкой; установка остановлена.")
+    if not root.is_dir():
         raise InstallError(
-            "Не найдена безопасная рабочая установка D:\\NoClip\\Shluz. "
-            "Исходный Git-репозиторий не должен быть рабочей установкой."
+            "Рабочая папка D:\\NoClip\\Shluz не найдена. "
+            "Никакие данные или Docker volumes не изменены."
         )
     if not (root / "NoClip.cmd").is_file() or not (root / "launcher").is_dir():
-        raise InstallError("Не найдена прежняя установка NoClip. Пустую базу не создаю.")
-    for folder in ("launcher", CONTROL):
+        raise InstallError(
+            "В D:\\NoClip\\Shluz не найдены NoClip.cmd и launcher. "
+            "Пустую установку или новую базу автоматически не создаю."
+        )
+    for folder in ("launcher", CONTROL, ".git"):
         if is_link(root / folder):
             raise InstallError("Рабочий каталог содержит неподдерживаемую ссылку.")
     for relative in FILES:
         safe_path(root, relative)
+
+
+def git_checkout_preflight(root, previous_state, manifest):
+    """Allow an existing Git checkout but never overwrite Codex's uncommitted edits.
+
+    Installed code and Git remain distinct concerns. The .git directory is never
+    accessed for writing. Existing tracked local edits are checked before replacing
+    a launcher file; updates installed by us are checked via current.json instead.
+    """
+    root = Path(root).resolve()
+    marker = root / ".git"
+    if not marker.exists():
+        return False
+    if is_link(marker) or not (marker.is_dir() or marker.is_file()):
+        raise InstallError("Нестандартная папка Git: установка не изменена.")
+
+    def run_git(*arguments):
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(root), *arguments],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=20, check=False,
+                env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise InstallError(
+                "Обнаружен Git, но не удалось безопасно проверить его локальные правки."
+            ) from exc
+        if result.returncode:
+            raise InstallError(
+                "Git-копия не прошла проверку. Файлы программы сохранены."
+            )
+        return result.stdout.strip()
+
+    top = run_git("rev-parse", "--show-toplevel")
+    if os.path.normcase(str(Path(top).resolve())) != os.path.normcase(str(root)):
+        raise InstallError("SHLUZ расположен внутри другого Git-проекта.")
+    if previous_state is not None:
+        # User edits are already caught by ensure_local_changes_safe using SHA-256.
+        return True
+
+    # --no-renames and -z produce literal paths; exclude unrelated project edits.
+    dirty = run_git(
+        "-c", "status.renames=false", "status", "--porcelain=v1", "-z",
+        "--untracked-files=no", "--", *sorted(FILES),
+    )
+    for entry in dirty.split("\x00"):
+        if not entry:
+            continue
+        relative = entry[3:]
+        if relative not in FILES:
+            raise InstallError("Git сообщил о неизвестной локальной правке.")
+        current = safe_path(root, relative)
+        if not current.is_file() or sha256(current) != manifest["files"][relative]:
+            raise InstallError(
+                "Обнаружены локальные правки Codex в файлах лаунчера. "
+                "Установщик их не перезаписывает; сначала сохраните их в Git."
+            )
+    return True
 
 
 def docker_command(*args):
@@ -490,6 +554,7 @@ def install(source, root, *, docker_check=docker_preflight, launch=run_existing)
         recover_interrupted(root)
         state = load_state(root)
         ensure_local_changes_safe(root, state)
+        git_checkout = git_checkout_preflight(root, state, manifest)
         docker_check(root)
         if state and state["revision"] == manifest["revision"] and all(
             sha256(safe_path(root, p)) == h for p, h in manifest["files"].items()
@@ -536,6 +601,12 @@ def install(source, root, *, docker_check=docker_preflight, launch=run_existing)
         with runtime_lock(root):
             commit_snapshot(root, operation, manifest, snapshot)
         print("NoClip обновлён до " + manifest["revision"][:12] + ".")
+    if git_checkout and changed:
+        print(
+            "Git-история не менялась. Обновлённые файлы программы могут "
+            "отображаться как изменения Git; не выполняйте git add -A "
+            "без проверки в Codex."
+        )
     if os.name == "nt":
         webbrowser.open("http://127.0.0.1:18000/admin")
     return 0
