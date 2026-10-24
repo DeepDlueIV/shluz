@@ -1,0 +1,118 @@
+name: NoClip one-click Windows update candidate
+
+on:
+  push:
+    branches: [feat/one-click-local-updates-20261024]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows installer and launcher regressions
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest pyyaml ruff
+      - run: ruff check installer/bootstrap.py scripts/package_oneclick_update.py tests/launcher/test_oneclick_installer.py
+      - run: python -m pytest tests/launcher -q --noconftest
+      - name: Validate one-click Windows entrypoint
+        shell: pwsh
+        run: |
+          if (-not (Test-Path installer/Install-NoClip.cmd)) { throw 'No installer' }
+          if (-not (Select-String -Path installer/Install-NoClip.cmd -Pattern 'bootstrap.py' -SimpleMatch)) { throw 'Bootstrap missing' }
+
+  linux:
+    name: File-integrity and Telegram API checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -e '.[dev]'
+      - run: ruff check installer/bootstrap.py scripts/package_oneclick_update.py tests/launcher/test_oneclick_installer.py
+      - run: python -m pytest tests/launcher -q --noconftest
+      - run: python -m pytest tests/telegram/test_miniapp.py -q
+
+  docker:
+    name: Existing Docker volumes and SQLite remain intact
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build isolated mock image
+        run: docker build --platform linux/amd64 -t noclip-portable-smoke:local .
+      - name: Verify existing volume, bot mode, backup, stop
+        run: python scripts/miniapp_live_docker_smoke.py
+
+  package:
+    name: SHA256 verified installer ZIP (no secrets)
+    needs: [windows, linux, docker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build pinned source-only installer
+        run: python scripts/package_oneclick_update.py dist/NoClip-OneClick.zip "$GITHUB_SHA"
+      - name: Verify released ZIP
+        run: cd dist && sha256sum -c NoClip-OneClick.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NoClip-OneClick-Windows
+          path: |
+            dist/NoClip-OneClick.zip
+            dist/NoClip-OneClick.sha256
+          retention-days: 30
+          if-no-files-found: error
+
+  publish:
+    name: Isolated owner candidate release (no Vercel or main changes)
+    needs: [package]
+    if: >-
+      github.event_name == 'push' &&
+      github.repository == 'DeepDlueIV/shluz' &&
+      github.ref == 'refs/heads/feat/one-click-local-updates-20261024'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: NoClip-OneClick-Windows
+          path: dist
+      - run: cd dist && sha256sum -c NoClip-OneClick.sha256
+      - name: Publish immutable reviewed artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="noclip-oneclick-${GITHUB_SHA}"
+          gh release create "$TAG" \
+            dist/NoClip-OneClick.zip \
+            dist/NoClip-OneClick.sha256 \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --prerelease --latest=false \
+            --title "NoClip one-click Windows updater — ${GITHUB_SHA:0:10}" \
+            --notes "Source-only local installer for the already existing D:\NoClip\Shluz installation. Extract anywhere and open Install-NoClip.cmd. Verifies SHA256; never overwrites config, Docker databases, keys or website runtime. Backs up previous code, checks existing Docker volumes, refuses uncommitted local modifications and preserves rollback. Updates launcher scripts only: Gateway image pin unchanged. Windows/Linux tests and isolated Docker smoke passed; live Windows owner acceptance still required. Does not deploy the Vercel site or merge main."
