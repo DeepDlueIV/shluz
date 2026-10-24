@@ -289,3 +289,23 @@ def test_docker_preflight_uses_read_only_inspection_and_expected_volumes(
     (root / "runtime.json").write_text(json.dumps(state))
     with pytest.raises(bootstrap.InstallError, match="volume"):
         bootstrap.docker_preflight(root)
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows cmd.exe only")
+def test_real_windows_batch_handles_spaces_and_unicode_path(tmp_path):
+    import shutil
+    import subprocess
+
+    folder = tmp_path / "Моя папка NoClip" / "новая версия"
+    folder.mkdir(parents=True)
+    shutil.copy2(INSTALLER / "Install-NoClip.cmd", folder / "Install-NoClip.cmd")
+    (folder / "bootstrap.py").write_text(
+        "from pathlib import Path\n"
+        "Path(__file__).with_name('batch-pass.txt').write_text('ok')\n",
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        ["cmd.exe", "/d", "/c", str(folder / "Install-NoClip.cmd")],
+        capture_output=True, timeout=30, check=False,
+    )
+    assert completed.returncode == 0
+    assert (folder / "batch-pass.txt").read_text() == "ok"
