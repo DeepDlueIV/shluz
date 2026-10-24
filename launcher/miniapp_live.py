@@ -563,7 +563,7 @@ def start(root):
             state = None
         if not isinstance(state, dict):
             state = None
-        if state and state.get("phase") == "active":
+        if state and state.get("phase") in {"active", "menu_unverified"}:
             live, tunnel = owned(LIVE_BOT), owned(LIVE_TUNNEL)
             if (
                 is_running(live) and is_running(tunnel)
@@ -571,7 +571,21 @@ def start(root):
             ):
                 gateway, old = gateway_and_old()
                 if is_running(gateway) and not is_running(old):
-                    print("NoClip уже запущен: Gateway + новая Telegram Mini App.")
+                    if state["phase"] == "menu_unverified":
+                        url = state.get("origin")
+                        if not isinstance(url, str) or not url.startswith("https://"):
+                            raise LiveError("Не сохранился HTTPS адрес проверки меню.")
+                        token = trial.env(old).get("TELEGRAM_BOT_TOKEN", "")
+                        if not token:
+                            raise LiveError("Нет токена для повторной проверки меню.")
+                        if wait_menu(token, url) is not False:
+                            state["phase"] = "active"
+                            save_state(root, state)
+                            print("Telegram подтвердил актуальную Mini App.")
+                        else:
+                            print("Telegram API пока недоступен; новая Mini App работает.")
+                    else:
+                        print("NoClip уже запущен: Gateway + новая Telegram Mini App.")
                     return
         gateway, old = gateway_and_old()
         if state:
@@ -627,11 +641,15 @@ def start(root):
                         token, "setChatMenuButton",
                         chat_id=owner_id, menu_button={"type": "default"},
                     )
-        wait_menu(token, url)
-        initial["phase"] = "active"
+        menu_ok = wait_menu(token, url) is not False
+        initial["phase"] = "active" if menu_ok else "menu_unverified"
         initial["origin"] = url  # HTTPS адрес не секрет; необходим для диагностики.
         save_state(root, initial)
-        print("Готово: Gateway + новый Telegram с Mini App.")
+        if menu_ok:
+            print("Готово: Gateway + новый Telegram с Mini App.")
+        else:
+            print("SHLUZ работает, но подтверждение меню Telegram ожидается.")
+            print("Повторный запуск проверит меню без пересоздания контейнеров.")
         print("Откройте Telegram и кнопку «Меню». Старый бот сохранён для отката.")
         if re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
             with suppress(Exception):
