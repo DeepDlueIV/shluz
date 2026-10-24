@@ -559,7 +559,7 @@ def install(source, root, *, docker_check=docker_preflight, launch=run_existing)
     if not local_ignore.exists():
         try:
             with local_ignore.open("x", encoding="utf-8") as stream:
-                stream.write("*\\n!.gitignore\\n")
+                stream.write("*\n!.gitignore\n")
         except FileExistsError:
             pass
     with runtime_lock(root):
