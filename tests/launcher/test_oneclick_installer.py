@@ -1,7 +1,6 @@
 """Offline safety and file-integrity checks for the Windows one-click update flow."""
 
 import hashlib
-import importlib.util
 import json
 import sys
 import zipfile
