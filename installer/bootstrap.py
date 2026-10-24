@@ -231,10 +231,6 @@ def git_checkout_preflight(root, previous_state, manifest):
     top = run_git("rev-parse", "--show-toplevel").strip()
     if os.path.normcase(str(Path(top).resolve())) != os.path.normcase(str(root)):
         raise InstallError("SHLUZ расположен внутри другого Git-проекта.")
-    if previous_state is not None:
-        # User edits are already caught by ensure_local_changes_safe using SHA-256.
-        return True
-
     # --no-renames and -z produce literal paths; exclude unrelated project edits.
     dirty = run_git(
         "-c", "status.renames=false", "status", "--porcelain=v1", "-z",
@@ -247,11 +243,21 @@ def git_checkout_preflight(root, previous_state, manifest):
         if relative not in FILES:
             raise InstallError("Git сообщил о неизвестной локальной правке.")
         current = safe_path(root, relative)
-        if not current.is_file() or sha256(current) != manifest["files"][relative]:
+        if not current.is_file():
             raise InstallError(
                 "Обнаружены локальные правки Codex в файлах лаунчера. "
                 "Установщик их не перезаписывает; сначала сохраните их в Git."
             )
+        digest = sha256(current)
+        if digest == manifest["files"][relative]:
+            continue
+        if previous_state and digest == previous_state["files"].get(relative):
+            # This is still the exact code written by the previous installer run.
+            continue
+        raise InstallError(
+            "Обнаружены локальные правки Codex без коммита в файлах лаунчера. "
+            "Установщик их не перезаписывает; сначала сохраните их в Git."
+        )
     return True
 
 
@@ -329,16 +335,23 @@ def load_state(root):
     return state
 
 
-def ensure_local_changes_safe(root, state):
+def ensure_local_changes_safe(root, state, manifest, git_checkout):
     if not state:
         return
     for relative, expected in state["files"].items():
         file = safe_path(root, relative)
-        if not file.exists() or sha256(file) != expected:
-            raise InstallError(
-                "Есть локальные изменения программы. Они не перезаписаны. "
-                "Сохраните их в Git через Codex перед обновлением."
-            )
+        if file.is_file() and sha256(file) == expected:
+            continue
+        if git_checkout:
+            # git_checkout_preflight has distinguished committed changes and the
+            # previous installer snapshot from uncommitted edits for these files.
+            continue
+        if file.is_file() and sha256(file) == manifest["files"].get(relative):
+            continue
+        raise InstallError(
+            "Есть локальные изменения программы. Они не перезаписаны. "
+            "Сохраните их в Git через Codex перед обновлением."
+        )
 
 
 def take_snapshot(root, folder, manifest, previous_state):
@@ -565,8 +578,8 @@ def install(source, root, *, docker_check=docker_preflight, launch=run_existing)
     with runtime_lock(root):
         recover_interrupted(root)
         state = load_state(root)
-        ensure_local_changes_safe(root, state)
         git_checkout = git_checkout_preflight(root, state, manifest)
+        ensure_local_changes_safe(root, state, manifest, git_checkout)
         docker_check(root)
         if state and state["revision"] == manifest["revision"] and all(
             sha256(safe_path(root, p)) == h for p, h in manifest["files"].items()

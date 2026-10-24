@@ -226,8 +226,9 @@ def test_expected_url_rejects_malformed_and_symlink_config(tmp_path):
     assert m.expected_miniapp(tmp_path) == (None, "invalid")
 
 
-def test_owner_id_never_printed_and_parse_is_strict(tmp_path):
+def test_owner_id_never_printed_and_parse_is_strict(tmp_path, monkeypatch):
     m = load()
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "isolated-localappdata"))
     folder = tmp_path / "miniapp-trial"
     folder.mkdir()
     (folder / "owner.json").write_text('{"telegram_id": 111}', encoding="utf-8")

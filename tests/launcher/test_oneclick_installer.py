@@ -280,6 +280,72 @@ def test_real_git_checkout_is_accepted_without_changing_git_history(tmp_path):
     assert ".noclip-installer/history/" not in untracked
 
 
+def test_committed_launcher_changes_since_last_install_can_be_updated(tmp_path):
+    source, root, _, payload = setup_case(tmp_path, tag="installed")
+    git = init_git_checkout(root)
+    install(source, root)
+
+    # The program files from the first installation are now a saved Git baseline.
+    git("add", "--", *sorted(bootstrap.FILES))
+    git("commit", "-qm", "record installed launcher")
+    installed_head = git("rev-parse", "HEAD")
+
+    # A newer Codex change is committed after the install marker was written.
+    local_file = root / "launcher" / "miniapp_live.py"
+    local_file.write_text("committed Codex launcher change\n", encoding="utf-8")
+    git("add", "--", "launcher/miniapp_live.py")
+    git("commit", "-qm", "save launcher change")
+    saved_head = git("rev-parse", "HEAD")
+    assert saved_head != installed_head
+
+    # A new trusted package may replace the committed files without rewriting Git.
+    next_tag = "verified update"
+    next_data = {
+        name: (next_tag + ":" + name + "\n").encode("utf-8")
+        for name in bootstrap.FILES
+    }
+    next_revision = "d" * 40
+    next_manifest = {
+        **json.loads((source / "package-manifest.json").read_text(encoding="utf-8")),
+        "revision": next_revision,
+        "files": {name: checksum(blob) for name, blob in next_data.items()},
+    }
+    for name, blob in next_data.items():
+        (source / "payload" / name).write_bytes(blob)
+    (source / "package-manifest.json").write_text(
+        json.dumps(next_manifest), encoding="utf-8"
+    )
+
+    assert install(source, root) == 0
+    assert git("rev-parse", "HEAD") == saved_head
+    assert all((root / name).read_bytes() == blob for name, blob in next_data.items())
+
+
+def test_uncommitted_codex_changes_on_git_checkout_still_block_update(tmp_path):
+    source, root, _, _ = setup_case(tmp_path, tag="installed")
+    init_git_checkout(root)
+    install(source, root)
+    edited = root / "launcher" / "miniapp_live.py"
+    edited.write_text("uncommitted Codex change\n", encoding="utf-8")
+
+    old_state = bootstrap.load_state(root)
+    next_data = {
+        name: ("next:" + name + "\n").encode("utf-8")
+        for name in bootstrap.FILES
+    }
+    manifest = json.loads((source / "package-manifest.json").read_text(encoding="utf-8"))
+    manifest["revision"] = "e" * 40
+    manifest["files"] = {name: checksum(blob) for name, blob in next_data.items()}
+    for name, blob in next_data.items():
+        (source / "payload" / name).write_bytes(blob)
+    (source / "package-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(bootstrap.InstallError, match="локальные правки Codex"):
+        install(source, root)
+    assert edited.read_text(encoding="utf-8") == "uncommitted Codex change\n"
+    assert bootstrap.load_state(root) == old_state
+
+
 def test_git_checkout_preserves_uncommitted_codex_changes(tmp_path):
     source, root, _, _ = setup_case(tmp_path)
     git = init_git_checkout(root)
