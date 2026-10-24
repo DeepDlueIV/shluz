@@ -866,3 +866,60 @@ def test_docker_readback_rate_limit_is_transient(monkeypatch, capsys):
     exec(m.MENU_INSIDE_DOCKER, {"__name__": "__main__"})
     assert capsys.readouterr().out.strip() == "unreachable"
 
+
+def test_preflight_exception_does_not_stop_existing_healthy_services(tmp_path, monkeypatch):
+    m = load()
+    events = []
+    current = {
+        "phase": "active",
+        "origin": "https://previous.trycloudflare.com",
+        "old_id": "classic-id",
+    }
+    monkeypatch.setattr(
+        m, "docker",
+        lambda *a, **kw: "linux/amd64" if a[:2] == ("info", "--format") else "",
+    )
+    monkeypatch.setattr(m.trial, "root_folder", lambda: tmp_path / "trial")
+    monkeypatch.setattr(m.trial, "inspect", lambda *a: None)
+    monkeypatch.setattr(m, "read_state", lambda *a: current)
+    monkeypatch.setattr(m, "save_state", lambda *a: None)
+    monkeypatch.setattr(m, "gateway_and_old", lambda: (gateway(), old_bot()))
+    monkeypatch.setattr(m, "owned", lambda name: {
+        m.LIVE_BOT: {
+            "Id": "live-id", "State": {
+                "Running": True, "Health": {"Status": "healthy"}
+            },
+        },
+        m.LIVE_TUNNEL: {
+            "Id": "tunnel-id", "State": {"Running": True}
+        },
+    }.get(name))
+    def fail_before_mutation(*args, **kwargs):
+        raise m.LiveError("safe synthetic read-only preflight failure")
+    monkeypatch.setattr(m, "refresh_active", fail_before_mutation)
+    monkeypatch.setattr(m, "stop", lambda *a: events.append("stop"))
+    with pytest.raises(m.LiveError, match="safe synthetic"):
+        m.start(tmp_path)
+    assert "stop" not in events
+
+
+def test_stateful_preparing_failure_uses_existing_rollback(tmp_path, monkeypatch):
+    m = load()
+    events = []
+    states = {"phase": "preparing"}
+    monkeypatch.setattr(
+        m, "docker",
+        lambda *a, **kw: "linux/amd64" if a[:2] == ("info", "--format") else "",
+    )
+    monkeypatch.setattr(m.trial, "root_folder", lambda: tmp_path / "trial")
+    monkeypatch.setattr(m.trial, "inspect", lambda *a: None)
+    monkeypatch.setattr(m, "read_state", lambda *a: states)
+    monkeypatch.setattr(m, "stop", lambda *a: events.append("rollback"))
+    monkeypatch.setattr(m, "gateway_and_old", lambda: (None, None))
+    monkeypatch.setattr(m, "prepare_images", lambda *a: (_ for _ in ()).throw(
+        m.LiveError("stateful synthetic")
+    ))
+    with pytest.raises(m.LiveError, match="stateful synthetic"):
+        m.start(tmp_path)
+    assert events == ["rollback"]
+
