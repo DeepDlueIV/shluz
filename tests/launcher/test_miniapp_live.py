@@ -855,7 +855,17 @@ def test_stateful_preparing_failure_uses_existing_rollback(tmp_path, monkeypatch
     monkeypatch.setattr(m, "read_state", lambda *a: states)
     monkeypatch.setattr(m, "stop", lambda *a: events.append("rollback"))
     monkeypatch.setattr(m, "gateway_and_old", lambda: (None, None))
-    monkeypatch.setattr(m, "prepare_images", lambda *a: (_ for _ in ()).throw(
+    monkeypatch.setattr(m, "current_settings", lambda *a: settings())
+    monkeypatch.setattr(m, "prepare_images", lambda *a: (
+        {"commit": m.PREVIEW_COMMIT, "image": "shluz-preview:" + m.PREVIEW_COMMIT},
+        "cloudflare/cloudflared@sha256:" + "a" * 64,
+    ))
+    monkeypatch.setattr(m, "ensure_preflight", lambda *a: ("ci-token", {}, ""))
+    monkeypatch.setattr(m, "save_state", lambda _root, value: states.update(value))
+    monkeypatch.setattr(m, "backup", lambda *a: None)
+    monkeypatch.setattr(m, "retire_owned", lambda *a: None)
+    monkeypatch.setattr(m, "start_gateway", lambda *a: None)
+    monkeypatch.setattr(m, "create_tunnel", lambda *a: (_ for _ in ()).throw(
         m.LiveError("stateful synthetic")
     ))
     with pytest.raises(m.LiveError, match="stateful synthetic"):
