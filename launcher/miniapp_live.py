@@ -596,7 +596,7 @@ def start(root):
                             save_state(root, state)
                             print("Telegram подтвердил актуальную Mini App.")
                         else:
-                            print("Меню Telegram всё ещё не подтверждено; Mini App работает, повторите проверку позже.")
+                            print("Меню Telegram ещё не подтверждено; Mini App работает.")
                     else:
                         print("NoClip уже запущен: Gateway + новая Telegram Mini App.")
                     return
