@@ -226,9 +226,9 @@ def git_checkout_preflight(root, previous_state, manifest):
             raise InstallError(
                 "Git-копия не прошла проверку. Файлы программы сохранены."
             )
-        return result.stdout.strip()
+        return result.stdout
 
-    top = run_git("rev-parse", "--show-toplevel")
+    top = run_git("rev-parse", "--show-toplevel").strip()
     if os.path.normcase(str(Path(top).resolve())) != os.path.normcase(str(root)):
         raise InstallError("SHLUZ расположен внутри другого Git-проекта.")
     if previous_state is not None:
