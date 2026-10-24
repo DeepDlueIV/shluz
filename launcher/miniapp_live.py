@@ -667,9 +667,23 @@ def start(root):
         if re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
             with suppress(Exception):
                 webbrowser.open("https://t.me/" + username)
-    except Exception:
+    except Exception as exc:
+        # Before entering the stateful deployment transaction, configuration,
+        # Docker identity and image preflight must not stop an already healthy
+        # user deployment. Once phase=preparing is persisted and mutations begin,
+        # the existing rollback path remains responsible for cleanup.
+        state = None
         with suppress(Exception):
-            # Ошибка не включает classic: он доступен только через явный rollback.
+            state = read_state(root)
+        if not isinstance(state, dict) or state.get("phase") != "preparing":
+            print(
+                "Запуск не завершён на этапе предварительной проверки. "
+                "Существующие Gateway, бот и пользовательские данные не изменены."
+            )
+            raise
+        with suppress(Exception):
+            # Ошибка внутри stateful deployment transaction: classic-бот
+            # возвращается только через явный rollback, user volumes preserved.
             stop(root)
         raise
 
