@@ -667,7 +667,7 @@ def start(root):
         if re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
             with suppress(Exception):
                 webbrowser.open("https://t.me/" + username)
-    except Exception as exc:
+    except Exception:
         # Before entering the stateful deployment transaction, configuration,
         # Docker identity and image preflight must not stop an already healthy
         # user deployment. Once phase=preparing is persisted and mutations begin,
