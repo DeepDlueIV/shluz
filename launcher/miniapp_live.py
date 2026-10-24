@@ -325,14 +325,14 @@ def wait_menu(token, url, *, attempts=8, timeout_seconds=30):
             break
         # First try within the same Docker network namespace as the bot.
         inside = container_menu_probe(url, timeout=min(7, remaining))
-        if inside == "match":
+        if inside == "match" and time.monotonic() <= deadline:
             return True
         failures.add(inside)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
         outside = host_menu_probe(token, url, timeout=min(4, remaining))
-        if outside == "match":
+        if outside == "match" and time.monotonic() <= deadline:
             return True
         failures.add(outside)
         remaining = deadline - time.monotonic()
@@ -342,7 +342,7 @@ def wait_menu(token, url, *, attempts=8, timeout_seconds=30):
                 and remaining >= 5):
             repair_attempted = True
             fixed = container_menu_probe(url, action="set", timeout=min(7, remaining))
-            if fixed == "match":
+            if fixed == "match" and time.monotonic() <= deadline:
                 return True
             failures.add(fixed)
         remaining = deadline - time.monotonic()
