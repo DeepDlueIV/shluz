@@ -36,7 +36,41 @@ def test_site_scope_edits_only_guest_database(tmp_path):
                 mode="demo",
                 demo_requests=0,
                 demo_models_json='["mock-chat"]',
+                demo_max_input_chars=1000,
+                demo_max_output_tokens=512,
             )
+        )
+        session.add(
+            ModelPolicy(
+                id="channel:web",
+                models_json='["mistral-small-3-2-24b-instruct"]',
+            )
+        )
+        session.add(DemoControl(id="default", daily_usd=Decimal("0.02")))
+        session.add_all(
+            [
+                DemoModelBound(
+                    id="venice:mistral-small-3-2-24b-instruct",
+                    max_cost_usd=Decimal("0.01"),
+                    max_input_chars=1000,
+                    max_output_tokens=512,
+                    reviewed=True,
+                ),
+                DemoModelBound(
+                    id="venice:olafangensan-glm-4.7-flash-heretic",
+                    max_cost_usd=Decimal("0.02"),
+                    max_input_chars=1000,
+                    max_output_tokens=512,
+                    reviewed=True,
+                ),
+                DemoModelBound(
+                    id="venice:unreviewed-model",
+                    max_cost_usd=Decimal("0.01"),
+                    max_input_chars=1000,
+                    max_output_tokens=512,
+                    reviewed=False,
+                ),
+            ]
         )
 
     app = create_app(settings=settings, web_settings=WebSettings(enabled=False, _env_file=None))
@@ -45,7 +79,14 @@ def test_site_scope_edits_only_guest_database(tmp_path):
         with TestClient(app) as client:
             page = client.get("/admin/access?scope=site", auth=auth)
             assert page.status_code == 200
-            assert "гостевой сайт / website guests" in page.text
+            assert "Гостевой сайт / Website guests" in page.text
+            assert 'name="demo_model"' in page.text
+            assert "mistral-small-3-2-24b-instruct" in page.text
+            assert "olafangensan-glm-4.7-flash-heretic" in page.text
+            assert "unreviewed-model" not in page.text
+            assert "Venice" in page.text
+            assert "создаётся" in page.text
+            assert 'subject="channel:web"' not in page.text
 
             response = client.post(
                 "/admin/access/demo",
@@ -55,8 +96,8 @@ def test_site_scope_edits_only_guest_database(tmp_path):
                     "csrf_token": _admin_csrf_token(settings),
                     "scope": "site",
                     "mode": "demo",
-                    "demo_requests": "1",
-                    "demo_models": "mistral-small-3-2-24b-instruct",
+                    "demo_requests": "3",
+                    "demo_model": "olafangensan-glm-4.7-flash-heretic",
                     "demo_max_input_chars": "1000",
                     "demo_max_output_tokens": "512",
                     "demo_daily_requests": "10",
@@ -68,9 +109,11 @@ def test_site_scope_edits_only_guest_database(tmp_path):
 
             with site_database.session() as session:
                 site_policy = session.get(ProductPolicy, "default")
-                assert site_policy.demo_requests == 1
-                assert site_policy.demo_models_json == '["mistral-small-3-2-24b-instruct"]'
-                assert session.get(ModelPolicy, "channel:web") is None
+                assert site_policy.demo_requests == 3
+                assert site_policy.demo_models_json == '["olafangensan-glm-4.7-flash-heretic"]'
+                assert session.get(ModelPolicy, "channel:web").models_json == (
+                    '["olafangensan-glm-4.7-flash-heretic"]'
+                )
             with app.state.database.session() as session:
                 assert session.get(ProductPolicy, "default") is None
 
@@ -85,13 +128,7 @@ def test_site_scope_edits_only_guest_database(tmp_path):
                     "models": "mistral-small-3-2-24b-instruct",
                 },
             )
-            assert channel_response.status_code == 303
-            with site_database.session() as session:
-                assert session.get(ModelPolicy, "channel:web").models_json == (
-                    '["mistral-small-3-2-24b-instruct"]'
-                )
-            with app.state.database.session() as session:
-                assert session.get(ModelPolicy, "channel:web") is None
+            assert channel_response.status_code == 422
 
             forbidden_model = client.post(
                 "/admin/access/models",
@@ -125,7 +162,7 @@ def test_site_scope_edits_only_guest_database(tmp_path):
                     "scope": "site",
                     "mode": "demo",
                     "demo_requests": "1",
-                    "demo_models": "mistral-small-3-2-24b-instruct",
+                    "demo_model": "unreviewed-model",
                     "demo_max_input_chars": "1000",
                     "demo_max_output_tokens": "512",
                     "demo_daily_requests": "11",
@@ -271,9 +308,7 @@ def test_site_guest_page_lists_guests_and_extends_existing_limit_without_reset(t
     site_database = Database(
         settings.model_copy(
             update={
-                "database_url": SecretStr(
-                    "sqlite+pysqlite:///" + str(tmp_path / "site.sqlite")
-                )
+                "database_url": SecretStr("sqlite+pysqlite:///" + str(tmp_path / "site.sqlite"))
             }
         )
     )
@@ -324,9 +359,7 @@ def test_site_guest_page_lists_guests_and_extends_existing_limit_without_reset(t
             with site_database.session() as session:
                 assert session.get(DemoGrant, guest_id).requests_used == 1
                 assert session.get(DemoLimit, guest_id).requests_limit == 3
-                event = session.query(AdminEvent).filter_by(
-                    action="site_guest.limit_updated"
-                ).one()
+                event = session.query(AdminEvent).filter_by(action="site_guest.limit_updated").one()
                 assert event.details == {"requests_limit": 3}
             with app.state.database.session() as session:
                 assert session.get(Account, guest_id) is None
@@ -346,13 +379,22 @@ def test_site_demo_settings_explain_guest_access_and_allow_three_prompts(tmp_pat
     site_database = Database(
         settings.model_copy(
             update={
-                "database_url": SecretStr(
-                    "sqlite+pysqlite:///" + str(tmp_path / "site.sqlite")
-                )
+                "database_url": SecretStr("sqlite+pysqlite:///" + str(tmp_path / "site.sqlite"))
             }
         )
     )
     site_database.create_schema()
+    with site_database.session() as session:
+        session.add(
+            DemoModelBound(
+                id="venice:mistral-small-3-2-24b-instruct",
+                max_cost_usd=Decimal("0.01"),
+                max_input_chars=1000,
+                max_output_tokens=512,
+                reviewed=True,
+            )
+        )
+        session.add(DemoControl(id="default", daily_usd=Decimal("0.02")))
     app = create_app(settings=settings, site_demo_database=site_database)
     auth = ("owner", "test-admin-password")
     try:
@@ -360,8 +402,10 @@ def test_site_demo_settings_explain_guest_access_and_allow_three_prompts(tmp_pat
             page = client.get("/admin/access?scope=site", auth=auth)
             assert page.status_code == 200
             assert 'max="3"' in page.text
-            assert "Доступ гостям" in page.text
+            assert "Гостевой доступ сайта / Website guest access" in page.text
             assert "Новые пользователи" not in page.text
+            assert 'name="demo_model"' in page.text
+            assert "Гостевой аккаунт создаётся при первой подтверждённой отправке;" in page.text
             response = client.post(
                 "/admin/access/demo",
                 auth=auth,
@@ -371,7 +415,7 @@ def test_site_demo_settings_explain_guest_access_and_allow_three_prompts(tmp_pat
                     "scope": "site",
                     "mode": "demo",
                     "demo_requests": "3",
-                    "demo_models": "mistral-small-3-2-24b-instruct",
+                    "demo_model": "mistral-small-3-2-24b-instruct",
                     "demo_max_input_chars": "1000",
                     "demo_max_output_tokens": "512",
                     "demo_daily_requests": "10",
@@ -381,6 +425,12 @@ def test_site_demo_settings_explain_guest_access_and_allow_three_prompts(tmp_pat
             assert response.status_code == 303
             with site_database.session() as session:
                 assert session.get(ProductPolicy, "default").demo_requests == 3
+                assert session.get(ProductPolicy, "default").demo_models_json == (
+                    '["mistral-small-3-2-24b-instruct"]'
+                )
+                assert session.get(ModelPolicy, "channel:web").models_json == (
+                    '["mistral-small-3-2-24b-instruct"]'
+                )
     finally:
         app.state.database.dispose()
         site_database.dispose()

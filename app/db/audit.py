@@ -64,6 +64,7 @@ _SAFE_FIELDS = set(PLAN_FIELDS) | {
     "invite_id",
     "mode",
     "demo_requests",
+    "model_id",
     "requests_limit",
 }
 

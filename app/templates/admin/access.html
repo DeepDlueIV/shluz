@@ -2,23 +2,128 @@
 {% block title %}Демо и модели{% endblock %}
 {% macro help(text) %}<button type="button" class="help-trigger" aria-label="Справка" data-tooltip="{{ text }}" title="{{ text }}">?</button>{% endmacro %}
 {% block content %}
-<header class="hero compact"><div><p class="eyebrow">{{ 'Гостевой сайт' if site_scope else 'Одни правила для всех клиентов' }}</p><h1>{{ 'Демо сайта' if site_scope else 'Демо и модели' }}</h1><p class="muted">{{ 'Управляйте пакетом новых гостей и моделью ответов сайта.' if site_scope else 'Start создаёт аккаунт сам. Вы управляете остатком демо и доступными моделями, без ключей на каждого человека.' }}</p></div></header>
-<section class="section-block"><p><strong>Область настроек / Settings scope:</strong> {{ 'гостевой сайт / website guests' if admin_scope == 'site' else 'основной SHLUZ / main SHLUZ' }}</p><p><a href="/admin/access?scope=owner">Основной шлюз / Main gateway</a> · <a href="/admin/access?scope=site">Гостевой сайт / Guest website</a></p>{% if admin_scope == 'site' %}<p class="muted">Изменения применяются к гостевому сайту. Новые лимиты относятся к новым гостям; использованные запросы и история сохраняются.</p>{% endif %}</section>
-<p><a href="/admin/web-access{{ '?scope=site' if admin_scope == 'site' else '' }}">Защита демо / Demo protection: бюджет, сеть, почтовые коды →</a></p>
-<section class="form-card section-block"><h2>Демо-доступ</h2>
-<form method="post" action="/admin/access/demo" class="compact-form">
-<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-<input type="hidden" name="scope" value="{{ admin_scope }}">
-<label for="mode">{{ 'Доступ гостям' if site_scope else 'Новые пользователи' }}</label><select name="mode" id="mode"><option value="demo" {% if policy.mode == 'demo' %}selected{% endif %}>{{ 'Открыт: новый посетитель получает демо' if site_scope else 'Регистрируются сразу и получают демо' }}</option><option value="closed" {% if policy.mode == 'closed' %}selected{% endif %}>{{ 'Закрыт: новые гости не получают демо' if site_scope else 'Только приглашения и одобрение заявок' }}</option></select>
-<div class="field"><div class="field-heading"><label for="demo_requests">{{ 'Запросов в пакете нового гостя' if site_scope else 'Пробных запросов для нового аккаунта' }}</label>{{ help('Разовый пакет для гостя сайта. Значение применяется к новым гостям. Старые пакеты настраиваются во вкладке «Гости сайта»; использованные запросы не сбрасываются. 0 не выдаёт запросов новым гостям.') if site_scope else help('Разовый пакет на весь аккаунт, общий для Telegram, сайта и desktop. Новый месяц и повторный Start не пополняют его. Число применяется к новым пакетам. Уже выданные лимиты и расход сохраняются. 0 не выдаёт запросов новым аккаунтам; общий выключатель — в разделе Защита демо.') }}</div><input id="demo_requests" name="demo_requests" type="number" min="0" max="{{ 3 if site_scope else 100 }}" value="{{ policy.demo_requests }}" required></div>
-<div class="field-heading"><label for="demo_models">{{ 'Модель сайта' if site_scope else 'Модели для демо' }}</label>{{ help('Укажите точный ID разрешённой модели Venice для гостевых ответов сайта.') if site_scope else help('Точные ID моделей, по одной на строку. Сейчас mock-chat — бесплатная тестовая заглушка. Настоящую модель выберите позже. Модель также должна быть разрешена в канале ниже. Пустой список закрывает генерацию.') }}</div><textarea id="demo_models" name="demo_models" rows="2" maxlength="22000">{{ demo_models }}</textarea>
-<details class="details-panel"><summary>Защита от лишнего расхода</summary><div class="details-body">
-{% for name, label, value, minimum, maximum in [('demo_max_input_chars','Максимум символов с историей',policy.demo_max_input_chars,100,200000),('demo_max_output_tokens','Максимум токенов ответа демо',policy.demo_max_output_tokens,1,4096),('demo_daily_requests','Общий лимит попыток демо в сутки (UTC)',policy.demo_daily_requests,0,10000),('requests_per_minute','Запросов в минуту на аккаунт',policy.requests_per_minute,1,1000)] %}
-<label for="{{ name }}">{{ label }}</label><input id="{{ name }}" name="{{ name }}" type="number" min="{{ minimum }}" max="{{ site_demo_limits.get(name, maximum) if site_scope else maximum }}" value="{{ value }}" required>{% endfor %}
-<p class="muted">Суточный предел защищает от большого числа новых аккаунтов; 0 приостанавливает демо. Ограничение ответа передаётся модели, а не только обрезает текст в боте.</p></div></details>
-<button type="submit">Сохранить демо</button><small>Это не подключает платную модель и не сбрасывает уже использованные запросы.</small></form></section>
-<section class="section-block"><h2>{{ 'Модель сайта' if site_scope else 'Модели по каналам' }}</h2><p class="muted">{{ 'Этот список применяется к гостевым запросам сайта.' if site_scope else 'Telegram может иметь короткий список, desktop — более широкий. Шлюз проверяет эти правила даже при прямом запросе к API.' }}</p>
-{% for channel, label in channels %}<details class="details-panel"><summary>{{ label }}</summary><div class="details-body"><form action="/admin/access/models" method="post" class="compact-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="scope" value="{{ admin_scope }}"><input type="hidden" name="subject" value="channel:{{ channel }}"><label for="channel-{{ channel }}">Разрешённые модели (ID)</label><textarea id="channel-{{ channel }}" name="models" rows="3" maxlength="22000">{{ rules.get('channel:' ~ channel, default_models) }}</textarea><small>Пустой список означает «генерация недоступна», а не «все модели».</small><button type="submit">Сохранить {{ label }}</button></form></div></details>{% endfor %}</section>
-<details class="details-panel section-block"><summary>Уточнить модели отдельных тарифов</summary><div class="details-body"><p class="muted">Итоговый доступ — пересечение тарифа и канала. Оплата не открывает модели, запрещённые для Telegram.</p>
-{% for plan in plans %}<form action="/admin/access/models" method="post" class="compact-form"><h3>{{ plan.name }}</h3><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="scope" value="{{ admin_scope }}"><input type="hidden" name="subject" value="plan:{{ plan.id }}"><label class="checkbox-label"><input type="checkbox" name="inherit" value="yes" {% if ('plan:' ~ plan.id) not in rules %}checked{% endif %}> Использовать весь разрешённый список канала</label><label for="plan-models-{{ plan.id }}">Или ограничить этим списком (снимите галочку выше)</label><textarea name="models" id="plan-models-{{ plan.id }}" rows="2" maxlength="22000">{{ rules.get('plan:' ~ plan.id, '') }}</textarea><button type="submit">Сохранить тариф</button></form>{% else %}<p>{{ 'Отдельные тарифы не применяются к гостевому сайту / Guest website demo has no plan-specific rules.' if admin_scope == 'site' else 'Платных тарифов пока нет. Их можно создать в разделе «Тарифы».' }}</p>{% endfor %}</div></details>
+<header class="hero compact">
+  <div>
+    <p class="eyebrow">{{ 'Гостевой сайт / Guest website' if site_scope else 'Основной шлюз / Main gateway' }}</p>
+    <h1>{{ 'Демо сайта / Website demo' if site_scope else 'Демо и модели основного шлюза / Main gateway demo and models' }}</h1>
+    <p class="muted">{{ 'Выберите проверенную модель, которая отвечает гостям публичного сайта.' if site_scope else 'Эта область управляет демо основной базы SHLUZ. Настройки гостей публичного сайта находятся отдельно.' }}</p>
+  </div>
+</header>
+
+<nav class="tabs" aria-label="Область настроек / Settings scope">
+  <a href="/admin/access?scope=owner" {% if not site_scope %}aria-current="page"{% endif %}>Основной шлюз / Main gateway</a>
+  <a href="/admin/access?scope=site" {% if site_scope %}aria-current="page"{% endif %}>Гостевой сайт / Website guests</a>
+</nav>
+{% if site_scope %}
+<p class="muted">Первый визит создаёт только сессию. Гостевой аккаунт создаётся при первой подтверждённой отправке; вход по почте превращает этот же аккаунт в личный и сохраняет историю и расход. / A guest account is created after the first verified prompt. Email sign-in converts that same account and keeps its history and usage.</p>
+{% else %}
+<p class="muted">Настройка «mock-chat» относится к основной базе и является синтетической заглушкой. Она не задаёт модель гостевого сайта; выберите вкладку «Гостевой сайт». / Main gateway and website guest settings use separate databases.</p>
+{% endif %}
+<p><a href="/admin/web-access{{ '?scope=site' if site_scope else '?scope=owner' }}">Защита демо / Demo protection: бюджет, сеть, почтовые коды →</a></p>
+
+<section class="form-card section-block">
+  <h2>Демо-доступ / Demo access</h2>
+  <form method="post" action="/admin/access/demo" class="compact-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="scope" value="{{ admin_scope }}">
+
+    <label for="mode">{{ 'Гостевой доступ сайта / Website guest access' if site_scope else 'Анонимное веб-демо основной базы / Main database web demo' }}</label>
+    <select name="mode" id="mode">
+      <option value="demo" {% if policy.mode == 'demo' %}selected{% endif %}>{{ 'Открыт: первый подтверждённый запрос создаёт гостя / Open: first verified prompt creates a guest' if site_scope else 'Разрешено / Allowed' }}</option>
+      <option value="closed" {% if policy.mode == 'closed' %}selected{% endif %}>{{ 'Закрыт: новые гостевые запросы отклоняются / Closed: new guest requests are rejected' if site_scope else 'Выключено / Disabled' }}</option>
+    </select>
+    <small class="muted">{{ 'Это не очередь заявок: аккаунт гостя создаётся при первой отправке после проверки Turnstile.' if site_scope else 'Этот переключатель не управляет регистрацией, приглашениями Telegram или одобрением пользователей.' }}</small>
+
+    <div class="field">
+      <div class="field-heading">
+        <label for="demo_requests">{{ 'Запросов в пакете нового гостя / Requests in a new guest package' if site_scope else 'Пробных запросов для нового аккаунта / Demo requests per new account' }}</label>
+        {{ help('Значение применяется к новым гостям. Существующие пакеты открываются во вкладке «Гости сайта»; использованные запросы не сбрасываются. / Existing guest packages are managed in Website guests; usage is preserved.') if site_scope else help('Разовый пакет основной базы. Он не пополняется при повторном входе или смене месяца. / One-time package for the main database.') }}
+      </div>
+      <input id="demo_requests" name="demo_requests" type="number" min="0" max="{{ 3 if site_scope else 100 }}" value="{{ policy.demo_requests }}" required>
+    </div>
+
+    {% if site_scope %}
+    <div class="field">
+      <div class="field-heading">
+        <label for="demo_model">Модель ответов гостям сайта / Website guest response model</label>
+        {{ help('Здесь выбирается одна модель из уже проверенных Venice-моделей с пределом стоимости в бюджете сайта. / Choose one reviewed Venice model whose cost bound fits the site budget.') }}
+      </div>
+      {% if site_model_options %}
+      <select id="demo_model" name="demo_model" required>
+        {% if site_model_current not in (site_model_options | map(attribute='id') | list) %}<option value="" selected disabled>Выберите проверенную модель / Select a reviewed model</option>{% endif %}
+        {% for model in site_model_options %}
+        <option value="{{ model.id }}" {% if site_model_current == model.id %}selected{% endif %}>{{ model.label }}</option>
+        {% endfor %}
+      </select>
+      {% else %}
+      <p class="empty-state">Нет проверенной модели в пределах текущего бюджета. Откройте «Защита демо» и задайте проверенную модель и бюджет. / No reviewed model fits the current budget.</p>
+      {% endif %}
+      {% if not site_model_in_sync %}<p class="muted">Демо и список сайта расходятся. Сохраните выбор модели, чтобы синхронизировать их. / Demo and website model rules differ; save a model to sync them.</p>{% endif %}
+      <small>Поставщик для выбранных вариантов: Venice. / Provider for these options: Venice.</small>
+    </div>
+    {% else %}
+    <div class="field-heading">
+      <label for="demo_models">Модели демо основной базы / Main database demo models</label>
+      {{ help('Точные ID, по одному на строку. mock-chat — локальная тестовая заглушка. Публичные гости сайта используют отдельную настройку и базу. / mock-chat is synthetic; website guests use a separate setting and database.') }}
+    </div>
+    <textarea id="demo_models" name="demo_models" rows="2" maxlength="22000">{{ demo_models }}</textarea>
+    {% endif %}
+
+    <details class="details-panel">
+      <summary>Защита от лишнего расхода / Usage limits</summary>
+      <div class="details-body">
+        {% for name, label, value, minimum, maximum in [('demo_max_input_chars','Максимум символов с историей / Max input characters',policy.demo_max_input_chars,100,200000),('demo_max_output_tokens','Максимум токенов ответа / Max output tokens',policy.demo_max_output_tokens,1,4096),('demo_daily_requests','Общий лимит попыток в сутки UTC / Daily request limit (UTC)',policy.demo_daily_requests,0,10000),('requests_per_minute','Запросов в минуту на аккаунт / Requests per minute per account',policy.requests_per_minute,1,1000)] %}
+        <label for="{{ name }}">{{ label }}</label>
+        <input id="{{ name }}" name="{{ name }}" type="number" min="{{ minimum }}" max="{{ site_demo_limits.get(name, maximum) if site_scope else maximum }}" value="{{ value }}" required>
+        {% endfor %}
+        <p class="muted">Суточный предел и ограничения ввода/ответа защищают бюджет. / Daily, input, and output caps protect the budget.</p>
+      </div>
+    </details>
+    <button type="submit" {% if site_scope and not site_model_options %}disabled{% endif %}>Сохранить демо / Save demo</button>
+    <small>{{ 'Сохранение модели не меняет ключ и не сбрасывает использованные запросы. / Saving the model does not change the API key or reset usage.' if site_scope else 'mock-chat возвращает тестовый ответ; смена списка не подключает платную модель. / mock-chat returns a synthetic test response.' }}</small>
+  </form>
+</section>
+
+{% if not site_scope %}
+<section class="section-block">
+  <h2>Модели по каналам / Models by channel</h2>
+  <p class="muted">Каналы относятся к основной базе. «Сайт · основная база» не меняет гостевую модель публичного сайта. / These rules belong to the main database.</p>
+  {% for channel, label in channels %}
+  <details class="details-panel">
+    <summary>{{ label }}</summary>
+    <div class="details-body">
+      <form action="/admin/access/models" method="post" class="compact-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="scope" value="{{ admin_scope }}">
+        <input type="hidden" name="subject" value="channel:{{ channel }}">
+        <label for="channel-{{ channel }}">Разрешённые модели (ID) / Allowed model IDs</label>
+        <textarea id="channel-{{ channel }}" name="models" rows="3" maxlength="22000">{{ rules.get('channel:' ~ channel, default_models) }}</textarea>
+        <small>Пустой список закрывает генерацию. / An empty list disables generation.</small>
+        <button type="submit">Сохранить {{ label }}</button>
+      </form>
+    </div>
+  </details>
+  {% endfor %}
+</section>
+<details class="details-panel section-block">
+  <summary>Уточнить модели отдельных тарифов / Plan-specific model rules</summary>
+  <div class="details-body">
+    <p class="muted">Доступ по тарифу пересекается с разрешениями канала. / Plan access is intersected with channel permissions.</p>
+    {% for plan in plans %}
+    <form action="/admin/access/models" method="post" class="compact-form">
+      <h3>{{ plan.name }}</h3>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="scope" value="{{ admin_scope }}">
+      <input type="hidden" name="subject" value="plan:{{ plan.id }}">
+      <label class="checkbox-label"><input type="checkbox" name="inherit" value="yes" {% if ('plan:' ~ plan.id) not in rules %}checked{% endif %}> Использовать весь список канала / Inherit channel models</label>
+      <label for="plan-models-{{ plan.id }}">Или ограничить список / Or restrict to these models</label>
+      <textarea name="models" id="plan-models-{{ plan.id }}" rows="2" maxlength="22000">{{ rules.get('plan:' ~ plan.id, '') }}</textarea>
+      <button type="submit">Сохранить тариф / Save plan</button>
+    </form>
+    {% else %}
+    <p>Платных тарифов пока нет. / No paid plans configured.</p>
+    {% endfor %}
+  </div>
+</details>
+{% endif %}
 {% endblock %}
