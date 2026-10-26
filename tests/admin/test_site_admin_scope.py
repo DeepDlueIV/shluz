@@ -87,6 +87,7 @@ def test_site_scope_edits_only_guest_database(tmp_path):
             assert "Venice" in page.text
             assert "создаётся" in page.text
             assert 'subject="channel:web"' not in page.text
+            assert "Демо и список сайта расходятся" in page.text
 
             response = client.post(
                 "/admin/access/demo",
@@ -114,6 +115,8 @@ def test_site_scope_edits_only_guest_database(tmp_path):
                 assert session.get(ModelPolicy, "channel:web").models_json == (
                     '["olafangensan-glm-4.7-flash-heretic"]'
                 )
+            synchronized_page = client.get("/admin/access?scope=site", auth=auth)
+            assert "Демо и список сайта расходятся" not in synchronized_page.text
             with app.state.database.session() as session:
                 assert session.get(ProductPolicy, "default") is None
 
@@ -431,6 +434,8 @@ def test_site_demo_settings_explain_guest_access_and_allow_three_prompts(tmp_pat
                 assert session.get(ModelPolicy, "channel:web").models_json == (
                     '["mistral-small-3-2-24b-instruct"]'
                 )
+            synchronized_page = client.get("/admin/access?scope=site", auth=auth)
+            assert "Демо и список сайта расходятся" not in synchronized_page.text
     finally:
         app.state.database.dispose()
         site_database.dispose()

@@ -78,6 +78,7 @@ def dashboard(request: Request, _: Admin):
             r.id: "\n".join(sorted(models_in(r.models_json)))
             for r in s.scalars(select(ModelPolicy))
         }
+        site_channel = s.get(ModelPolicy, "channel:web")
         plans = (
             []
             if scope == "site"
@@ -86,7 +87,9 @@ def dashboard(request: Request, _: Admin):
         site_model_options = _site_model_options(s) if scope == "site" else []
         site_models = models_in(settings.demo_models_json)
         site_model_current = next(iter(sorted(site_models)), "")
-        site_channel_models = models_in(rows.get("channel:web", ""))
+        site_channel_models = (
+            models_in(site_channel.models_json) if site_channel else DEFAULT_MODELS
+        )
     return templates.TemplateResponse(
         request=request,
         name="admin/access.html",
