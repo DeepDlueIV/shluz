@@ -16,6 +16,7 @@ ACTION_LABELS = {
     "demo.protection.updated": "Защита демо изменена",
     "demo.model_bound.updated": "Предел стоимости демо-модели изменён",
     "demo.updated": "Настройки демо изменены",
+    "site_guest.limit_updated": "Лимит гостя сайта изменён",
     "models.updated": "Доступные модели изменены",
     "telegram.demo_registered": "Telegram: демо выдано автоматически",
     "telegram.imported": "Telegram: прежний доступ перенесён автоматически",
@@ -63,6 +64,7 @@ _SAFE_FIELDS = set(PLAN_FIELDS) | {
     "invite_id",
     "mode",
     "demo_requests",
+    "requests_limit",
 }
 
 

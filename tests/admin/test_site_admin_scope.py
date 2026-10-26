@@ -7,10 +7,11 @@ from pydantic import SecretStr
 
 from app.admin.routes import _admin_csrf_token
 from app.config import Settings
+from app.db.audit import AdminEvent
 from app.db.database import Database
-from app.db.models import ModelPolicy, ProductPolicy
+from app.db.models import Account, DemoGrant, ModelPolicy, ProductPolicy, UsageEvent
 from app.factory import create_app
-from app.webaccess.models import DemoControl, DemoModelBound
+from app.webaccess.models import DemoControl, DemoLimit, DemoModelBound
 from app.webaccess.settings import WebSettings
 
 
@@ -257,3 +258,129 @@ def test_site_scope_fails_closed_when_guest_database_is_not_configured(tmp_path)
             assert not missing_site_file.exists()
     finally:
         app.state.database.dispose()
+
+
+def test_site_guest_page_lists_guests_and_extends_existing_limit_without_reset(tmp_path):
+    settings = Settings(
+        environment="test",
+        admin_username="owner",
+        admin_password=SecretStr("test-admin-password"),
+        database_url=SecretStr("sqlite+pysqlite:///" + str(tmp_path / "owner.sqlite")),
+        _env_file=None,
+    )
+    site_database = Database(
+        settings.model_copy(
+            update={
+                "database_url": SecretStr(
+                    "sqlite+pysqlite:///" + str(tmp_path / "site.sqlite")
+                )
+            }
+        )
+    )
+    site_database.create_schema()
+    guest_id = "site-guest-001"
+    with site_database.session() as session:
+        session.add(
+            ProductPolicy(
+                id="default",
+                mode="demo",
+                demo_requests=3,
+                demo_models_json='["mistral-small-3-2-24b-instruct"]',
+            )
+        )
+        session.add(Account(id=guest_id, display_name="Website guest", role="guest"))
+        session.add(DemoGrant(account_id=guest_id, requests_used=1))
+        session.add(DemoLimit(account_id=guest_id, requests_limit=1))
+        session.add(
+            UsageEvent(
+                account_id=guest_id,
+                provider="venice",
+                model="mistral-small-3-2-24b-instruct",
+            )
+        )
+
+    app = create_app(settings=settings, site_demo_database=site_database)
+    auth = ("owner", "test-admin-password")
+    try:
+        with TestClient(app) as client:
+            page = client.get("/admin/users?scope=site&guests=1", auth=auth)
+            assert page.status_code == 200
+            assert "site-gu" in page.text
+            assert "1 / 1" in page.text
+            assert "ID · site-gue" in page.text
+
+            response = client.post(
+                f"/admin/site-guests/{guest_id}/limit",
+                auth=auth,
+                follow_redirects=False,
+                data={
+                    "csrf_token": _admin_csrf_token(settings),
+                    "requests_limit": "3",
+                },
+            )
+            assert response.status_code == 303
+            assert response.headers["location"] == "/admin/users?scope=site&guests=1"
+
+            with site_database.session() as session:
+                assert session.get(DemoGrant, guest_id).requests_used == 1
+                assert session.get(DemoLimit, guest_id).requests_limit == 3
+                event = session.query(AdminEvent).filter_by(
+                    action="site_guest.limit_updated"
+                ).one()
+                assert event.details == {"requests_limit": 3}
+            with app.state.database.session() as session:
+                assert session.get(Account, guest_id) is None
+    finally:
+        app.state.database.dispose()
+        site_database.dispose()
+
+
+def test_site_demo_settings_explain_guest_access_and_allow_three_prompts(tmp_path):
+    settings = Settings(
+        environment="test",
+        admin_username="owner",
+        admin_password=SecretStr("test-admin-password"),
+        database_url=SecretStr("sqlite+pysqlite:///" + str(tmp_path / "owner.sqlite")),
+        _env_file=None,
+    )
+    site_database = Database(
+        settings.model_copy(
+            update={
+                "database_url": SecretStr(
+                    "sqlite+pysqlite:///" + str(tmp_path / "site.sqlite")
+                )
+            }
+        )
+    )
+    site_database.create_schema()
+    app = create_app(settings=settings, site_demo_database=site_database)
+    auth = ("owner", "test-admin-password")
+    try:
+        with TestClient(app) as client:
+            page = client.get("/admin/access?scope=site", auth=auth)
+            assert page.status_code == 200
+            assert 'max="3"' in page.text
+            assert "Доступ гостям" in page.text
+            assert "Новые пользователи" not in page.text
+            response = client.post(
+                "/admin/access/demo",
+                auth=auth,
+                follow_redirects=False,
+                data={
+                    "csrf_token": _admin_csrf_token(settings),
+                    "scope": "site",
+                    "mode": "demo",
+                    "demo_requests": "3",
+                    "demo_models": "mistral-small-3-2-24b-instruct",
+                    "demo_max_input_chars": "1000",
+                    "demo_max_output_tokens": "512",
+                    "demo_daily_requests": "10",
+                    "requests_per_minute": "2",
+                },
+            )
+            assert response.status_code == 303
+            with site_database.session() as session:
+                assert session.get(ProductPolicy, "default").demo_requests == 3
+    finally:
+        app.state.database.dispose()
+        site_database.dispose()

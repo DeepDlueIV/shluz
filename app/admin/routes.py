@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.admin.forms import _choice, _plan_values, _read_form, _required_text
@@ -20,11 +20,22 @@ from app.admin.presentation import database_info, install_presentation, label
 from app.config import Settings
 from app.db.audit import plan_snapshot, record_admin_event
 from app.db.database import Database
-from app.db.models import Account, ApiToken, Plan, Subscription, TelegramAdmission
+from app.db.models import (
+    Account,
+    ApiToken,
+    DemoGrant,
+    Plan,
+    ProductPolicy,
+    Subscription,
+    TelegramAdmission,
+    UsageEvent,
+)
 from app.db.reports import get_usage_summary, list_accounts_overview, list_plans_overview
 from app.db.repositories import create_api_token, generate_api_token, revoke_api_token
+from app.product.service import locked_session
 from app.providers.base import ProviderError
 from app.providers.registry import ProviderRegistry
+from app.webaccess.models import DemoLimit
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 security = HTTPBasic()
@@ -164,6 +175,58 @@ def users_dashboard(
 ) -> HTMLResponse:
     show_archived = request.query_params.get("archive") == "1"
     show_guests = request.query_params.get("guests") == "1"
+    scope = request.query_params.get("scope")
+    if scope == "site":
+        if not show_guests or show_archived:
+            raise HTTPException(400, detail="Сайт поддерживает только список гостей")
+        site_database = _database_for_scope(request, "site")
+        with site_database.session() as session:
+            package_limit = (session.get(ProductPolicy, "default") or ProductPolicy()).demo_requests
+            rows = session.execute(
+                select(
+                    Account.id,
+                    Account.status,
+                    Account.created_at,
+                    DemoGrant.requests_used,
+                    DemoLimit.requests_limit,
+                    func.count(UsageEvent.id),
+                    func.max(UsageEvent.created_at),
+                )
+                .outerjoin(DemoGrant, DemoGrant.account_id == Account.id)
+                .outerjoin(DemoLimit, DemoLimit.account_id == Account.id)
+                .outerjoin(UsageEvent, UsageEvent.account_id == Account.id)
+                .where(Account.role == "guest")
+                .group_by(
+                    Account.id,
+                    Account.status,
+                    Account.created_at,
+                    DemoGrant.requests_used,
+                    DemoLimit.requests_limit,
+                )
+                .order_by(Account.created_at.desc(), Account.id)
+            ).all()
+        guests = [
+            {
+                "id": row[0],
+                "short_id": row[0][:8],
+                "status": row[1],
+                "created_at": row[2],
+                "used": row[3] or 0,
+                "limit": row[4] if row[4] is not None else package_limit,
+                "usage_count": row[5],
+                "last_used_at": row[6],
+            }
+            for row in rows
+        ]
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/site-guests.html",
+            context={
+                "guests": guests,
+                "package_limit": package_limit,
+                "csrf_token": _admin_csrf_token(settings),
+            },
+        )
     with database.session() as session:
         accounts = [
             account
@@ -200,6 +263,54 @@ def users_dashboard(
             "csrf_token": _admin_csrf_token(settings),
         },
     )
+
+
+@router.post("/site-guests/{account_id}/limit")
+async def update_site_guest_limit(
+    account_id: str,
+    request: Request,
+    actor: Annotated[str, Depends(_require_admin)],
+    settings: Annotated[Settings, Depends(_settings)],
+) -> RedirectResponse:
+    form = await _read_form(request)
+    _require_csrf(form.get("csrf_token", ""), settings)
+    try:
+        requested_limit = int(form.get("requests_limit", ""))
+    except ValueError as exc:
+        raise HTTPException(422, detail="Некорректный лимит гостевых запросов") from exc
+
+    site_database = _database_for_scope(request, "site")
+    with locked_session(site_database) as session:
+        account = session.get(Account, account_id)
+        if account is None or account.role != "guest":
+            raise HTTPException(404, detail="Гость сайта не найден")
+        grant = session.get(DemoGrant, account_id)
+        used = grant.requests_used if grant else 0
+        policy_row = session.get(ProductPolicy, "default")
+        package_limit = policy_row.demo_requests if policy_row else 3
+        if not used <= requested_limit <= min(package_limit, 3):
+            raise HTTPException(
+                422,
+                detail=(
+                    "Лимит должен быть не меньше использованных запросов "
+                    "и не выше пакета демо"
+                ),
+            )
+        limit = session.get(DemoLimit, account_id)
+        if limit is None:
+            limit = DemoLimit(account_id=account_id, requests_limit=requested_limit)
+            session.add(limit)
+        else:
+            limit.requests_limit = requested_limit
+        record_admin_event(
+            session,
+            actor=actor,
+            action="site_guest.limit_updated",
+            target_type="account",
+            target_id=account_id,
+            details={"used": used, "requests_limit": requested_limit},
+        )
+    return RedirectResponse("/admin/users?scope=site&guests=1", status_code=303)
 
 
 @router.post("/users")

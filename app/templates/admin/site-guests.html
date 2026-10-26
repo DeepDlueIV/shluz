@@ -1,0 +1,45 @@
+{% extends 'admin/base.html' %}
+{% block title %}Гости сайта{% endblock %}
+{% block content %}
+<header class="hero compact">
+  <div>
+    <p class="eyebrow">Гостевой сайт</p>
+    <h1>Гости сайта</h1>
+    <p class="muted">Здесь показаны гости из базы сайта. Продление пакета сохраняет уже использованные запросы.</p>
+  </div>
+  <span class="count-label">{{ guests | length }} {{ guests | length | plural('гость', 'гостя', 'гостей') }}</span>
+</header>
+<div class="tabs">
+  <a href="/admin/users">Пользователи</a>
+  <a href="/admin/users?archive=1">Архив</a>
+  <a href="/admin/users?scope=site&amp;guests=1" aria-current="page">Гости сайта</a>
+</div>
+<p class="footnote"><a href="/admin/access?scope=site">Настроить демо сайта</a> · стартовый пакет нового гостя: {{ package_limit }} {{ package_limit | plural('запрос', 'запроса', 'запросов') }}.</p>
+{% if guests %}
+<div class="table-wrap">
+  <table class="users-table">
+    <thead><tr><th>Гость</th><th>Создан</th><th>Использовано / пакет</th><th>Последний запрос</th><th>Управление</th></tr></thead>
+    <tbody>
+    {% for guest in guests %}
+      <tr>
+        <td><strong>Гость сайта</strong><small>ID · {{ guest.short_id }}</small><small>Статус: {{ guest.status }}</small></td>
+        <td>{{ guest.created_at.strftime('%Y-%m-%d %H:%M UTC') if guest.created_at else '—' }}</td>
+        <td><strong>{{ guest.used }} / {{ guest.limit }}</strong><small>Учтено запросов: {{ guest.usage_count }}</small></td>
+        <td>{{ guest.last_used_at.strftime('%Y-%m-%d %H:%M UTC') if guest.last_used_at else '—' }}</td>
+        <td>
+          <form method="post" action="/admin/site-guests/{{ guest.id }}/limit" class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label for="limit-{{ guest.short_id }}">Лимит запросов</label>
+            <input id="limit-{{ guest.short_id }}" name="requests_limit" type="number" min="{{ guest.used }}" max="{{ package_limit }}" value="{{ guest.limit }}" required>
+            <button type="submit">Сохранить</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<section class="empty-state"><h2>Гостей сайта пока нет</h2><p>Гость появится здесь после первого подтверждённого запроса на сайте.</p></section>
+{% endif %}
+{% endblock %}

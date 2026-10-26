@@ -54,7 +54,11 @@ def dashboard(request: Request, _: Admin):
         context={
             "policy": settings,
             "demo_models": "\n".join(sorted(models_in(settings.demo_models_json))),
-            "channels": [("telegram", "Telegram"), ("web", "Сайт"), ("harness", "Desktop / API")],
+            "channels": (
+                [("web", "Сайт")]
+                if scope == "site"
+                else [("telegram", "Telegram"), ("web", "Сайт"), ("harness", "Desktop / API")]
+            ),
             "rules": rows,
             "default_models": "\n".join(sorted(DEFAULT_MODELS)),
             "plans": plans,
@@ -103,7 +107,7 @@ async def save_demo(request: Request, actor: Admin):
                 ),
             )
         site_maxima = {
-            "demo_requests": 1,
+            "demo_requests": 3,
             "demo_max_input_chars": 1000,
             "demo_max_output_tokens": 512,
             "demo_daily_requests": 10,
@@ -114,7 +118,7 @@ async def save_demo(request: Request, actor: Admin):
                 422,
                 detail=(
                     "Лимит гостевого сайта нельзя поднять выше согласованных границ "
-                    "(1 запрос, 10/сутки, 1000 символов, 512 токенов)."
+                    "(3 запроса, 10/сутки, 1000 символов, 512 токенов)."
                 ),
             )
     with locked_session(_database_for_scope(request, scope)) as s:
