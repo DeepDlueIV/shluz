@@ -62,7 +62,10 @@ def _error_response(
 
 
 def _content_text(message) -> str:
-    """Текст сообщения: строка как есть, массив частей — только текстовые части."""
+    """Текст сообщения: строка как есть, массив частей — только текстовые части,
+    null (assistant с tool_calls) — пустая строка."""
+    if message.content is None:
+        return ""
     if isinstance(message.content, str):
         return message.content
     return "\n".join(part.text for part in message.content if part.type == "text" and part.text)
@@ -71,7 +74,7 @@ def _content_text(message) -> str:
 def _content_parts(message) -> tuple[dict, ...] | None:
     """Нативные части передаются дальше только при изображениях: чистый текст
     нормализуется к строке, которую принимают все модели провайдера."""
-    if isinstance(message.content, str):
+    if message.content is None or isinstance(message.content, str):
         return None
     if not any(part.type == "image_url" for part in message.content):
         return None
@@ -195,7 +198,15 @@ async def chat_completions(
         model=payload.model,
         max_completion_tokens=reservation.max_output_tokens,
         messages=[
-            ChatMessage(role=m.role, content=_content_text(m), parts=_content_parts(m))
+            ChatMessage(
+                role=m.role,
+                content=_content_text(m),
+                parts=_content_parts(m),
+                tool_calls=tuple(tool.model_dump(exclude_none=True) for tool in m.tool_calls)
+                if m.tool_calls
+                else None,
+                tool_call_id=m.tool_call_id,
+            )
             for m in payload.messages
         ],
         tools=tuple(tool.model_dump() for tool in payload.tools) if payload.tools else None,

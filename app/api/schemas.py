@@ -9,10 +9,27 @@ class ContentPartSchema(BaseModel):
     image_url: str | dict[str, str] | None = None
 
 
+class ToolCallFunctionSchema(BaseModel):
+    name: str
+    arguments: str = ""
+
+
+class ToolCallSchema(BaseModel):
+    id: str
+    type: Literal["function"] = "function"
+    function: ToolCallFunctionSchema
+
+    model_config = ConfigDict(extra="allow")
+
+
 class ChatMessageSchema(BaseModel):
     role: Literal["system", "user", "assistant", "tool"]
-    # OpenAI-формат: строка или массив частей (Cherry Studio шлёт массив всегда).
-    content: str | list[ContentPartSchema]
+    # OpenAI-формат: строка, массив частей (Cherry Studio шлёт массив всегда)
+    # или null — стандарт для assistant-сообщения с tool_calls.
+    content: str | list[ContentPartSchema] | None = None
+    # История tool-цикла: вызовы на assistant, ссылка на вызов на tool.
+    tool_calls: list[ToolCallSchema] | None = None
+    tool_call_id: str | None = None
 
 
 class StreamOptionsSchema(BaseModel):
