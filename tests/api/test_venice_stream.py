@@ -93,3 +93,57 @@ def test_sse_decoder_rejects_oversized_frame_without_waiting_for_end():
             _ = [f async for f in events(source(), max_frame=64)]
 
     asyncio.run(scenario())
+
+
+def test_venice_stream_passes_tool_call_fragments_and_tool_finish():
+    async def scenario():
+        frames = [
+            {
+                "id": "venice-2",
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_2",
+                                    "type": "function",
+                                    "function": {"name": "calc", "arguments": "{\"a\":1}"},
+                                }
+                            ]
+                        }
+                    }
+                ],
+            },
+            {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]},
+            {
+                "choices": [],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 3},
+                "cost": {"usd": "0.002", "diem": 0},
+            },
+        ]
+        wire = "".join("data: " + json.dumps(f, ensure_ascii=False) + "\r\n\r\n" for f in frames)
+        body = Fragments((wire + "data: [DONE]\r\n\r\n").encode())
+
+        async def handler(req):
+            return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=body)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            provider = VeniceProvider(
+                Settings(venice_api_key=SecretStr("synthetic-key")), async_client=client
+            )
+            chunks = [
+                chunk
+                async for chunk in provider.chat_stream(
+                    ChatRequest(
+                        "venice-model",
+                        [ChatMessage("user", "Считай")],
+                        tools=({"type": "function", "function": {"name": "calc"}},),
+                    )
+                )
+            ]
+        assert chunks[0].tool_calls[0]["function"]["arguments"] == '{"a":1}'
+        assert chunks[1].finish_reason == "tool_calls"
+        assert chunks[-1].done
+
+    asyncio.run(scenario())

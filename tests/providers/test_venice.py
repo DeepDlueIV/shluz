@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal
 
 import httpx
@@ -272,3 +273,58 @@ def test_untrusted_missing_or_invalid_cost_is_not_shown_as_exact_zero(usd):
     )
     assert result.cost_known is False
     assert result.cost_usd == 0
+
+
+def test_chat_completion_forwards_tools_parts_and_parses_tool_calls():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["payload"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "id": "venice-1",
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call_1",
+                                    "type": "function",
+                                    "function": {"name": "get_weather", "arguments": "{}"},
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+                "usage": {"prompt_tokens": 7, "completion_tokens": 1},
+                "cost": {"usd": "0.001", "diem": 0},
+            },
+        )
+
+    provider = _provider(handler)
+    result = provider.chat_completion(
+        ChatRequest(
+            "venice-model",
+            [
+                ChatMessage(
+                    "user",
+                    "",
+                    parts=({"type": "text", "text": "Погода?"},),
+                )
+            ],
+            tools=({"type": "function", "function": {"name": "get_weather"}},),
+            tool_choice="auto",
+        )
+    )
+
+    payload = captured["payload"]
+    assert payload["messages"][0]["content"] == [{"type": "text", "text": "Погода?"}]
+    assert payload["tools"] == [{"type": "function", "function": {"name": "get_weather"}}]
+    assert payload["tool_choice"] == "auto"
+    assert result.content == ""
+    assert result.tool_calls[0]["function"]["name"] == "get_weather"
+

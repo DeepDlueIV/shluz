@@ -27,6 +27,7 @@ def test_chat_returns_openai_compatible_completion(client, authorized_headers):
             "message": {
                 "role": "assistant",
                 "content": "Shluz mock reply: Привет",
+                "tool_calls": None,
             },
             "finish_reason": "stop",
         }

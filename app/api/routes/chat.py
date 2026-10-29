@@ -61,6 +61,31 @@ def _error_response(
     return JSONResponse(status_code=status_code, content=payload.model_dump())
 
 
+def _content_text(message) -> str:
+    """Текст сообщения: строка как есть, массив частей — только текстовые части."""
+    if isinstance(message.content, str):
+        return message.content
+    return "\n".join(part.text for part in message.content if part.type == "text" and part.text)
+
+
+def _content_parts(message) -> tuple[dict, ...] | None:
+    """Нативные части передаются дальше только при изображениях: чистый текст
+    нормализуется к строке, которую принимают все модели провайдера."""
+    if isinstance(message.content, str):
+        return None
+    if not any(part.type == "image_url" for part in message.content):
+        return None
+    parts = []
+    for part in message.content:
+        if part.type == "text":
+            parts.append({"type": "text", "text": part.text or ""})
+        elif isinstance(part.image_url, str):
+            parts.append({"type": "image_url", "image_url": {"url": part.image_url}})
+        elif part.image_url is not None:
+            parts.append({"type": "image_url", "image_url": part.image_url})
+    return tuple(parts)
+
+
 @router.post(
     "/chat/completions",
     response_model=ChatCompletionResponseSchema,
@@ -114,7 +139,7 @@ async def chat_completions(
             source=principal.source,
             provider=provider.name,
             model=payload.model,
-            input_chars=sum(len(m.content) for m in payload.messages),
+            input_chars=sum(len(_content_text(m)) for m in payload.messages),
             requested_output_tokens=payload.max_completion_tokens or payload.max_tokens,
         )
     except PolicyError as exc:
@@ -169,7 +194,12 @@ async def chat_completions(
     chat_request = ChatRequest(
         model=payload.model,
         max_completion_tokens=reservation.max_output_tokens,
-        messages=[ChatMessage(role=m.role, content=m.content) for m in payload.messages],
+        messages=[
+            ChatMessage(role=m.role, content=_content_text(m), parts=_content_parts(m))
+            for m in payload.messages
+        ],
+        tools=tuple(tool.model_dump() for tool in payload.tools) if payload.tools else None,
+        tool_choice=payload.tool_choice,
     )
     session = None
     try:
@@ -300,8 +330,11 @@ async def chat_completions(
         choices=[
             ChatChoiceSchema(
                 index=0,
-                message=AssistantMessageSchema(content=result.content),
-                finish_reason="stop",
+                message=AssistantMessageSchema(
+                    content=result.content,
+                    tool_calls=list(result.tool_calls) if result.tool_calls else None,
+                ),
+                finish_reason="tool_calls" if result.tool_calls else "stop",
             )
         ],
         usage=UsageSchema(

@@ -32,6 +32,8 @@ class ModelNotFoundError(LookupError):
 class ChatMessage:
     role: str
     content: str
+    # Нативные OpenAI-части (text/image_url); задаются вместо content при наличии.
+    parts: tuple[dict, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +41,8 @@ class ChatRequest:
     model: str
     messages: list[ChatMessage]
     max_completion_tokens: int | None = None
+    tools: tuple[dict, ...] | None = None
+    tool_choice: str | dict | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +55,7 @@ class ChatResult:
     cost_diem: Decimal = Decimal("0")
     cost_known: bool = True
     usage_known: bool = True
+    tool_calls: tuple[dict, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +68,7 @@ class StreamChunk:
     cost_usd: Decimal | None = None
     cost_diem: Decimal | None = None
     done: bool = False
+    tool_calls: tuple[dict, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)

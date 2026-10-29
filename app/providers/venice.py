@@ -130,19 +130,7 @@ class VeniceProvider:
         response = self._request(
             "POST",
             "/chat/completions",
-            json={
-                "model": request.model,
-                "messages": [
-                    {"role": message.role, "content": message.content}
-                    for message in request.messages
-                ],
-                "stream": False,
-                **(
-                    {"max_completion_tokens": request.max_completion_tokens}
-                    if request.max_completion_tokens
-                    else {}
-                ),
-            },
+            json=self._payload(request, stream=False),
         )
         payload = self._json(response)
         choices = payload.get("choices") or []
@@ -151,20 +139,53 @@ class VeniceProvider:
 
         message = choices[0].get("message") or {}
         content = message.get("content")
-        if not isinstance(content, str):
+        if content is not None and not isinstance(content, str):
             raise ProviderError("Venice returned an unsupported chat response")
+        tool_calls = message.get("tool_calls")
+        if tool_calls is not None and not (
+            isinstance(tool_calls, list) and all(isinstance(item, dict) for item in tool_calls)
+        ):
+            raise ProviderError("Venice returned unsupported tool calls")
 
         usage = payload.get("usage") or {}
         cost = payload.get("cost") or {}
         return ChatResult(
-            content=content,
+            content=content or "",
             prompt_tokens=_int(usage.get("prompt_tokens")),
             completion_tokens=_int(usage.get("completion_tokens")),
             request_id=payload.get("id"),
             cost_usd=_decimal(cost.get("usd")) if _known_cost(cost.get("usd")) else Decimal("0"),
             cost_known=_known_cost(cost.get("usd")),
             cost_diem=_decimal(cost.get("diem")),
+            tool_calls=tuple(tool_calls) if tool_calls else None,
         )
+
+    @staticmethod
+    def _payload(request: ChatRequest, *, stream: bool) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "model": request.model,
+            "messages": [
+                (
+                    {"role": m.role, "content": list(m.parts)}
+                    if m.parts
+                    else {"role": m.role, "content": m.content}
+                )
+                for m in request.messages
+            ],
+            "stream": stream,
+            **(
+                {"max_completion_tokens": request.max_completion_tokens}
+                if request.max_completion_tokens
+                else {}
+            ),
+        }
+        if stream:
+            body["stream_options"] = {"include_usage": True}
+        if request.tools:
+            body["tools"] = [dict(tool) for tool in request.tools]
+        if request.tool_choice is not None:
+            body["tool_choice"] = request.tool_choice
+        return body
 
     async def chat_stream(self, request: ChatRequest):
         # Отдельная сессия запроса: отмена закрывает соединение, POST не повторяется.
@@ -178,13 +199,7 @@ class VeniceProvider:
                 "POST",
                 self._stream_url,
                 headers={"Authorization": f"Bearer {self._api_key}", "Accept": "text/event-stream"},
-                json={
-                    "model": request.model,
-                    "messages": [{"role": m.role, "content": m.content} for m in request.messages],
-                    "stream": True,
-                    "stream_options": {"include_usage": True},
-                    "max_completion_tokens": request.max_completion_tokens,
-                },
+                json=self._payload(request, stream=True),
             )
             response = await client.send(req, stream=True, follow_redirects=False)
             self._raise_for_status(response)
@@ -205,7 +220,7 @@ class VeniceProvider:
                     value = usage.get(name)
                     return value if type(value) is int and 0 <= value <= 10000000 else None
 
-                content, finish = "", None
+                content, finish, tool_calls = "", None, None
                 choices = data.get("choices") or []
                 if not isinstance(choices, list):
                     raise ProviderError("Invalid upstream choices")
@@ -220,8 +235,16 @@ class VeniceProvider:
                     if not isinstance(content, str):
                         raise ProviderError("Unsupported upstream content")
                     finish = choice.get("finish_reason")
-                    if finish not in {None, "stop", "length", "content_filter"}:
+                    if finish not in {None, "stop", "length", "content_filter", "tool_calls"}:
                         raise ProviderError("Unsupported upstream finish")
+                    upstream_tools = delta.get("tool_calls")
+                    if upstream_tools is not None:
+                        if not (
+                            isinstance(upstream_tools, list)
+                            and all(isinstance(item, dict) for item in upstream_tools)
+                        ):
+                            raise ProviderError("Unsupported upstream tool calls")
+                        tool_calls = tuple(upstream_tools)
                 yield StreamChunk(
                     content=content,
                     finish_reason=finish,
@@ -230,6 +253,7 @@ class VeniceProvider:
                     completion_tokens=count("completion_tokens"),
                     cost_usd=_decimal(cost["usd"]) if _known_cost(cost.get("usd")) else None,
                     cost_diem=_decimal(cost["diem"]) if _known_cost(cost.get("diem")) else None,
+                    tool_calls=tool_calls,
                 )
             raise ProviderError("Upstream stream ended without terminal marker")
         except (httpx.RequestError, SSEError, ValueError, TypeError) as exc:

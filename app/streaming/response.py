@@ -39,6 +39,7 @@ class StreamSession:
         self.parts = []
         self.chars = 0
         self.prompt = self.completion = self.cost = self.diem = None
+        self.tool_fragments: dict[int, dict] = {}
         self.provider_id = None
         self.finish_reason = "stop"
         self.closed = self.settled = False
@@ -69,10 +70,26 @@ class StreamSession:
         ]:
             if getattr(chunk, source) is not None:
                 setattr(self, target, getattr(chunk, source))
+        for item in chunk.tool_calls or ():
+            index = item.get("index")
+            if not isinstance(index, int) or index < 0:
+                continue
+            merged = self.tool_fragments.setdefault(
+                index, {"id": None, "type": "function", "function": {"name": "", "arguments": ""}}
+            )
+            if isinstance(item.get("id"), str) and not merged["id"]:
+                merged["id"] = item["id"]
+            function = item.get("function")
+            if isinstance(function, dict):
+                if isinstance(function.get("name"), str):
+                    merged["function"]["name"] = function["name"]
+                if isinstance(function.get("arguments"), str):
+                    merged["function"]["arguments"] += function["arguments"]
         if chunk.finish_reason:
             self.finish_reason = chunk.finish_reason
 
     def result(self):
+        tool_calls = tuple(self.tool_fragments[index] for index in sorted(self.tool_fragments))
         return ChatResult(
             content="".join(self.parts),
             prompt_tokens=self.prompt or 0,
@@ -82,6 +99,7 @@ class StreamSession:
             cost_known=self.cost is not None,
             usage_known=self.prompt is not None and self.completion is not None,
             request_id=self.provider_id,
+            tool_calls=tool_calls or None,
         )
 
     async def settle(self, success=False, code="stream_interrupted", definite=False):
@@ -137,17 +155,14 @@ class StreamSession:
             chunk = first
             while True:
                 self.accept(chunk)
+                delta: dict = {}
                 if chunk.content:
+                    delta["content"] = chunk.content
+                if chunk.tool_calls:
+                    delta["tool_calls"] = list(chunk.tool_calls)
+                if delta:
                     yield frame(
-                        self.envelope(
-                            [
-                                {
-                                    "index": 0,
-                                    "delta": {"content": chunk.content},
-                                    "finish_reason": None,
-                                }
-                            ]
-                        )
+                        self.envelope([{"index": 0, "delta": delta, "finish_reason": None}])
                     )
                 if chunk.done:
                     await self.settle(success=True)
