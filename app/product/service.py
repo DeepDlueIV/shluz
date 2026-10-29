@@ -19,6 +19,11 @@ class PolicyError(RuntimeError):
     message = "This model is not allowed for this account and channel"
 
 
+class NoModelsProvisioned(PolicyError):
+    code = "no_models_provisioned"
+    message = "No models are provisioned for this account and plan"
+
+
 class DemoExhausted(PolicyError):
     code = "demo_exhausted"
     status = 429
@@ -126,13 +131,19 @@ def allowed_models(session, account_id, source, now=None):
     if source not in CHANNELS:
         return frozenset()
     channel = session.get(ModelPolicy, "channel:" + source)
-    models = models_in(channel.models_json) if channel else DEFAULT_MODELS
     current = active_subscription(session, account_id, now, source)
     if current:
+        # Нет явной политики канала при активной подписке — доступен весь
+        # реестр активного провайдера; заглушка mock-chat здесь не уместна.
+        models = models_in(channel.models_json) if channel else None
         rule = session.get(ModelPolicy, "plan:" + current[1].id)
-        return models & models_in(rule.models_json) if rule else models
+        if rule is None:
+            return models
+        plan_models = models_in(rule.models_json)
+        return plan_models if models is None else models & plan_models
     if session.get(DemoGrant, account_id):
-        return models & models_in(policy(session).demo_models_json)
+        base = models_in(channel.models_json) if channel else DEFAULT_MODELS
+        return base & models_in(policy(session).demo_models_json)
     return frozenset()
 
 

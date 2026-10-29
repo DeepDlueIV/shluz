@@ -436,6 +436,10 @@ def test_session_claims_are_tied_to_one_identity(auto_client):
     assert c.get("/v1/me", headers={"Authorization": "Bearer " + altered}).status_code == 401
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows не представляет POSIX-права 0o077, проверка режима файла неприменима",
+)
 def test_connector_key_creation_is_atomic_and_never_overwrites(tmp_path):
     from app.telegram.credentials import ensure_connector_key, read_connector_key
 

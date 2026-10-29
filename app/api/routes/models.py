@@ -1,12 +1,18 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 
 from app.api.auth import AuthenticatedPrincipal, require_api_token
 from app.api.dependencies import get_database, get_provider_registry
-from app.api.schemas import ModelListResponseSchema, ModelObjectSchema
+from app.api.schemas import (
+    ErrorDetailSchema,
+    ErrorResponseSchema,
+    ModelListResponseSchema,
+    ModelObjectSchema,
+)
 from app.db.database import Database
-from app.product.service import allowed_models
+from app.product.service import NoModelsProvisioned, allowed_models
 from app.providers.registry import ProviderRegistry
 
 router = APIRouter()
@@ -20,6 +26,17 @@ def list_models(
 ) -> ModelListResponseSchema:
     with database.session() as session:
         allowed = allowed_models(session, principal.account_id, principal.source)
+    if allowed is not None and not allowed:
+        # Пустое пересечение — внятная ошибка вместо молчаливого пустого списка.
+        error = ErrorResponseSchema(
+            error=ErrorDetailSchema(
+                message=NoModelsProvisioned.message,
+                type="access_policy_error",
+                param=None,
+                code=NoModelsProvisioned.code,
+            )
+        )
+        return JSONResponse(status_code=NoModelsProvisioned.status, content=error.model_dump())
     return ModelListResponseSchema(
         data=[
             ModelObjectSchema(id=model.id, owned_by=model.provider)

@@ -8,30 +8,34 @@ from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import func, or_, select
 
 from app.api.auth import AuthenticatedPrincipal, require_api_token
-from app.api.dependencies import get_database
+from app.api.dependencies import get_database, get_provider_registry
 from app.api.routes.me import _personal
 from app.db.database import Database
 from app.db.models import ModelPolicy, Plan, UsageEvent
-from app.product.service import CHANNELS, DEFAULT_MODELS, models_in
+from app.product.service import CHANNELS, models_in
+from app.providers.registry import ProviderRegistry
 
 router = APIRouter()
 Principal = Annotated[AuthenticatedPrincipal, Depends(require_api_token)]
 Db = Annotated[Database, Depends(get_database)]
+Registry = Annotated[ProviderRegistry, Depends(get_provider_registry)]
 
 
 @router.get("/plans")
-def plans(principal: Principal, database: Db, response: Response):
+def plans(principal: Principal, database: Db, registry: Registry, response: Response):
     _personal(principal)
     response.headers["Cache-Control"] = "no-store"
+    catalog_ids = [model.id for model in registry.list_models()]
     with database.session() as session:
         source = "harness" if principal.source in {"desktop", "api"} else principal.source
         if source == "site":
             source = "web"
         channel = session.get(ModelPolicy, "channel:" + source)
+        # None = без явной политики канала доступен весь реестр провайдера.
         available = (
             models_in(channel.models_json)
             if channel
-            else (DEFAULT_MODELS if source in CHANNELS else frozenset())
+            else (None if source in CHANNELS else frozenset())
         )
         rows = session.scalars(
             select(Plan).where(Plan.active.is_(True)).order_by(Plan.name).limit(100)
@@ -39,7 +43,12 @@ def plans(principal: Principal, database: Db, response: Response):
         data = []
         for plan in rows:
             rule = session.get(ModelPolicy, "plan:" + plan.id)
-            permitted = available & models_in(rule.models_json) if rule else available
+            if rule is None:
+                permitted = available
+            elif available is None:
+                permitted = models_in(rule.models_json)
+            else:
+                permitted = available & models_in(rule.models_json)
             data.append(
                 {
                     "id": plan.id,
@@ -51,7 +60,7 @@ def plans(principal: Principal, database: Db, response: Response):
                     "monthly_request_limit": (plan.monthly_request_limit or None)
                     if plan.billing_mode == "subscription"
                     else None,
-                    "models": sorted(permitted),
+                    "models": sorted(permitted) if permitted is not None else catalog_ids,
                 }
             )
     return {

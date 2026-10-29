@@ -132,7 +132,9 @@ def test_channel_and_plan_model_intersection_enforced_on_post(demo_client):
             name="test",
             raw_token="shluz_" + "k" * 43,
         )
-    assert c.get("/v1/models", headers={"Authorization": "Bearer " + token}).json()["data"] == []
+    listed = c.get("/v1/models", headers={"Authorization": "Bearer " + token})
+    assert listed.status_code == 403
+    assert listed.json()["error"]["code"] == "no_models_provisioned"
     r = chat(c, token, source="harness")  # Подмена поля в JSON не меняет канал токена.
     assert r.status_code == 403 and r.json()["error"]["code"] == "model_not_allowed"
     assert chat(c, "shluz_" + "k" * 43).status_code == 200
