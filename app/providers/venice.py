@@ -173,8 +173,10 @@ class VeniceProvider:
                 for m in request.messages
             ],
             "stream": stream,
+            # Venice понимает только max_tokens и молча игнорирует
+            # max_completion_tokens: без этого бюджет генерации не работает.
             **(
-                {"max_completion_tokens": request.max_completion_tokens}
+                {"max_tokens": request.max_completion_tokens}
                 if request.max_completion_tokens
                 else {}
             ),

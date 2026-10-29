@@ -252,7 +252,7 @@ def test_server_output_budget_is_forwarded_and_missing_cost_is_unknown():
     def handler(request):
         import json
 
-        assert json.loads(request.content)["max_completion_tokens"] == 32
+        assert json.loads(request.content)["max_tokens"] == 32
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     result = _provider(handler).chat_completion(
