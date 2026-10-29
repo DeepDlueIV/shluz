@@ -307,6 +307,21 @@ async def web_chat(payload: WebChat, request: Request):
 
 
 async def web_http_error(request, exc):
+    if request.url.path.startswith("/v1/") and not request.url.path.startswith("/v1/web/"):
+        # API-клиенты получают OpenAI-стиль; detail не эхом — там может быть секрет.
+        message = exc.detail if isinstance(exc.detail, str) else "Запрос отклонён."
+        return JSONResponse(
+            {
+                "error": {
+                    "message": message,
+                    "type": "invalid_request_error",
+                    "param": None,
+                    "code": "request_rejected",
+                }
+            },
+            exc.status_code,
+            headers={"Cache-Control": "no-store"},
+        )
     if not request.url.path.startswith("/v1/web/"):
         from app.admin.errors import admin_http_error
 
@@ -316,6 +331,21 @@ async def web_http_error(request, exc):
 
 
 async def web_validation_error(request, exc):
+    if request.url.path.startswith("/v1/") and not request.url.path.startswith("/v1/web/"):
+        # OpenAI-стиль для API-клиентов; input из Pydantic НЕ отражаем:
+        # он может содержать prompt, OTP или cookie.
+        return JSONResponse(
+            {
+                "error": {
+                    "message": "Проверьте формат запроса.",
+                    "type": "invalid_request_error",
+                    "param": None,
+                    "code": "invalid_request",
+                }
+            },
+            422,
+            headers={"Cache-Control": "no-store"},
+        )
     if not request.url.path.startswith("/v1/web/"):
         from app.admin.errors import admin_validation_error
 

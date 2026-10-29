@@ -2,6 +2,7 @@
 
 import json
 
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.db.models import UsageEvent
@@ -248,3 +249,71 @@ def test_opentelemetry_metrics_record_timings_without_private_labels(monkeypatch
         )
         assert "PRIVATE-TEXT" not in labels and "test-api-token" not in labels
         assert "account_id" not in labels and "request_id" not in labels
+
+
+def test_stream_session_settles_once_on_client_disconnect(tmp_path):
+    """Обрыв клиента: одна финализация «interrupted», резерв не зависает, повтор — no-op."""
+    import asyncio
+
+    from pydantic import SecretStr
+    from sqlalchemy import select
+
+    from app.config import Settings
+    from app.db.models import UsageEvent
+    from app.factory import create_app
+    from app.providers.base import ChatMessage, ChatRequest
+    from app.streaming.response import StreamSession
+
+    settings = Settings(
+        bootstrap_api_token=SecretStr("bootstrap"),
+        admin_username="test-admin",
+        admin_password=SecretStr("admin-password"),
+        database_url=SecretStr(f"sqlite+pysqlite:///{tmp_path / 'stream-disconnect.db'}"),
+    )
+    app = create_app(settings)
+    client = TestClient(app)
+
+    reservation = client.app.state.usage_service.authorize_request(
+        account_id="bootstrap",
+        source="harness",
+        provider="mock",
+        model="mock-chat",
+        input_chars=6,
+        requested_output_tokens=100,
+    )
+    usage = client.app.state.usage_service
+    observation = client.app.state.telemetry.begin("mock", "mock-chat", "harness", True, None)
+    chat_request = ChatRequest(
+        "mock-chat", [ChatMessage("user", "привет")], max_completion_tokens=100
+    )
+    session = StreamSession(
+        client.app.state.provider_registry.provider_for_model("mock-chat"),
+        chat_request,
+        reservation,
+        usage,
+        observation,
+        client.app.state.settings,
+        False,
+    )
+
+    async def scenario():
+        first = await session.next()
+        session.accept(first)
+        await session.close()
+        await session.settle(code="client_disconnected")
+        await session.close()
+        await session.settle(code="client_disconnected")
+
+    asyncio.run(scenario())
+
+    with client.app.state.database.session() as s:
+        event = s.scalar(
+            select(UsageEvent).where(UsageEvent.id == reservation.event_id)
+        )
+        assert event is not None
+        assert event.status != "success"  # обрыв — не успешный ответ
+        assert event.completed_at is not None
+    # Повторное settle не создало вторых записей и не упало — одна финализация.
+    with client.app.state.database.session() as s:
+        count = s.query(UsageEvent).filter(UsageEvent.id == reservation.event_id).count()
+        assert count == 1
