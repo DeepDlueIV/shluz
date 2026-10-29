@@ -25,8 +25,14 @@ NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
 
 class Delivery:
     def __init__(
-        self, *, max_parts: int = 6, sleep=asyncio.sleep, store: "Store | None" = None
+        self,
+        *,
+        max_parts: int = 6,
+        sleep=asyncio.sleep,
+        store: "Store | None" = None,
+        clean_chat: bool = False,
     ) -> None:
+        self.clean_chat = clean_chat
         self.max_parts = max_parts
         self.sleep = sleep
         self.store = store
@@ -55,6 +61,7 @@ class Delivery:
                 self.store.note_message(*key, message_id)
 
     async def say(self, message: Message, text: str, markup=None, *, plain: bool = False):
+        markup = None if self.clean_chat else markup
         sent = await self.call(
             lambda: message.answer(
                 text,
@@ -87,6 +94,8 @@ class Delivery:
 
     async def screen(self, message: Message, text: str, markup=None):
         """Навигация на месте; после переписки открываем панель внизу и убираем прежнюю."""
+        if self.clean_chat:
+            return await self.say(message, text)
         key = (message.bot.id, message.chat.id)
         self.observe_message(message)
         lock = self.screen_locks.setdefault(key, asyncio.Lock())
@@ -142,6 +151,7 @@ class Delivery:
         draft: bool = False,
         plain_text: str | None = None,
     ):
+        markup = None if self.clean_chat else markup
         if not draft:
             return await self.edit(message, waiting, text, markup, plain_text=plain_text)
         # Черновик временный: завершить именно sendMessage, а не редактированием индикатора.
@@ -163,6 +173,7 @@ class Delivery:
         *,
         plain_text: str | None = None,
     ):
+        markup = None if self.clean_chat else markup
         try:
             return await self.call(
                 lambda: origin.bot.edit_message_text(
@@ -185,7 +196,7 @@ class Delivery:
     async def waiting(self, message: Message, *, request_id: str | None = None) -> Message:
         with suppress(TelegramAPIError):
             await message.bot.send_chat_action(message.chat.id, "typing")
-        markup = ui.cancel_controls(request_id)
+        markup = None if self.clean_chat else ui.cancel_controls(request_id)
         sent = await self.say(message, "⏳ Готовлю ответ…", markup)
         return sent.model_copy(update={"reply_markup": markup})
 
@@ -218,7 +229,7 @@ class Delivery:
         turn_id: str | None = None,
         draft: bool = False,
     ) -> None:
-        controls = ui.answer_controls(turn_id)
+        controls = None if self.clean_chat else ui.answer_controls(turn_id)
         parts = split_text(answer)
         if len(parts) > self.max_parts:
             await self.finish(

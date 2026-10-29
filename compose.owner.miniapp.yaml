@@ -1,0 +1,11 @@
+# Opt-in только для отдельной ветки Mini App. Обычный preview не меняется.
+# reverse proxy должен публиковать только /miniapp и /miniapp/* через HTTPS.
+services:
+  telegram_bot:
+    environment:
+      TELEGRAM_INTERFACE: miniapp
+      TELEGRAM_MINIAPP_URL: ${NOCLIP_MINIAPP_URL:?Укажите HTTPS адрес вида https://домен/miniapp}
+      TELEGRAM_MINIAPP_HOST: 0.0.0.0
+      TELEGRAM_MINIAPP_PORT: 8081
+    ports:
+      - "127.0.0.1:18081:8081"

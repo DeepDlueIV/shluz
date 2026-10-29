@@ -1,0 +1,3 @@
+
+# cmd.exe requires canonical CRLF after a UTF-8 codepage switch.
+*.cmd text eol=crlf

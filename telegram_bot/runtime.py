@@ -149,19 +149,24 @@ async def run(settings: BotSettings, *, bot: Bot | None = None) -> None:
                         "У бота настроен webhook. Для polling используйте отдельного бота "
                         "или отключите webhook самостоятельно."
                     )
-                if settings.connector_file:
+                if settings.connector_file and not settings.trial_owner_id:
                     me = await resolved_bot.get_me()
                     await gateway.register_bot(me.username)
-                await resolved_bot.set_my_commands(
-                    [
-                        BotCommand(command=command, description=description)
-                        for command, description in COMMANDS
-                    ],
-                    scope=BotCommandScopeAllPrivateChats(),
-                )
+                if not settings.trial_owner_id:
+                    await resolved_bot.set_my_commands(
+                        [
+                            BotCommand(command=command, description=description)
+                            for command, description in COMMANDS
+                        ],
+                        scope=BotCommandScopeAllPrivateChats(),
+                    )
                 upkeep = asyncio.create_task(maintenance(store, settings))
                 dispatcher = create_dispatcher(controller)
-                await dispatcher.start_polling(
+                from telegram_bot.miniapp.runtime import poll_with_panel
+
+                await poll_with_panel(
+                    controller,
+                    dispatcher,
                     resolved_bot,
                     allowed_updates=["message", "callback_query"],
                     handle_as_tasks=True,

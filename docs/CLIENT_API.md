@@ -46,3 +46,12 @@
 [venice-pricing-and-wallet.md](venice-pricing-and-wallet.md): проверенные внешние
 источники, старый billing/usage нельзя использовать как действующий.
 Frontend в web/ не изменён этим блоком. Публичный доступ и настоящие оплаты выключены.
+
+## Экспериментальная панель Telegram — miniapp-v1, 23.10.2026
+
+Отдельная ветка `feat/telegram-miniapp-control`, не текущий preview.
+[telegram-miniapp.md](telegram-miniapp.md): управление ботом через MenuButtonWebApp
+без сообщений навигации в чате. Это не login сайта: проверяется Mini App initData
+подписью бота. `/miniapp/api/*` обслуживает процесс Telegram с общей историей;
+клиент получает лишь короткую panel-сессию. Сайт/desktop по-прежнему используют свои
+действующие контракты; miniapp endpoint не является новым маршрутом генерации.

@@ -2,9 +2,10 @@
 
 import json
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +14,11 @@ class ConfigurationError(ValueError):
 
 
 class BotSettings(BaseSettings):
+    trial_owner_id: int = Field(default=0, ge=0, le=2**52 - 1)
+    interface: Literal["classic", "miniapp"] = "classic"
+    miniapp_url: str = ""
+    miniapp_host: str = "127.0.0.1"
+    miniapp_port: int = Field(default=8081, ge=1024, le=65535)
     bot_token: SecretStr = SecretStr("")
     gateway_url: str = "http://shluz:8000"
     connector_file: Path | None = None
@@ -36,6 +42,23 @@ class BotSettings(BaseSettings):
         extra="ignore",
         hide_input_in_errors=True,
     )
+
+    @model_validator(mode="after")
+    def validate_miniapp(self):
+        if self.interface == "miniapp":
+            url = urlsplit(self.miniapp_url)
+            if (
+                url.scheme != "https"
+                or not url.hostname
+                or url.username
+                or url.password
+                or url.query
+                or url.fragment
+                or url.path.rstrip("/") != "/miniapp"
+            ):
+                raise ValueError("Mini App требует HTTPS URL вида https://домен/miniapp")
+            self.miniapp_url = self.miniapp_url.rstrip("/")
+        return self
 
     @field_validator("gateway_url")
     @classmethod

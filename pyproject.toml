@@ -35,6 +35,7 @@ dev = [
 include = ["app*", "telegram_bot*"]
 
 [tool.setuptools.package-data]
+telegram_bot = ["miniapp/static/*.html", "miniapp/static/*.css", "miniapp/static/*.js"]
 app = ["templates/**/*.html", "static/*.css", "static/*.js"]
 
 [tool.pytest.ini_options]
