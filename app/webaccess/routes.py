@@ -309,6 +309,7 @@ async def web_chat(payload: WebChat, request: Request):
 async def web_http_error(request, exc):
     if request.url.path.startswith("/v1/") and not request.url.path.startswith("/v1/web/"):
         # API-клиенты получают OpenAI-стиль; detail не эхом — там может быть секрет.
+        # Заголовки исключения (например, WWW-Authenticate) сохраняются.
         message = exc.detail if isinstance(exc.detail, str) else "Запрос отклонён."
         return JSONResponse(
             {
@@ -320,7 +321,7 @@ async def web_http_error(request, exc):
                 }
             },
             exc.status_code,
-            headers={"Cache-Control": "no-store"},
+            headers={"Cache-Control": "no-store", **(exc.headers or {})},
         )
     if not request.url.path.startswith("/v1/web/"):
         from app.admin.errors import admin_http_error
