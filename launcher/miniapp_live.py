@@ -669,6 +669,8 @@ def create_tunnel(cloud_image):
         cloud_image,
         "tunnel",
         "--no-autoupdate",
+        # auto: cloudflared сам выбирает протокол по результатам precheck
+        # (в сети с прокси QUIC и TCP-фолбэки работают нестабильно по-разному).
         "--protocol",
         "auto",
         "--url",
