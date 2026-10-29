@@ -865,6 +865,22 @@ def refresh_active(root, state, gateway, old, live, tunnel):
                     docker("stop", "--time", "25", tunnel["Id"], timeout=60)
             record_tunnel_failure(root, state, token, "tunnel_unregistered", old_url, url)
             return True
+    live_env = dict(
+        item.split("=", 1) for item in ((live.get("Config") or {}).get("Env") or []) if "=" in item
+    )
+    declared_url = live_env.get("TELEGRAM_MINIAPP_URL")
+    if declared_url is not None and declared_url != url + "/miniapp":
+        # Туннель переехал на новый адрес: пересоздать контейнер с новым origin,
+        # иначе панель отклоняет запросы («Недопустимый источник запроса»).
+        settings = current_settings(root, gateway, old)
+        config = secure_env(root, environment_for(old, url))
+        args = safe_candidate_args(old, {"image": live["Config"]["Image"]}, settings, config)
+        docker("remove", "--force", LIVE_BOT)
+        docker(*args)
+        docker("network", "connect", "--alias", "miniapp", LIVE_NETWORK, LIVE_BOT)
+        docker("start", LIVE_BOT)
+        live = owned(LIVE_BOT)
+        restarted = True
     local = public_status(LIVE_BOT, url, timeout=4)
     if local == "panel_unavailable":
         record_tunnel_failure(root, state, token, local, old_url, url)

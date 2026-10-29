@@ -895,3 +895,84 @@ def test_one_click_start_and_stop_include_website_bridge(tmp_path, monkeypatch):
     assert m.main(["start"]) == 0
     assert m.main(["stop"]) == 0
     assert calls == [[], ["stop"]]
+
+
+def _refresh_fixtures(new_url, live_env_url):
+    state = {
+        "schema": 1,
+        "phase": "menu_unverified",
+        "old_id": old_bot()["Id"],
+        "was_running": False,
+        "old_menu": {"type": "commands"},
+        "image": "c47ff5b",
+        "origin": new_url,
+        "tunnel_id": "t" * 64,
+        "tunnel_started_at": "2026-10-30T00:00:00Z",
+        "cloudflared_image": "cloudflare/cloudflared@sha256:" + "0" * 64,
+        "menu_status": "menu_stale",
+    }
+    live = {
+        "Id": "c" * 64,
+        "Config": {
+            "Image": "shluz-preview:c47ff5b",
+            "Labels": {"io.noclip.permanent-miniapp": "1"},
+            "Env": ["TELEGRAM_MINIAPP_URL=" + live_env_url],
+        },
+        "State": {"Running": True, "Health": {"Status": "healthy"}},
+    }
+    tunnel = {
+        "Id": "t" * 64,
+        "Config": {"Image": "cloudflare/cloudflared@sha256:" + "0" * 64},
+        "State": {"Running": True, "StartedAt": "2026-10-30T00:00:00Z"},
+    }
+    return state, live, tunnel
+
+
+def test_refresh_recreates_live_container_when_tunnel_url_changes(tmp_path, monkeypatch):
+    m = load()
+    new_url = "https://fresh-tunnel.trycloudflare.com"
+    state, live, tunnel = _refresh_fixtures(
+        new_url, "https://stale-old.trycloudflare.com/miniapp"
+    )
+    old = {**old_bot(), "State": {"Running": False}}
+    calls = []
+    saved = {}
+    monkeypatch.setattr(m, "docker", lambda *a, **kw: calls.append(a) or "")
+    monkeypatch.setattr(m, "owned", lambda name: None)
+    monkeypatch.setattr(m, "current_settings", lambda root, gw, ob: settings())
+    monkeypatch.setattr(m, "secure_env", lambda root, values: tmp_path / "live.env")
+    monkeypatch.setattr(m, "public_status", lambda *a, **kw: "ready")
+    monkeypatch.setattr(m, "wait_menu", lambda *a, **kw: "verified")
+    monkeypatch.setattr(m, "save_state", lambda root, value: saved.update(value))
+
+    assert m.refresh_active(tmp_path, state, gateway(), old, live, tunnel) is True
+
+    flat = [" ".join(a) for a in calls if a]
+    assert any(c.startswith("remove --force noclip-miniapp") for c in flat)
+    create = next(" ".join(a) for a in calls if a and a[0] == "create")
+    assert "--name noclip-miniapp" in create
+    assert "shluz-preview:c47ff5b" in create
+    assert "--env-file" in create
+    assert any(c.startswith("network connect --alias miniapp") for c in flat)
+    assert any(c.startswith("start noclip-miniapp") for c in flat)
+    assert saved["phase"] == "active"
+    assert saved["origin"] == new_url
+
+
+def test_refresh_keeps_live_container_when_env_url_matches(tmp_path, monkeypatch):
+    m = load()
+    new_url = "https://fresh-tunnel.trycloudflare.com"
+    state, live, tunnel = _refresh_fixtures(new_url, new_url + "/miniapp")
+    old = {**old_bot(), "State": {"Running": False}}
+    calls = []
+    monkeypatch.setattr(m, "docker", lambda *a, **kw: calls.append(a) or "")
+    monkeypatch.setattr(m, "owned", lambda name: None)
+    monkeypatch.setattr(m, "public_status", lambda *a, **kw: "ready")
+    monkeypatch.setattr(m, "wait_menu", lambda *a, **kw: "verified")
+    monkeypatch.setattr(m, "save_state", lambda root, value: None)
+
+    assert m.refresh_active(tmp_path, state, gateway(), old, live, tunnel) is True
+
+    flat = [" ".join(a) for a in calls if a]
+    assert not any(c.startswith("remove") for c in flat)
+    assert not any(c and c[0] == "create" for c in calls)
