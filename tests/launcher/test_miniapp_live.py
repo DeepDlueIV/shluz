@@ -976,3 +976,102 @@ def test_refresh_keeps_live_container_when_env_url_matches(tmp_path, monkeypatch
     flat = [" ".join(a) for a in calls if a]
     assert not any(c.startswith("remove") for c in flat)
     assert not any(c and c[0] == "create" for c in calls)
+
+
+def _permanent_root(tmp_path):
+    directory = tmp_path / "config" / "cloudflared-permanent"
+    directory.mkdir(parents=True)
+    (directory / "config.yml").write_text(
+        "tunnel: f1cc551c-a6fb-4572-ad83-66b0a09c55b7\n"
+        "credentials-file: /etc/cloudflared/creds.json\n"
+        "ingress:\n"
+        "  - hostname: miniapp.toscanopersonainc.online\n"
+        "    service: http://miniapp:8081\n"
+        "  - service: http_status:404\n",
+        encoding="utf-8",
+    )
+    (directory / "creds.json").write_text("{\"a\":\"AccountTag\"}", encoding="utf-8")
+    return tmp_path
+
+
+def test_permanent_tunnel_config_requires_both_files(tmp_path):
+    m = load()
+    assert m.permanent_tunnel_config(tmp_path) is None
+    cfg = m.permanent_tunnel_config(_permanent_root(tmp_path))
+    assert cfg["hostname"] == "miniapp.toscanopersonainc.online"
+    assert cfg["tunnel_id"] == "f1cc551c-a6fb-4572-ad83-66b0a09c55b7"
+
+
+def test_environment_for_accepts_only_configured_permanent_host():
+    m = load()
+    host = "miniapp.toscanopersonainc.online"
+    ok = m.environment_for(old_bot(), f"https://{host}", allowed_host=host)
+    assert ok["TELEGRAM_MINIAPP_URL"] == f"https://{host}/miniapp"
+    for bad in (
+        "https://stale-old.trycloudflare.com",
+        f"https://evil.{host}",
+        f"https://{host}.attacker.com",
+    ):
+        with pytest.raises(m.LiveError):
+            m.environment_for(old_bot(), bad, allowed_host=host)
+
+
+def test_refresh_uses_permanent_url_and_recreates_stale_container(tmp_path, monkeypatch):
+    m = load()
+    root = _permanent_root(tmp_path)
+    new_url = "https://miniapp.toscanopersonainc.online"
+    state, live, tunnel = _refresh_fixtures(
+        new_url, "https://stale-old.trycloudflare.com/miniapp"
+    )
+    old = {**old_bot(), "State": {"Running": False}}
+    calls = []
+    saved = {}
+    monkeypatch.setattr(m, "docker", lambda *a, **kw: calls.append(a) or "")
+    monkeypatch.setattr(m, "owned", lambda name: None)
+    monkeypatch.setattr(m, "current_settings", lambda root, gw, ob: settings())
+    monkeypatch.setattr(m, "secure_env", lambda root, values: tmp_path / "live.env")
+    monkeypatch.setattr(m, "public_status", lambda *a, **kw: "ready")
+    monkeypatch.setattr(m, "wait_menu", lambda *a, **kw: "verified")
+    monkeypatch.setattr(m, "save_state", lambda root, value: saved.update(value))
+
+    assert m.refresh_active(root, state, gateway(), old, live, tunnel) is True
+
+    flat = [" ".join(a) for a in calls if a]
+    assert any(c.startswith("remove --force noclip-miniapp") for c in flat)
+    create = next(" ".join(a) for a in calls if a and a[0] == "create")
+    assert "--env-file" in create
+    assert not any(c and c[0] == "run" for c in calls)  # туннель работающий — не пересоздаётся
+    assert saved["phase"] == "active"
+    assert saved["origin"] == new_url
+
+
+def test_create_permanent_tunnel_runs_config_mounted_connector(tmp_path, monkeypatch):
+    m = load()
+    cfg = m.permanent_tunnel_config(_permanent_root(tmp_path))
+    calls = []
+    monkeypatch.setattr(m, "docker", lambda *a, **kw: calls.append(a) or "")
+    monkeypatch.setattr(m, "ensure_network", lambda: None)
+    monkeypatch.setattr(m, "owned", lambda name: {"Id": "x", "State": {"Running": True}})
+    image = "cloudflare/cloudflared@sha256:" + "a" * 64
+
+    m.create_permanent_tunnel(image, cfg)
+
+    run = next(a for a in calls if a and a[0] == "run")
+    args = " ".join(run)
+    assert "--name noclip-miniapp-https" in args
+    assert cfg["creds_path"] + ":/etc/cloudflared/creds.json:ro" in args
+    assert cfg["config_path"] + ":/etc/cloudflared/config.yml:ro" in args
+    assert "--config /etc/cloudflared/config.yml run" in args
+
+
+def test_wait_registered_accepts_registered_log_and_rejects_silence(tmp_path, monkeypatch):
+    m = load()
+    monkeypatch.setattr(
+        m, "_container_logs", lambda name: "INF Registered tunnel connection"
+    )
+    m.wait_registered(m.LIVE_TUNNEL, timeout_seconds=5)
+
+    monkeypatch.setattr(m, "_container_logs", lambda name: "INF Waiting for registration")
+    monkeypatch.setattr(m, "docker", lambda *a, **kw: "")  # сбой inspect не считается остановкой
+    with pytest.raises(m.LiveError, match="Cloudflare edge"):
+        m.wait_registered(m.LIVE_TUNNEL, timeout_seconds=1)

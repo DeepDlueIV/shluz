@@ -156,8 +156,11 @@ def prepare_images(root):
     return preview, panel["cloudflared_image"]
 
 
-def environment_for(old, url):
-    if not re.fullmatch(r"https://[a-z0-9]+(?:-[a-z0-9]+)*\.trycloudflare\.com", url):
+def environment_for(old, url, *, allowed_host=None):
+    if allowed_host:
+        if url != f"https://{allowed_host}":
+            raise LiveError("Неподдерживаемый HTTPS-адрес Mini App.")
+    elif not re.fullmatch(r"https://[a-z0-9]+(?:-[a-z0-9]+)*\.trycloudflare\.com", url):
         raise LiveError("Неподдерживаемый HTTPS-адрес Mini App.")
     values = {k: v for k, v in trial.env(old).items() if k.startswith("TELEGRAM_")}
     if not values.get("TELEGRAM_BOT_TOKEN"):
@@ -649,6 +652,94 @@ def backup(root):
     return destination
 
 
+def permanent_tunnel_config(root):
+    """Портативный конфиг постоянного именованного туннеля; None = Quick Tunnel."""
+    directory = Path(root) / "config" / "cloudflared-permanent"
+    config_path = directory / "config.yml"
+    creds_path = directory / "creds.json"
+    if not config_path.is_file() or not creds_path.is_file():
+        return None
+    try:
+        text = config_path.read_text(encoding="utf-8")
+        tunnel_id = re.search(r"^tunnel:\s*([0-9a-f-]{36})\s*$", text, re.M)
+        hostname = re.search(r"^\s*-\s*hostname:\s*([a-z0-9.-]+)\s*$", text, re.M)
+    except OSError:
+        return None
+    if not tunnel_id or not hostname:
+        raise LiveError("Конфиг постоянного туннеля повреждён; проверьте config.yml.")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9.-]*\.[a-z]{2,}", hostname.group(1)):
+        raise LiveError("Некорректный адрес в конфиге постоянного туннеля.")
+    return {
+        "tunnel_id": tunnel_id.group(1),
+        "hostname": hostname.group(1),
+        "config_path": str(config_path),
+        "creds_path": str(creds_path),
+    }
+
+
+def create_permanent_tunnel(cloud_image, cfg):
+    if not re.fullmatch(r"cloudflare/cloudflared@sha256:[a-f0-9]{64}", str(cloud_image)):
+        raise LiveError("Нет проверенного закреплённого образа Cloudflare Tunnel.")
+    ensure_network()
+    docker(
+        "run",
+        "-d",
+        "--name",
+        LIVE_TUNNEL,
+        "--label",
+        LIVE_LABEL + "=1",
+        "--restart=no",
+        "--network",
+        LIVE_NETWORK,
+        "-v",
+        cfg["creds_path"] + ":/etc/cloudflared/creds.json:ro",
+        "-v",
+        cfg["config_path"] + ":/etc/cloudflared/config.yml:ro",
+        cloud_image,
+        "tunnel",
+        "--config",
+        "/etc/cloudflared/config.yml",
+        "run",
+    )
+    item = owned(LIVE_TUNNEL)
+    if not item:
+        raise LiveError("Контейнер постоянного туннеля не создался.")
+    return item
+
+
+def _container_logs(name):
+    """Логи контейнера из обоих потоков: cloudflared пишет в stderr."""
+    try:
+        result = subprocess.run(
+            ["docker", "logs", "--tail=all", name],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return (result.stdout + result.stderr).decode("utf-8", "replace")
+
+
+def wait_registered(name, *, timeout_seconds=90):
+    """Постоянный туннель подтверждён, когда edge зарегистрировал соединения."""
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if "Registered tunnel connection" in _container_logs(name):
+            return
+        try:
+            # Прерывать только на доказанную остановку: сбой Docker inspect
+            # (пустой ответ при коде 125) не доказательство смерти контейнера.
+            raw = docker("inspect", name, optional=True, timeout=10)
+            item = json.loads(raw)[0] if raw else None
+            if item is not None and not item.get("State", {}).get("Running"):
+                break
+        except (ValueError, KeyError, TypeError, IndexError, OSError, updater.UpdateError):
+            pass
+        time.sleep(1)
+    raise LiveError("Постоянный туннель не подтвердил соединение с Cloudflare edge.")
+
+
 def create_tunnel(cloud_image):
     if not re.fullmatch(r"cloudflare/cloudflared@sha256:[a-f0-9]{64}", str(cloud_image)):
         raise LiveError("Нет проверенного закреплённого образа Cloudflare Tunnel.")
@@ -836,35 +927,52 @@ def refresh_active(root, state, gateway, old, live, tunnel):
     if not re.fullmatch(r"cloudflare/cloudflared@sha256:[a-f0-9]{64}", cloud_image):
         record_tunnel_failure(root, state, token, "tunnel_unregistered", old_url)
         return True
+    permanent = permanent_tunnel_config(root)
     restarted = False
-    url = old_url
-    try:
-        if not tunnel or not is_running(tunnel):
-            url, tunnel = restart_tunnel(tunnel, cloud_image)
-            restarted = True
-        else:
-            started_at = tunnel.get("State", {}).get("StartedAt")
-            same_process = (
-                state.get("tunnel_id") == tunnel.get("Id")
-                and state.get("tunnel_started_at") == started_at
-            )
-            if not same_process or not url:
-                url = trial.wait_tunnel(
-                    LIVE_TUNNEL,
-                    require_registered=True,
-                    since=started_at,
-                    timeout_seconds=30,
-                )
-    except trial.TrialError:
+    if permanent:
+        url = f"https://{permanent['hostname']}"
         try:
-            url, tunnel = restart_tunnel(tunnel, cloud_image)
-            restarted = True
-        except (LiveError, trial.TrialError, updater.UpdateError, subprocess.TimeoutExpired):
+            if not tunnel or not is_running(tunnel):
+                if tunnel:
+                    docker("start", tunnel["Id"], timeout=60)
+                else:
+                    tunnel = create_permanent_tunnel(cloud_image, permanent)
+                restarted = True
+        except (LiveError, updater.UpdateError, subprocess.TimeoutExpired):
             with suppress(Exception):
                 if tunnel and is_running(tunnel):
                     docker("stop", "--time", "25", tunnel["Id"], timeout=60)
             record_tunnel_failure(root, state, token, "tunnel_unregistered", old_url, url)
             return True
+    else:
+        url = old_url
+        try:
+            if not tunnel or not is_running(tunnel):
+                url, tunnel = restart_tunnel(tunnel, cloud_image)
+                restarted = True
+            else:
+                started_at = tunnel.get("State", {}).get("StartedAt")
+                same_process = (
+                    state.get("tunnel_id") == tunnel.get("Id")
+                    and state.get("tunnel_started_at") == started_at
+                )
+                if not same_process or not url:
+                    url = trial.wait_tunnel(
+                        LIVE_TUNNEL,
+                        require_registered=True,
+                        since=started_at,
+                        timeout_seconds=30,
+                    )
+        except trial.TrialError:
+            try:
+                url, tunnel = restart_tunnel(tunnel, cloud_image)
+                restarted = True
+            except (LiveError, trial.TrialError, updater.UpdateError, subprocess.TimeoutExpired):
+                with suppress(Exception):
+                    if tunnel and is_running(tunnel):
+                        docker("stop", "--time", "25", tunnel["Id"], timeout=60)
+                record_tunnel_failure(root, state, token, "tunnel_unregistered", old_url, url)
+                return True
     live_env = dict(
         item.split("=", 1) for item in ((live.get("Config") or {}).get("Env") or []) if "=" in item
     )
@@ -873,9 +981,24 @@ def refresh_active(root, state, gateway, old, live, tunnel):
         # Туннель переехал на новый адрес: пересоздать контейнер с новым origin,
         # иначе панель отклоняет запросы («Недопустимый источник запроса»).
         settings = current_settings(root, gateway, old)
-        config = secure_env(root, environment_for(old, url))
+        config = secure_env(
+            root,
+            environment_for(old, url, allowed_host=permanent["hostname"] if permanent else None),
+        )
         args = safe_candidate_args(old, {"image": live["Config"]["Image"]}, settings, config)
-        docker("remove", "--force", LIVE_BOT)
+        # Docker Desktop на этой машине эпизодически отвечает 125 на remove
+        # работающего контейнера; ручной повтор всегда проходит.
+        remove_error = None
+        for _ in range(3):
+            try:
+                docker("remove", "--force", LIVE_BOT)
+                remove_error = None
+                break
+            except updater.UpdateError as exc:
+                remove_error = exc
+                time.sleep(2)
+        if remove_error is not None:
+            raise remove_error
         docker(*args)
         docker("network", "connect", "--alias", "miniapp", LIVE_NETWORK, LIVE_BOT)
         docker("start", LIVE_BOT)
@@ -1018,13 +1141,22 @@ def start(root):
         start_gateway(gateway)
         backup(root)
         retire_owned()
-        tunnel = create_tunnel(cloud_image)
-        url = trial.wait_tunnel(
-            LIVE_TUNNEL,
-            require_registered=True,
-            since=tunnel.get("State", {}).get("StartedAt"),
+        permanent = permanent_tunnel_config(root)
+        if permanent:
+            tunnel = create_permanent_tunnel(cloud_image, permanent)
+            url = f"https://{permanent['hostname']}"
+            wait_registered(LIVE_TUNNEL)
+        else:
+            tunnel = create_tunnel(cloud_image)
+            url = trial.wait_tunnel(
+                LIVE_TUNNEL,
+                require_registered=True,
+                since=tunnel.get("State", {}).get("StartedAt"),
+            )
+        config = secure_env(
+            root,
+            environment_for(old, url, allowed_host=permanent["hostname"] if permanent else None),
         )
-        config = secure_env(root, environment_for(old, url))
         args = safe_candidate_args(old, image_manifest, settings, config)
         if is_running(old):
             docker("stop", "--time", "25", old["Id"], timeout=60)

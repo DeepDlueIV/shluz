@@ -348,11 +348,19 @@ def probe_local_panel(name, *, timeout=5):
     return response.strip() == "ready"
 
 
+# Cloudflare Bot Fight Mode отбивает дефолтный User-Agent Python-urllib (403)
+# даже на легитимный health-check владельца; ходим как браузер.
+HEALTHCHECK_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) NoClip-Healthcheck"
+
+
 def probe_windows_https(url, *, timeout=5, diagnostics=None):
     """TLS проверяется штатно; наружу возвращается только категория, без URL/ключей."""
     kind = "response"
     try:
-        with urllib.request.urlopen(url + "/miniapp/health", timeout=timeout) as response:
+        request = urllib.request.Request(
+            url + "/miniapp/health", headers={"User-Agent": HEALTHCHECK_UA}
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             if json.load(response) == {"status": "ok"}:
                 return True
     except urllib.error.HTTPError as exc:
@@ -377,7 +385,9 @@ def probe_container_https(name, url, *, timeout=7, diagnostics=None):
     # Публичный URL получен из проверенного имени trycloudflare; секретов здесь нет.
     script = f"""import json,socket,ssl,urllib.request,urllib.error
 try:
-    with urllib.request.urlopen({(url + "/miniapp/health")!r},timeout={min(5, timeout)!r}) as r:
+    r=urllib.request.Request({(url + "/miniapp/health")!r},
+        headers={{'User-Agent':{HEALTHCHECK_UA!r}}})
+    with urllib.request.urlopen(r,timeout={min(5, timeout)!r}) as r:
         print('ready' if json.load(r)=={{'status':'ok'}} else 'response')
 except urllib.error.HTTPError as e:
     print('http:'+str(e.code))
