@@ -117,7 +117,15 @@
 .list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 
 /* Карточка регистрации/входа в стиле референса */
-.pageBackdrop { min-height: 100svh; background: #0a0b0d; }
+.pageBackdrop {
+  --ink: #f3f0e9;
+  --muted: #999a96;
+  --line: rgb(243 240 233 / 7%);
+  min-height: 100svh;
+  background: #0a0b0d;
+  color: var(--ink);
+}
+.cardShell { --line: rgb(243 240 233 / 7%); }
 .cardShell {
   width: min(440px, calc(100% - 40px));
   margin: 0 auto;
