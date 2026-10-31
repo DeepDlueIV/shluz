@@ -24,8 +24,8 @@ import updater
 SITE_URL = "https://noclip-web.vercel.app"
 CONTAINER = "noclip-site-gateway"
 LABEL = "io.noclip.site-bridge"
-IMAGE = "sha256:d681c163ed411b2e82df6e4d67a83faf44019253da9fb5c938b997fcff6bd50b"
-REVISION = "08145402383f681f2843e325f054af3d50dac1e0"
+IMAGE = "sha256:bf76b3e10b1150eb18e8ec252db9ffd2804c3cdcaba9e6fd5d8dceb7f8776479"
+REVISION = "588d521147163741f146149db152473d728f9471"
 GUEST_PATHS = {"/v1/web/session": "post", "/v1/web/chat/completions": "post", "/v1/web/me": "get"}
 
 
