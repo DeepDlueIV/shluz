@@ -7,7 +7,7 @@ const allowed = new Set([
   'GET /v1/web/tokens',
   'POST /v1/web/tokens',
   'POST /v1/web/tokens/revoke',
-  'POST /v1/web/authorize/cherry',
+  'POST /v1/web/authorize',
   'POST /v1/web/token',
 ]);
 

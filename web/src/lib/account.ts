@@ -118,11 +118,12 @@ export async function revokeToken(csrf: string, id: string): Promise<void> {
   await call("/v1/web/tokens/revoke", "POST", csrf, { id });
 }
 
-export async function mintCherryCode(
+export async function mintAuthorizeCode(
   csrf: string,
+  client: string,
   port: number,
 ): Promise<{ code: string; redirect: string; expires_in: number }> {
-  const body = await call("/v1/web/authorize/cherry", "POST", csrf, { port });
+  const body = await call("/v1/web/authorize", "POST", csrf, { client, port });
   return {
     code: String(body["code"] ?? ""),
     redirect: String(body["redirect"] ?? ""),

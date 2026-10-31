@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSitePreferences } from "../../components/SitePreferences";
 import { useAccountGate } from "../../components/AccountGate";
-import { createToken, ensureSession, mintCherryCode } from "../../lib/account";
+import { createToken, ensureSession, mintAuthorizeCode } from "../../lib/account";
 import styles from "../../components/Account.module.css";
 
 function AuthorizeInner() {
@@ -13,8 +13,8 @@ function AuthorizeInner() {
   const router = useRouter();
   const params = useSearchParams();
   const gate = useAccountGate();
-  const client = params.get("client") ?? "this application";
-  const clientName = client === "cherry" ? "NoClip Desktop" : client;
+  const client = params.get("client") ?? "noclip-desktop";
+  const clientName = client === "cherry" || client === "noclip-desktop" ? "NoClip Desktop" : client;
   const portRaw = params.get("port") ?? "";
   const port = Number(portRaw);
   const portValid = Number.isInteger(port) && port >= 1024 && port <= 65535;
@@ -37,7 +37,7 @@ function AuthorizeInner() {
     setError(null);
     try {
       await ensureSession();
-      const grant = await mintCherryCode(gate.csrf, port);
+      const grant = await mintAuthorizeCode(gate.csrf, client, port);
       window.location.href = grant.redirect;
     } catch (cause) {
       setError(String(cause instanceof Error ? cause.message : cause));
