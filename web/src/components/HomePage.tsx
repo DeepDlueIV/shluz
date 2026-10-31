@@ -157,8 +157,6 @@ export default function HomePage() {
       ? <a key={t(item.label, item.labelRu)} href={item.href} tabIndex={navInteractive ? 0 : -1} onClick={() => setMobileMenu(false)}>{t(item.label, item.labelRu)}</a>
       : <button key={t(item.label, item.labelRu)} type="button" className={styles.soonLink} tabIndex={navInteractive ? 0 : -1}
           onClick={() => showNotice(t(item.label, item.labelRu), t("This section is not available in the preview.", "Этот раздел пока не открыт. Сейчас можно познакомиться с возможностями NoClip."))}>{t(item.label, item.labelRu)}<span className={styles.soonDot} aria-label={t("Coming soon", "Скоро")} /></button>)}
-    <Link href="/login" className={styles.loginLink} tabIndex={navInteractive ? 0 : -1}
-      onClick={() => { if (mobile) setMobileMenu(false); }}>{t("Log in", "Войти")} <Icon name="right" size={14} /></Link>
     <Link href="/sign-up" className={styles.signupLink} tabIndex={navInteractive ? 0 : -1}
       onClick={() => { if (mobile) setMobileMenu(false); }}>{t("Sign up", "Регистрация")}</Link>
   </nav>;
@@ -172,7 +170,7 @@ export default function HomePage() {
           <img src="/media/noclip-mark.png" width="38" height="32" alt="" />
           <span>NoClip</span>
         </a>
-        <div className={presentation.headerActions}><LanguageSwitcher /><Link href="/login" className={styles.headerLogin}>{t("Log in", "Войти")} <Icon name="right" size={15} /></Link><Link href="/sign-up" className={styles.headerSignup}>{t("Sign up", "Регистрация")}</Link></div>
+        <div className={presentation.headerActions}><LanguageSwitcher /><Link href="/sign-up" className={styles.headerSignup}>{t("Sign up", "Регистрация")}</Link></div>
       </header>
       <div className={`${styles.heroContent} ${presentation.heroContent}`}>
         <motion.div className={styles.heroCopy} style={{ opacity: titleOpacity, y: titleY }}>
