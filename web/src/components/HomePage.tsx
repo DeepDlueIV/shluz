@@ -6,6 +6,7 @@ import { useGuestJourney } from "./GuestJourney";
 import LandingSections from "./LandingSections";
 import styles from "./HomePage.module.css";
 import presentation from "./Presentation.module.css";
+import Link from "next/link";
 import HeroVideo from "./HeroVideo";
 import LanguageSwitcher from "./LanguageSwitcher";
 import { useSitePreferences } from "./SitePreferences";
@@ -156,8 +157,10 @@ export default function HomePage() {
       ? <a key={t(item.label, item.labelRu)} href={item.href} tabIndex={navInteractive ? 0 : -1} onClick={() => setMobileMenu(false)}>{t(item.label, item.labelRu)}</a>
       : <button key={t(item.label, item.labelRu)} type="button" className={styles.soonLink} tabIndex={navInteractive ? 0 : -1}
           onClick={() => showNotice(t(item.label, item.labelRu), t("This section is not available in the preview.", "Этот раздел пока не открыт. Сейчас можно познакомиться с возможностями NoClip."))}>{t(item.label, item.labelRu)}<span className={styles.soonDot} aria-label={t("Coming soon", "Скоро")} /></button>)}
-    <button type="button" className={styles.loginLink} tabIndex={navInteractive ? 0 : -1}
-      onClick={() => showNotice(t("Log in to NoClip", "Вход в NoClip"), t("Account sign-in is not available in this preview. You can still open the guest chat.", "Вход в личный аккаунт пока недоступен. Вы можете продолжить знакомство с NoClip и попробовать гостевой запрос."))}>{t("Log in", "Войти")} <Icon name="right" size={14} /></button>
+    <Link href="/login" className={styles.loginLink} tabIndex={navInteractive ? 0 : -1}
+      onClick={() => { if (mobile) setMobileMenu(false); }}>{t("Log in", "Войти")} <Icon name="right" size={14} /></Link>
+    <Link href="/sign-up" className={styles.signupLink} tabIndex={navInteractive ? 0 : -1}
+      onClick={() => { if (mobile) setMobileMenu(false); }}>{t("Sign up", "Регистрация")}</Link>
   </nav>;
 
   return <main className={styles.page}>
@@ -169,7 +172,7 @@ export default function HomePage() {
           <img src="/media/noclip-mark.png" width="38" height="32" alt="" />
           <span>NoClip</span>
         </a>
-        <div className={presentation.headerActions}><LanguageSwitcher /><button className={styles.headerLogin} onClick={() => showNotice(t("Log in to NoClip", "Вход в NoClip"), t("Account sign-in is not available in this preview. You can still open the guest chat.", "Вход в личный аккаунт пока недоступен. Вы можете продолжить знакомство с NoClip и попробовать гостевой запрос."))}>{t("Log in", "Войти")} <Icon name="right" size={15} /></button></div>
+        <div className={presentation.headerActions}><LanguageSwitcher /><Link href="/login" className={styles.headerLogin}>{t("Log in", "Войти")} <Icon name="right" size={15} /></Link><Link href="/sign-up" className={styles.headerSignup}>{t("Sign up", "Регистрация")}</Link></div>
       </header>
       <div className={`${styles.heroContent} ${presentation.heroContent}`}>
         <motion.div className={styles.heroCopy} style={{ opacity: titleOpacity, y: titleY }}>

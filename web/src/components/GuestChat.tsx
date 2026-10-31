@@ -112,7 +112,7 @@ export default function GuestChat() {
 
         {remaining === 0 && <div className={styles.registerCta}>
           <p>{t("Create a free account to keep the conversation going. Your demo history stays with you.", "Создайте бесплатный аккаунт, чтобы продолжить разговор. История демо останется с вами.")}</p>
-          <Link href="/login?next=%2Fapp" className={styles.ctaButton}>{t("Create a free account", "Создать бесплатный аккаунт")}</Link>
+          <Link href="/sign-up?next=%2Fapp" className={styles.ctaButton}>{t("Create a free account", "Создать бесплатный аккаунт")}</Link>
         </div>}
       </section>
 

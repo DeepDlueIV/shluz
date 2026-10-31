@@ -115,3 +115,40 @@
 .turnstile { margin-top: 12px; }
 
 .list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+
+/* Карточка регистрации/входа в стиле референса */
+.pageBackdrop { min-height: 100svh; background: #0a0b0d; }
+.cardShell {
+  width: min(440px, calc(100% - 40px));
+  margin: 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #131416;
+  padding: 34px 30px 0;
+  overflow: hidden;
+}
+.cardShellInner { padding: 0 0 22px; }
+.cardMark { display: block; margin: 0 auto 18px; object-fit: contain; }
+.cardTitle { margin: 0 0 22px; text-align: center; font-size: 22px; font-weight: 450; letter-spacing: -0.5px; }
+.label { display: block; margin: 0 0 7px; font-size: 13px; font-weight: 450; color: var(--ink); }
+.divider { display: flex; align-items: center; gap: 12px; margin: 20px 0 0; color: var(--muted); font-size: 12px; }
+.divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.altLinks { border-top: 1px solid var(--line); margin: 22px -30px 0; padding: 16px 20px 18px; background: rgb(243 240 233 / 2%); text-align: center; color: var(--muted); font-size: 14px; }
+.altLinks a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.altLinks a:hover { color: #fff; }
+.otpRow { display: flex; gap: 8px; justify-content: center; margin-top: 4px; }
+.otpBox {
+  width: 44px;
+  height: 52px;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgb(243 240 233 / 4%);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 22px;
+  font-weight: 450;
+}
+.otpBox:focus { outline: none; border-color: rgb(243 240 233 / 40%); }
+.otpActions { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+.cardTop { display: flex; justify-content: space-between; align-items: center; width: 100%; margin-bottom: 8px; }
