@@ -127,8 +127,14 @@ function SignUpInner() {
               type="button"
               className={styles.primary}
               style={{ width: "100%" }}
-              disabled={busy || !email}
-              onClick={sendCode}
+              disabled={busy}
+              onClick={() => {
+                if (!email) {
+                  setError(t("Enter your email address first", "Сначала введите вашу почту"));
+                  return;
+                }
+                void sendCode();
+              }}
             >
               {t("Continue", "Далее")}
             </button>
