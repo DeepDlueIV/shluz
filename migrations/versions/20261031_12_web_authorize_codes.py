@@ -27,6 +27,9 @@ def upgrade():
     op.create_index(
         "ix_web_authorize_codes_account_id", "web_authorize_codes", ["account_id"]
     )
+    op.create_index(
+        "ix_web_authorize_codes_session_id", "web_authorize_codes", ["session_id"]
+    )
     op.create_index("ix_web_authorize_codes_expires", "web_authorize_codes", ["expires"])
 
 

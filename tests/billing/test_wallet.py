@@ -347,7 +347,7 @@ def test_migration_preserves_old_account_and_subscription_defaults(tmp_path, mon
             "Saved",
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "20261020_11",
+            "20261031_12",
         )
         assert conn.execute("SELECT COUNT(*) FROM wallet_entries").fetchone() == (0,)
     command.check(cfg)
