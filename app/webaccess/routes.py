@@ -23,6 +23,7 @@ from app.product.service import (
     models_in,
     policy,
 )
+from app.webaccess import tokens as tokens_service
 from app.webaccess.models import WebRequest, WebSession
 from app.webaccess.otp import request_code, verify_code
 from app.webaccess.security import (
@@ -310,14 +311,19 @@ async def web_http_error(request, exc):
     if request.url.path.startswith("/v1/") and not request.url.path.startswith("/v1/web/"):
         # API-клиенты получают OpenAI-стиль; detail не эхом — там может быть секрет.
         # Заголовки исключения (например, WWW-Authenticate) сохраняются.
-        message = exc.detail if isinstance(exc.detail, str) else "Запрос отклонён."
+        if isinstance(exc.detail, dict):
+            message = str(exc.detail.get("message") or "Запрос отклонён.")
+            code = str(exc.detail.get("code") or "request_rejected")
+        else:
+            message = exc.detail if isinstance(exc.detail, str) else "Запрос отклонён."
+            code = "request_rejected"
         return JSONResponse(
             {
                 "error": {
                     "message": message,
                     "type": "invalid_request_error",
                     "param": None,
-                    "code": "request_rejected",
+                    "code": code,
                 }
             },
             exc.status_code,
@@ -372,3 +378,84 @@ def web_wallet(
     with db.session() as session:
         row = current_session(request, session)
     return own_wallet(principal_for(row, db), db, response, limit, offset)
+
+
+class TokenCreatePayload(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class TokenRevokePayload(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+
+
+class CherryAuthorizePayload(BaseModel):
+    port: int = Field(ge=1024, le=65535)
+
+
+class TokenExchangePayload(BaseModel):
+    code: str = Field(min_length=16, max_length=128)
+
+
+def _account_of(request, csrf: bool):
+    """Сессия → активный аккаунт. Гость/неактивный аккаунт — отказ."""
+    db = request.app.state.database
+    with db.session() as s:
+        row = current_session(request, s, csrf=csrf)
+        if not row.authenticated or not row.account_id:
+            reject("login_required", 401, "Войдите на сайт, чтобы управлять токенами.")
+        account = tokens_service._require_active_account(s, row.account_id)
+    return row, account
+
+
+@router.get("/tokens")
+def web_tokens_list(request: Request):
+    row, account = _account_of(request, csrf=False)
+    with locked_session(request.app.state.database) as s:
+        return {"data": tokens_service.list_own_tokens(s, account.id)}
+
+
+@router.post("/tokens")
+def web_tokens_create(payload: TokenCreatePayload, request: Request):
+    row, account = _account_of(request, csrf=True)
+    with locked_session(request.app.state.database) as s:
+        token, raw = tokens_service.create_own_token(s, account.id, payload.name)
+        data = {
+            "id": token.id,
+            "name": token.name,
+            "token_prefix": token.token_prefix,
+            "raw_token": raw,
+            "created_at": token.created_at.isoformat(),
+        }
+    # Сырьё показывается один раз; после закрытия сессии SQLAlchemy оно недоступно.
+    return data
+
+
+@router.post("/tokens/revoke")
+def web_tokens_revoke(payload: TokenRevokePayload, request: Request):
+    row, account = _account_of(request, csrf=True)
+    with locked_session(request.app.state.database) as s:
+        tokens_service.revoke_own_token(s, account.id, payload.id)
+    return {"revoked": True}
+
+
+@router.post("/authorize/cherry")
+def web_authorize_cherry(payload: CherryAuthorizePayload, request: Request):
+    row, account = _account_of(request, csrf=True)
+    settings = require_enabled(request)
+    with locked_session(request.app.state.database) as s:
+        grant = tokens_service.mint_cherry_code(
+            s, settings, account.id, row.id, payload.port
+        )
+    return grant
+
+
+@router.post("/token")
+def web_token_exchange(payload: TokenExchangePayload, request: Request):
+    """Обмен одноразового кода на персональный токен (Cherry, без сессии)."""
+    settings = require_enabled(request)
+    with locked_session(request.app.state.database) as s:
+        token, raw = tokens_service.exchange_cherry_code(
+            s, settings, payload.code
+        )
+        data = {"raw_token": raw, "name": token.name, "token_prefix": token.token_prefix}
+    return data

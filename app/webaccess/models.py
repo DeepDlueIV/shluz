@@ -109,3 +109,18 @@ class TelegramLoginChallenge(Base):
     expires: Mapped[int] = mapped_column(Integer, index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     used: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class WebAuthorizeCode(Base):
+    """Одноразовый код authorize-флоу: короткая жизнь, привязка к аккаунту и сессии."""
+
+    __tablename__ = "web_authorize_codes"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
+    session_id: Mapped[str] = mapped_column(String(64), index=True)
+    client: Mapped[str] = mapped_column(String(32))
+    redirect_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created: Mapped[int] = mapped_column(Integer)
+    expires: Mapped[int] = mapped_column(Integer, index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    used: Mapped[bool] = mapped_column(Boolean, default=False)
