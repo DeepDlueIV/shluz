@@ -70,7 +70,7 @@ class SmtpMailer:
         def send():
             s = self.settings
             mail = EmailMessage()
-            mail["From"], mail["To"], mail["Subject"] = s.smtp_sender, email, "Код входа Shluz"
+            mail["From"], mail["To"], mail["Subject"] = s.smtp_sender, email, "Код входа NoClip"
             mail.set_content(
                 f"Ваш код входа: {code}\nДействует 10 минут. Никому его не сообщайте.\n"
                 "Если вы не запрашивали код, проигнорируйте это письмо."
