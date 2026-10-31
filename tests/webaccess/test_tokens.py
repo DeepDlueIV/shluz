@@ -151,32 +151,6 @@ def test_unauthenticated_account_session_cannot_mint(browser):
     assert response.status_code == 401
 
 
-def test_admin_cherry_page_mints_code_bound_to_account(browser):
-    """Админская страница Cherry: код привязан к выбранному аккаунту."""
-    from tests.api.test_telegram_onboarding import admin_post
-
-    aid, _, auth = _login(browser)
-    page = browser.get("/admin/cherry", auth=("admin", "change-me"))
-    assert page.status_code == 200
-
-    minted = admin_post(
-        browser,
-        "/admin/cherry",
-        account_id=aid,
-        port=51715,
-        auth=("admin", "change-me"),
-    )
-    assert minted.status_code == 200
-    code = browser.post(
-        "/v1/web/token", json={"code": _extract_code(minted.text)}
-    )
-    assert code.status_code == 200
-    raw = code.json()["raw_token"]
-
-    models = browser.get("/v1/models", headers={"Authorization": f"Bearer {raw}"})
-    assert models.status_code == 200
-
-
 def _extract_code(page_text: str) -> str:
     import json
     import re

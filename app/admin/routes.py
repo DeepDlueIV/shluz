@@ -35,7 +35,6 @@ from app.db.repositories import create_api_token, generate_api_token, revoke_api
 from app.product.service import locked_session
 from app.providers.base import ProviderError
 from app.providers.registry import ProviderRegistry
-from app.webaccess import tokens as tokens_service
 from app.webaccess.models import DemoLimit
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -430,78 +429,6 @@ async def assign_user_plan(
         )
     return RedirectResponse(url="/admin/users", status_code=303)
 
-
-
-@router.get("/cherry", response_class=HTMLResponse)
-async def cherry_page(
-    request: Request,
-    actor: Annotated[str, Depends(_require_admin)],
-    settings: Annotated[Settings, Depends(_settings)],
-    database: Annotated[Database, Depends(_database)],
-) -> HTMLResponse:
-    with database.session() as session:
-        accounts = session.scalars(
-            select(Account)
-            .where(Account.status == "active")
-            .order_by(Account.display_name)
-            .limit(200)
-        ).all()
-        plans = {
-            subscription.account_id: subscription.plan_id
-            for subscription in session.scalars(select(Subscription))
-        }
-    rows = [
-        {
-            "id": account.id,
-            "display_name": account.display_name,
-            "plan": plans.get(account.id),
-        }
-        for account in accounts
-    ]
-    return templates.TemplateResponse(
-        request=request,
-        name="admin/cherry.html",
-        context={"accounts": rows, "csrf_token": _admin_csrf_token(settings)},
-        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
-    )
-
-
-@router.post("/cherry", response_class=HTMLResponse)
-async def cherry_issue(
-    request: Request,
-    actor: Annotated[str, Depends(_require_admin)],
-    settings: Annotated[Settings, Depends(_settings)],
-    database: Annotated[Database, Depends(_database)],
-) -> HTMLResponse:
-    form = await _read_form(request)
-    _require_csrf(form.get("csrf_token", ""), settings)
-    account_id = _required_text(form, "account_id", max_length=64)
-    try:
-        port = int(form.get("port", ""))
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail="Порт должен быть числом 1024–65535") from exc
-    if not 1024 <= port <= 65535:
-        raise HTTPException(status_code=422, detail="Порт должен быть в диапазоне 1024–65535")
-    with database.session() as session:
-        account = session.get(Account, account_id)
-        if account is None or account.status != "active":
-            raise HTTPException(status_code=404, detail="Пользователь не найден")
-        grant = tokens_service.mint_cherry_code(
-            session, account.id, "admin-panel:" + actor[:40], port
-        )
-        account_name = account.display_name
-    return templates.TemplateResponse(
-        request=request,
-        name="admin/cherry_authorized.html",
-        context={
-            "account_name": account_name,
-            "port": port,
-            "code": grant["code"],
-            "redirect": grant["redirect"],
-            "expires_in": grant["expires_in"],
-        },
-        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
-    )
 
 
 @router.post("/users/{account_id}/tokens", response_class=HTMLResponse)

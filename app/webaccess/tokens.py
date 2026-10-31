@@ -29,7 +29,7 @@ MINT_WINDOW_SECONDS = 60
 MINT_WINDOW_LIMIT = 5
 MAX_ACTIVE_TOKENS = 20
 CHERRY_CLIENT = "cherry"
-CHERRY_TOKEN_NAME = "Cherry Studio"
+CHERRY_TOKEN_NAME = "NoClip Desktop"
 
 
 def _require_active_account(session, account_id: str) -> Account:
