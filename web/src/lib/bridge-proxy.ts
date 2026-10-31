@@ -4,6 +4,11 @@ const allowed = new Set([
   'POST /v1/web/session',
   'POST /v1/web/chat/completions',
   'GET /v1/web/me',
+  'GET /v1/web/tokens',
+  'POST /v1/web/tokens',
+  'POST /v1/web/tokens/revoke',
+  'POST /v1/web/authorize',
+  'POST /v1/web/token',
 ]);
 
 type Env = {

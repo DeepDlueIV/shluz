@@ -88,3 +88,13 @@
 /* Выбранный полный текст анимируется независимо от фонового reduced-motion. */
 .promptWorkspace input[data-autofill="true"] { animation: promptFillIn 500ms ease-out both; animation-duration: 500ms !important; animation-iteration-count: 1 !important; }
 @keyframes promptFillIn { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: translateX(0); } }
+
+.navLinks .signupLink { color: #f6f3ed; display: flex; align-items: center; gap: 7px; margin-left: 3px; padding-left: 22px; border-left: 1px solid #ffffff18; }
+.headerSignup {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid #ffffff22; border-radius: 12px;
+  background: rgb(243 240 233 / 10%);
+  color: #f6f3ed; padding: 9px 16px; font-size: 14px; text-decoration: none;
+  transition: background 180ms;
+}
+.headerSignup:hover { background: rgb(243 240 233 / 20%); }

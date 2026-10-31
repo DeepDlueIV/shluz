@@ -153,3 +153,25 @@
   .loadingDots i { animation: none; opacity: .6; }
   .railButton, .sendButton { transition: none; }
 }
+
+.registerCta {
+  margin: 26px 0 0;
+  border: 1px solid rgb(217 178 106 / 45%);
+  border-radius: 12px;
+  background: rgb(217 178 106 / 8%);
+  padding: 18px;
+}
+.registerCta p { margin: 0 0 12px; color: #ecd9a8; font-size: 15px; line-height: 1.6; }
+.ctaButton {
+  display: inline-block;
+  border: 0;
+  border-radius: 12px;
+  background: #ecd9a8;
+  color: #101112;
+  padding: 11px 18px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 450;
+  text-decoration: none;
+  cursor: pointer;
+}
