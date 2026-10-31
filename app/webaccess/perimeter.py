@@ -21,7 +21,10 @@ class WebPerimeter:
             return await self.app(scope, receive, send)
         request = Request(scope)
         s = self.settings
-        if not s.enabled:
+        # Обмен кода на токен — машинный маршрут: код сам является допуском
+        # (одноразовый, 60 секунд), web-сессии и origins ему не нужны.
+        exchange = scope["path"] == "/v1/web/token" and scope["method"] == "POST"
+        if not s.enabled and not exchange:
             return await JSONResponse(
                 {
                     "error": {
@@ -75,9 +78,10 @@ class WebPerimeter:
                     consume(db, "http:" + network, cfg.http_network_minute, 60)
                     consume(db, "http:global", cfg.http_global_minute, 60)
 
-            await run_in_threadpool(rate)
+            if not exchange:
+                await run_in_threadpool(rate)
             if scope["method"] not in {"GET", "HEAD"}:
-                if origin not in s.origins:
+                if not exchange and origin not in s.origins:
                     raise HTTPException(403, detail={"code": "origin_rejected"})
                 if request.headers.get("content-encoding", "identity") != "identity":
                     raise HTTPException(415, detail={"code": "encoding_unsupported"})
