@@ -8,6 +8,8 @@ const allowed = new Set([
   'POST /v1/web/tokens',
   'POST /v1/web/tokens/revoke',
   'POST /v1/web/authorize',
+  'POST /v1/web/auth/otp/request',
+  'POST /v1/web/auth/otp/verify',
   'POST /v1/web/token',
 ]);
 
