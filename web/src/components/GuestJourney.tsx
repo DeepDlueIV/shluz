@@ -72,7 +72,12 @@ function loadTurnstile(): Promise<TurnstileAPI> {
   return turnstileScript;
 }
 
-async function verifyBrowser(sitekey: string, container: HTMLElement, signal: AbortSignal): Promise<string> {
+export async function verifyBrowser(
+  sitekey: string,
+  container: HTMLElement,
+  signal: AbortSignal,
+  action = "demo_chat",
+): Promise<string> {
   if (!sitekey) throw new GatewayError("web_not_configured");
   const api = await loadTurnstile();
   signal.throwIfAborted();
@@ -95,7 +100,7 @@ async function verifyBrowser(sitekey: string, container: HTMLElement, signal: Ab
     try {
       widgetId = api.render(container, {
         sitekey,
-        action: "demo_chat",
+        action,
         theme: "dark",
         size: "flexible",
         appearance: "interaction-only",

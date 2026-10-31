@@ -109,6 +109,11 @@ export default function GuestChat() {
           <span className={styles.noticeMark} aria-hidden="true">↗</span>
           <div><h2>{t("Demo limit reached", "Демо исчерпано")}</h2><p>{t("The demo quota is used up. A permanent account is required to continue.", "Лимит пробного доступа исчерпан. Для продолжения понадобится постоянный аккаунт.")}</p></div>
         </div>}
+
+        {remaining === 0 && <div className={styles.registerCta}>
+          <p>{t("Create a free account to keep the conversation going. Your demo history stays with you.", "Создайте бесплатный аккаунт, чтобы продолжить разговор. История демо останется с вами.")}</p>
+          <Link href="/login?next=%2Fapp" className={styles.ctaButton}>{t("Create a free account", "Создать бесплатный аккаунт")}</Link>
+        </div>}
       </section>
 
       <div className={styles.composerDock}>

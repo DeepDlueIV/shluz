@@ -1,11 +1,13 @@
 "use client";
 
-/** Account area helpers: session bootstrap, OTP login, personal API tokens. */
+/** Account area: session bootstrap, email-OTP login, personal API tokens.
+ *  Reuses the guest session endpoint: an authenticated session is preserved. */
 
-export type SessionInfo = {
-  csrf_token: string;
-  authenticated: boolean;
-};
+import { startGuestSession, type GuestSession } from "./gateway";
+
+const JSON_HEADERS = { "Content-Type": "application/json", Accept: "application/json" };
+
+export type { GuestSession };
 
 export type TokenRow = {
   id: string;
@@ -17,8 +19,6 @@ export type TokenRow = {
   revoked_at: string | null;
 };
 
-const JSON_HEADERS = { "Content-Type": "application/json" };
-
 async function readJson(response: Response): Promise<Record<string, unknown>> {
   try {
     return (await response.json()) as Record<string, unknown>;
@@ -27,44 +27,56 @@ async function readJson(response: Response): Promise<Record<string, unknown>> {
   }
 }
 
-export async function ensureSession(): Promise<SessionInfo> {
-  const response = await fetch("/v1/web/session", {
-    method: "POST",
-    headers: JSON_HEADERS,
-    credentials: "same-origin",
-  });
-  const body = await readJson(response);
-  if (response.status !== 200) {
-    throw new Error(String(body["error"] ?? "Session unavailable"));
-  }
-  return body as unknown as SessionInfo;
+async function ensureSession(signal?: AbortSignal): Promise<GuestSession> {
+  return startGuestSession(signal);
 }
 
-export async function requestOtp(email: string): Promise<void> {
+async function requestOtp(
+  csrf: string,
+  email: string,
+  turnstileToken: string,
+  signal?: AbortSignal,
+): Promise<{ challenge_id: string; expires_in: number; resend_after: number }> {
   const response = await fetch("/v1/web/auth/otp/request", {
     method: "POST",
-    headers: JSON_HEADERS,
-    credentials: "same-origin",
-    body: JSON.stringify({ email }),
+    credentials: "include",
+    headers: { ...JSON_HEADERS, "X-CSRF-Token": csrf },
+    body: JSON.stringify({ email, turnstile_token: turnstileToken }),
+    cache: "no-store",
+    signal,
   });
   const body = await readJson(response);
   if (response.status !== 200) {
-    throw new Error(String(body["error"] ?? "Could not send the code"));
+    throw new Error(JSON.stringify(body));
   }
+  return {
+    challenge_id: String(body["challenge_id"] ?? ""),
+    expires_in: Number(body["expires_in"] ?? 600),
+    resend_after: Number(body["resend_after"] ?? 60),
+  };
 }
 
-export async function verifyOtp(email: string, code: string): Promise<SessionInfo> {
+async function verifyOtp(
+  csrf: string,
+  challengeId: string,
+  code: string,
+  signal?: AbortSignal,
+): Promise<GuestSession & { challenge_consumed: true }> {
   const response = await fetch("/v1/web/auth/otp/verify", {
     method: "POST",
-    headers: JSON_HEADERS,
-    credentials: "same-origin",
-    body: JSON.stringify({ email, code }),
+    credentials: "include",
+    headers: { ...JSON_HEADERS, "X-CSRF-Token": csrf },
+    body: JSON.stringify({ challenge_id: challengeId, code }),
+    cache: "no-store",
+    signal,
   });
   const body = await readJson(response);
   if (response.status !== 200) {
-    throw new Error(String(body["error"] ?? "Wrong or expired code"));
+    throw new Error(JSON.stringify(body));
   }
-  return body as unknown as SessionInfo;
+  // После проверки выдаётся новая сессия с новым csrf.
+  const session = await startGuestSession();
+  return session as GuestSession & { challenge_consumed: true };
 }
 
 async function call(
@@ -75,9 +87,10 @@ async function call(
 ): Promise<Record<string, unknown>> {
   const response = await fetch(path, {
     method,
+    credentials: "include",
     headers: { ...JSON_HEADERS, "X-CSRF-Token": csrf },
-    credentials: "same-origin",
     body: payload === undefined ? undefined : JSON.stringify(payload),
+    cache: "no-store",
   });
   const body = await readJson(response);
   if (response.status !== 200) {
@@ -116,3 +129,5 @@ export async function mintCherryCode(
     expires_in: Number(body["expires_in"] ?? 60),
   };
 }
+
+export { ensureSession, requestOtp, verifyOtp };

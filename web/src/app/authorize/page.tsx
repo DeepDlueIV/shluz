@@ -1,81 +1,43 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { createToken, ensureSession, mintCherryCode, verifyOtp, requestOtp } from "@/lib/account";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useSitePreferences } from "../../components/SitePreferences";
+import { useAccountGate } from "../../components/AccountGate";
+import { createToken, ensureSession, mintCherryCode } from "../../lib/account";
+import styles from "../../components/Account.module.css";
 
-type Stage = "loading" | "login" | "consent" | "redirecting" | "done";
-
-export default function AuthorizePage() {
-  return (
-    <Suspense fallback={<main className="mx-auto max-w-xl px-6 py-16 text-white">Loading…</main>}>
-      <AuthorizeConsent />
-    </Suspense>
-  );
-}
-
-function AuthorizeConsent() {
+function AuthorizeInner() {
+  const { t } = useSitePreferences();
+  const router = useRouter();
   const params = useSearchParams();
-  const clientName = params.get("client") === "cherry" ? "Cherry Studio" : (params.get("client") ?? "this application");
+  const gate = useAccountGate();
+  const client = params.get("client") ?? "this application";
+  const clientName = client === "cherry" ? "Cherry Studio" : client;
   const portRaw = params.get("port") ?? "";
   const port = Number(portRaw);
   const portValid = Number.isInteger(port) && port >= 1024 && port <= 65535;
 
-  const [stage, setStage] = useState<Stage>("loading");
-  const [csrf, setCsrf] = useState("");
+  const [appName] = useState(clientName);
   const [raw, setRaw] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [email, setEmail] = useState("");
-  const [otpCode, setOtpCode] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const session = await ensureSession();
-        if (cancelled) return;
-        setCsrf(session.csrf_token);
-        setStage(session.authenticated ? "consent" : "login");
-      } catch (cause) {
-        if (!cancelled) {
-          setError(String(cause instanceof Error ? cause.message : cause));
-          setStage("login");
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const login = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      if (!otpSent) {
-        await requestOtp(email);
-        setOtpSent(true);
-      } else {
-        const session = await verifyOtp(email, otpCode);
-        setCsrf(session.csrf_token);
-        setStage("consent");
-      }
-    } catch (cause) {
-      setError(String(cause instanceof Error ? cause.message : cause));
-    } finally {
-      setBusy(false);
+    if (gate.stage === "login") {
+      const next = encodeURIComponent(`/authorize?client=${client}&port=${portRaw}`);
+      router.replace(`/login?next=${next}`);
     }
-  };
+  }, [gate.stage, client, portRaw, router]);
 
-  const allowWithRedirect = async () => {
+  const mint = async () => {
     setBusy(true);
     setError(null);
     try {
-      const grant = await mintCherryCode(csrf, port);
-      setStage("redirecting");
+      await ensureSession();
+      const grant = await mintCherryCode(gate.csrf, port);
       window.location.href = grant.redirect;
     } catch (cause) {
       setError(String(cause instanceof Error ? cause.message : cause));
@@ -83,16 +45,16 @@ function AuthorizeConsent() {
     }
   };
 
-  const allowWithShownToken = async () => {
+  const showToken = async () => {
     setBusy(true);
     setError(null);
     try {
-      const token = await createToken(csrf, "Cherry Studio");
+      await ensureSession();
+      const token = await createToken(gate.csrf, appName);
       setRaw(token);
-      setStage("done");
+      setBusy(false);
     } catch (cause) {
       setError(String(cause instanceof Error ? cause.message : cause));
-    } finally {
       setBusy(false);
     }
   };
@@ -105,112 +67,112 @@ function AuthorizeConsent() {
   };
 
   return (
-    <main className="mx-auto max-w-xl px-6 py-16 text-white">
-      <h1 className="text-2xl font-semibold">
-        {clientName} requests access to your account
+    <>
+      {gate.stage === "loading" && (
+        <p className={styles.loading}>{t("Loading…", "Загрузка…")}</p>
+      )}
+
+      {gate.stage === "ready" && (
+        <>
+          {error && <div className={styles.error}>{error}</div>}
+          {!raw && (
+            <section className={styles.section}>
+              <h2 className={styles.sectionTitle}>
+                {t("Approve access", "Подтвердите доступ")}
+              </h2>
+              <p className={styles.subtitle}>
+                {t(
+                  `${appName} will receive a personal API token acting on behalf of your account. You can revoke it any time on the API tokens page.`,
+                  `${appName} получит персональный API-токен от имени вашего аккаунта. Отозвать его можно в любой момент на странице API-токенов.`,
+                )}
+              </p>
+              <div className={styles.formRow}>
+                <button
+                  type="button"
+                  className={styles.primary}
+                  disabled={busy}
+                  onClick={portValid ? mint : showToken}
+                >
+                  {t("Approve", "Разрешить")}
+                </button>
+                {!portValid && (
+                  <span className={styles.hint}>
+                    {t(
+                      "No valid local callback port was passed — the token will be shown here.",
+                      "Приложение не передало корректный локальный порт — токен будет показан здесь.",
+                    )}
+                  </span>
+                )}
+              </div>
+              {portValid && (
+                <p className={styles.hint}>
+                  {t(
+                    "Or show the token here and paste it into the application manually.",
+                    "Или покажите токен здесь и вставьте его в приложение вручную.",
+                  )}
+                  {" "}
+                  <button type="button" className={styles.ghost} disabled={busy} onClick={showToken}>
+                    {t("Show the token", "Показать токен")}
+                  </button>
+                </p>
+              )}
+            </section>
+          )}
+
+          {raw && (
+            <section className={styles.secret}>
+              <h2 className={styles.secretTitle}>
+                {t(
+                  "Approved — paste this token into the application",
+                  "Доступ разрешён — вставьте токен в приложение",
+                )}
+              </h2>
+              <code className={styles.code}>{raw}</code>
+              <button type="button" className={styles.copy} onClick={copy}>
+                {copied ? t("Copied", "Скопировано") : t("Copy token", "Скопировать токен")}
+              </button>
+              <p className={styles.hint}>
+                {t(
+                  "You can revoke this token any time on the API tokens page.",
+                  "Отозвать этот токен можно в любой момент на странице API-токенов.",
+                )}
+              </p>
+            </section>
+          )}
+        </>
+      )}
+
+      {gate.stage === "login" && (
+        <p className={styles.loading}>
+          {t("Sign-in required. Redirecting…", "Требуется вход. Перенаправляем…")}
+        </p>
+      )}
+    </>
+  );
+}
+
+export default function AuthorizePage() {
+  const { t } = useSitePreferences();
+  return (
+    <main className={styles.main}>
+      <header className={styles.header}>
+        <Link href="/" className={styles.wordmark}>NoClip</Link>
+        <Link href="/tokens" className={styles.home}>
+          {t("API tokens", "API-токены")}
+        </Link>
+      </header>
+      <h1 className={styles.title}>
+        {t("Authorize a desktop application", "Авторизация настольного приложения")}
       </h1>
-      <p className="mt-2 text-sm text-neutral-400">
-        Approving creates a personal API token for {clientName}. The token acts on
-        behalf of your account and can be revoked any time on the API tokens page.
+      <p className={styles.subtitle}>
+        {t(
+          "Confirm access for the application that sent you here. Nothing is shared except a personal API token you can revoke.",
+          "Подтвердите доступ приложению, которое вас сюда направило. Кроме персонального токена, который можно отозвать, ничего не передаётся.",
+        )}
       </p>
-
-      {stage === "loading" && <p className="mt-8 text-neutral-400">Loading…</p>}
-
-      {stage === "login" && (
-        <section className="mt-8 space-y-3">
-          <h2 className="text-lg font-medium">Sign in first</h2>
-          {!otpSent ? (
-            <div className="flex gap-2">
-              <input
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@example.com"
-                className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2"
-              />
-              <button
-                onClick={login}
-                disabled={busy || !email}
-                className="rounded bg-white px-4 py-2 font-medium text-black disabled:opacity-40"
-              >
-                Send code
-              </button>
-            </div>
-          ) : (
-            <div className="flex gap-2">
-              <input
-                value={otpCode}
-                onChange={(event) => setOtpCode(event.target.value)}
-                placeholder="6-digit code from the email"
-                className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2"
-              />
-              <button
-                onClick={login}
-                disabled={busy || !otpCode}
-                className="rounded bg-white px-4 py-2 font-medium text-black disabled:opacity-40"
-              >
-                Verify
-              </button>
-            </div>
-          )}
-        </section>
-      )}
-
-      {stage === "consent" && (
-        <section className="mt-8 space-y-4">
-          {!portValid && (
-            <p className="rounded border border-amber-700 bg-amber-950/40 px-3 py-2 text-sm text-amber-200">
-              The application did not pass a valid local callback port, so use
-              “show the token” below and paste it into {clientName}.
-            </p>
-          )}
-          {portValid && (
-            <button
-              onClick={allowWithRedirect}
-              disabled={busy}
-              className="w-full rounded bg-white px-4 py-3 font-medium text-black disabled:opacity-40"
-            >
-              Allow and open {clientName}
-            </button>
-          )}
-          <button
-            onClick={allowWithShownToken}
-            disabled={busy}
-            className="w-full rounded border border-neutral-600 px-4 py-3 font-medium disabled:opacity-40"
-          >
-            Allow and show the token here
-          </button>
-        </section>
-      )}
-
-      {stage === "redirecting" && (
-        <p className="mt-8 text-neutral-300">
-          Approved. Returning you to {clientName}…
-        </p>
-      )}
-
-      {stage === "done" && raw && (
-        <section className="mt-8 rounded border border-amber-700 bg-amber-950/40 p-4">
-          <h2 className="font-medium text-amber-200">
-            Approved — paste this token into {clientName}
-          </h2>
-          <code className="mt-2 block break-all rounded bg-black/60 p-3 text-sm">
-            {raw}
-          </code>
-          <button
-            onClick={copy}
-            className="mt-2 rounded bg-amber-200 px-3 py-1.5 text-sm font-medium text-black"
-          >
-            {copied ? "Copied" : "Copy token"}
-          </button>
-        </section>
-      )}
-
-      {error && (
-        <p className="mt-6 rounded border border-red-800 bg-red-950 px-3 py-2 text-sm text-red-300">
-          {error}
-        </p>
-      )}
+      <Suspense fallback={<p className={styles.loading}>Loading…</p>}>
+        <AuthorizeInner />
+      </Suspense>
     </main>
   );
 }
