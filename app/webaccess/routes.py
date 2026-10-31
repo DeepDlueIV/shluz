@@ -444,7 +444,7 @@ def web_authorize_cherry(payload: CherryAuthorizePayload, request: Request):
     settings = require_enabled(request)
     with locked_session(request.app.state.database) as s:
         grant = tokens_service.mint_cherry_code(
-            s, settings, account.id, row.id, payload.port
+            s, account.id, row.id, payload.port
         )
     return grant
 
@@ -452,10 +452,7 @@ def web_authorize_cherry(payload: CherryAuthorizePayload, request: Request):
 @router.post("/token")
 def web_token_exchange(payload: TokenExchangePayload, request: Request):
     """Обмен одноразового кода на персональный токен (Cherry, без сессии)."""
-    settings = require_enabled(request)
     with locked_session(request.app.state.database) as s:
-        token, raw = tokens_service.exchange_cherry_code(
-            s, settings, payload.code
-        )
+        token, raw = tokens_service.exchange_cherry_code(s, payload.code)
         data = {"raw_token": raw, "name": token.name, "token_prefix": token.token_prefix}
     return data

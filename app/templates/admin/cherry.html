@@ -1,0 +1,25 @@
+{% extends 'admin/base.html' %}
+{% block title %}Cherry Studio — доступ{% endblock %}
+{% block content %}
+<header class="hero compact"><div><p class="eyebrow">Authorize-флоу</p><h1>Доступ Cherry Studio</h1><p class="muted">Одноразовый код связывает аккаунт пользователя с настольным клиентом.</p></div><span class="status">Шаг 1</span></header>
+<section class="section-block">
+  <h2>Выдать код доступа</h2>
+  <form method="post" action="/admin/cherry">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Аккаунт
+      <select name="account_id">
+        {% for account in accounts %}
+        <option value="{{ account.id }}">{{ account.display_name }}{% if account.plan %} · {{ account.plan }}{% endif %}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Локальный порт Cherry (1024–65535)
+      <input type="number" name="port" min="1024" max="65535" value="51715" required>
+    </label>
+    <button type="submit">Выдать код и открыть Cherry</button>
+  </form>
+  <p class="muted">Код живёт 60 секунд, принимает одну попытку обмена и работает только
+  с аккаунтом, выбранным выше. Cherry откроет локальный callback и обменяет код на
+  персональный токен автоматически.</p>
+</section>
+{% endblock %}

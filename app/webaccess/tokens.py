@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 import time
 
@@ -15,7 +16,12 @@ from sqlalchemy import func, select
 from app.db.models import Account, ApiToken
 from app.db.repositories import create_api_token, generate_api_token, revoke_api_token
 from app.webaccess.models import WebAuthorizeCode
-from app.webaccess.security import digest, reject
+from app.webaccess.security import reject
+
+
+def code_id(raw_code: str) -> str:
+    """Адрес кода в БД: plain sha256 — mint и обмен не зависят от секретов инстанса."""
+    return hashlib.sha256(raw_code.encode()).hexdigest()
 
 CODE_TTL_SECONDS = 60
 CODE_MAX_ATTEMPTS = 3
@@ -84,7 +90,7 @@ def revoke_own_token(session, account_id: str, token_id: str) -> bool:
     return revoke_api_token(session, token_id)
 
 
-def mint_cherry_code(session, settings, account_id: str, session_id: str, port: int):
+def mint_cherry_code(session, account_id: str, session_id: str, port: int):
     """Одноразовый код: 60 секунд, лимит выпуска, привязка к аккаунту и сессии."""
     now = int(time.time())
     minted = session.scalar(
@@ -103,7 +109,7 @@ def mint_cherry_code(session, settings, account_id: str, session_id: str, port: 
         )
     raw = secrets.token_urlsafe(32)
     code = WebAuthorizeCode(
-        id=digest(settings.secret.get_secret_value(), "authorize", raw),
+        id=code_id(raw),
         account_id=account_id,
         session_id=session_id,
         client=CHERRY_CLIENT,
@@ -117,10 +123,9 @@ def mint_cherry_code(session, settings, account_id: str, session_id: str, port: 
     return {"code": raw, "redirect": redirect, "expires_in": CODE_TTL_SECONDS}
 
 
-def exchange_cherry_code(session, settings, raw_code: str) -> tuple[ApiToken, str]:
+def exchange_cherry_code(session, raw_code: str) -> tuple[ApiToken, str]:
     """Обмен кода на персональный токен. Одноразово, с лимитом попыток."""
-    key = digest(settings.secret.get_secret_value(), "authorize", raw_code)
-    code = session.get(WebAuthorizeCode, key)
+    code = session.get(WebAuthorizeCode, code_id(raw_code))
     now = int(time.time())
     if code is None or code.used or code.expires <= now:
         reject("code_invalid", 400, "Код недействителен или истёк. Запросите новый.")

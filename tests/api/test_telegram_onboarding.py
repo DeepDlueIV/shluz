@@ -89,13 +89,14 @@ def plan(client):
 
 
 def admin_post(client, path, **data):
+    auth = data.pop("auth", ("owner", "test-password"))
     return client.post(
         path,
         data={
             "csrf_token": _admin_csrf_token(client.app.state.settings),
             **data,
         },
-        auth=("owner", "test-password"),
+        auth=auth,
         follow_redirects=False,
     )
 

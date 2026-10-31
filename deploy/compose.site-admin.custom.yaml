@@ -1,6 +1,6 @@
 services:
   shluz:
-    image: shluz-local-site-admin:6024267
+    image: shluz-local-site-admin:910325f
     environment:
       SHLUZ_SITE_DEMO_DATABASE_URL: sqlite+pysqlite:////app/site-demo-data/guest-test.sqlite
     volumes:

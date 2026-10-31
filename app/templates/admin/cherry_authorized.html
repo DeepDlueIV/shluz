@@ -1,0 +1,16 @@
+{% extends 'admin/base.html' %}
+{% from 'admin/components.html' import hint %}
+{% block title %}Код выдан{% endblock %}
+{% block content %}
+<header class="hero compact"><div><p class="eyebrow">Одноразовый код</p><h1>Код доступа Cherry Studio</h1><p class="muted">{{ account_name }} · порт {{ port }}</p></div><span class="status">Ждёт обмена</span></header>
+<section class="token-secret section-block">
+  <h2>Переход в Cherry произойдёт автоматически {{ hint('api_token') }}</h2>
+  <p>Код действует <strong>{{ expires_in }} секунд</strong> и принимается один раз.</p>
+  <code class="token-value" id="cherry-code">{{ code }}</code>
+  <button type="button" data-copy="cherry-code">Скопировать код</button><span class="copy-status" role="status" aria-live="polite"></span>
+  <p>Если Cherry не открылась автоматически — вставьте код в окно приложения.</p>
+  <p class="muted">Обмен кода на токен: POST /v1/web/token на этом же шлюзе.</p>
+</section>
+<div class="links"><a href="/admin/cherry">Выдать другой код</a><a href="/admin/users">Вернуться к пользователям</a></div>
+<script>setTimeout(function () { window.location.href = {{ redirect | tojson }}; }, 1200);</script>
+{% endblock %}
