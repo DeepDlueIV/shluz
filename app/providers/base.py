@@ -34,6 +34,9 @@ class ChatMessage:
     content: str
     # Нативные OpenAI-части (text/image_url); задаются вместо content при наличии.
     parts: tuple[dict, ...] | None = None
+    # История tool-цикла: вызовы на assistant, ссылка на вызов на tool.
+    tool_calls: tuple[dict, ...] | None = None
+    tool_call_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

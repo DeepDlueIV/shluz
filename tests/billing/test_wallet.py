@@ -351,3 +351,21 @@ def test_migration_preserves_old_account_and_subscription_defaults(tmp_path, mon
         )
         assert conn.execute("SELECT COUNT(*) FROM wallet_entries").fetchone() == (0,)
     command.check(cfg)
+
+
+def test_repeated_failure_settlement_is_stable_and_never_doubles(wc):
+    from app.billing.service import snapshot
+
+    aid, pid = setup(wc)
+    bound(wc)
+    allow_paid(wc, pid)
+    r = reserve_paid(wc, aid)
+    for _ in range(3):
+        wc.app.state.usage_service.record_failure(r, error_code="provider_error")
+    with wc.app.state.database.session() as s:
+        from app.billing.models import WalletEntry
+
+        assert Decimal(snapshot(s, aid)["reserved_usd"]) == Decimal("2.4")
+        assert (
+            s.query(WalletEntry).filter(WalletEntry.account_id == aid).count() == 1
+        )  # только начисление, дебетов нет

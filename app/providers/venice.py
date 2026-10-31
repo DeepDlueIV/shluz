@@ -7,6 +7,7 @@ import httpx
 
 from app.config import Settings
 from app.providers.base import (
+    ChatMessage,
     ChatRequest,
     ChatResult,
     ModelInfo,
@@ -161,17 +162,29 @@ class VeniceProvider:
         )
 
     @staticmethod
-    def _payload(request: ChatRequest, *, stream: bool) -> dict[str, Any]:
+    def _message_payload(message: ChatMessage) -> dict[str, Any]:
+        if message.parts:
+            return {"role": message.role, "content": list(message.parts)}
+        if message.role == "assistant" and message.tool_calls:
+            # content: null — стандарт OpenAI для assistant с tool_calls.
+            payload_message: dict[str, Any] = {"role": "assistant"}
+            if message.content:
+                payload_message["content"] = message.content
+            payload_message["tool_calls"] = [dict(tool) for tool in message.tool_calls]
+            return payload_message
+        return {"role": message.role, "content": message.content or ""}
+
+    @classmethod
+    def _payload(cls, request: ChatRequest, *, stream: bool) -> dict[str, Any]:
+        messages = []
+        for m in request.messages:
+            payload_message = cls._message_payload(m)
+            if m.role == "tool" and m.tool_call_id:
+                payload_message["tool_call_id"] = m.tool_call_id
+            messages.append(payload_message)
         body: dict[str, Any] = {
             "model": request.model,
-            "messages": [
-                (
-                    {"role": m.role, "content": list(m.parts)}
-                    if m.parts
-                    else {"role": m.role, "content": m.content}
-                )
-                for m in request.messages
-            ],
+            "messages": messages,
             "stream": stream,
             # Venice понимает только max_tokens и молча игнорирует
             # max_completion_tokens: без этого бюджет генерации не работает.

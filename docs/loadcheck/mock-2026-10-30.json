@@ -1,0 +1,12 @@
+{
+  "requests": 20,
+  "wall_seconds": 1.13,
+  "rps": 17.8,
+  "p50_ms": 350,
+  "p95_ms": 1121,
+  "max_ms": 1121,
+  "codes": {
+    "200": 20
+  },
+  "mean_ms": 445
+}

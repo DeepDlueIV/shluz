@@ -328,3 +328,53 @@ def test_chat_completion_forwards_tools_parts_and_parses_tool_calls():
     assert result.content == ""
     assert result.tool_calls[0]["function"]["name"] == "get_weather"
 
+def test_payload_preserves_tool_history_for_venice():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["payload"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "id": "venice-3",
+                "choices": [
+                    {"message": {"role": "assistant", "content": "Дождь"}, "finish_reason": "stop"}
+                ],
+                "usage": {"prompt_tokens": 8, "completion_tokens": 2},
+                "cost": {"usd": "0.001", "diem": 0},
+            },
+        )
+
+    provider = _provider(handler)
+    result = provider.chat_completion(
+        ChatRequest(
+            "venice-model",
+            [
+                ChatMessage("user", "Какая погода?"),
+                ChatMessage(
+                    "assistant",
+                    "",
+                    tool_calls=(
+                        {
+                            "id": "call_7",
+                            "type": "function",
+                            "function": {"name": "get_weather", "arguments": "{\"city\": \"СПб\"}"},
+                        },
+                    ),
+                ),
+                ChatMessage("tool", "дождь, 12C", tool_call_id="call_7"),
+            ],
+        )
+    )
+
+    messages = captured["payload"]["messages"]
+    assert messages[1]["role"] == "assistant"
+    assert "content" not in messages[1]  # null/пустой content опускается при tool_calls
+    assert messages[1]["tool_calls"][0]["function"]["name"] == "get_weather"
+    assert messages[2] == {
+        "role": "tool",
+        "content": "дождь, 12C",
+        "tool_call_id": "call_7",
+    }
+    assert result.content == "Дождь"
+
