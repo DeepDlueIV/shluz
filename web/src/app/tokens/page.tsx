@@ -116,7 +116,7 @@ function TokensInner() {
                 className={styles.input}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder={t("Token name, e.g. Cherry Studio", "Название токена, например Cherry Studio")}
+                placeholder={t("Token name, e.g. NoClip Desktop", "Название токена, например NoClip Desktop")}
                 maxLength={100}
               />
               <button

@@ -14,7 +14,7 @@ function AuthorizeInner() {
   const params = useSearchParams();
   const gate = useAccountGate();
   const client = params.get("client") ?? "this application";
-  const clientName = client === "cherry" ? "Cherry Studio" : client;
+  const clientName = client === "cherry" ? "NoClip Desktop" : client;
   const portRaw = params.get("port") ?? "";
   const port = Number(portRaw);
   const portValid = Number.isInteger(port) && port >= 1024 && port <= 65535;
