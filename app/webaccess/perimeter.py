@@ -70,7 +70,8 @@ class WebPerimeter:
             await send(message)
 
         try:
-            _, network = client_network(request, s)
+            if not exchange:
+                _, network = client_network(request, s)
 
             def rate():
                 with locked_session(self.database) as db:
