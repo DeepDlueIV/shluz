@@ -84,6 +84,9 @@ class ModelInfo:
     input_price_usd: Decimal | None = None
     output_price_usd: Decimal | None = None
     unit_price_usd: Decimal | None = None
+    # Возможности модели (supportsFunctionCalling, supportsVision, ...) как
+    # в каталоге провайдера; None = провайдер не сообщает.
+    capabilities: dict | None = None
 
 
 class Provider(Protocol):

@@ -1,13 +1,16 @@
 """Контракт ошибок /v1/*: OpenAI-стиль, без эха содержимого запроса."""
 
 
-
 def test_validation_error_on_api_is_openai_style_and_never_echoes_prompt(client):
     secret_prompt = "SECRET-PROMPT-CONTENT-42"
     response = client.post(
         "/v1/chat/completions",
         headers={"Authorization": "Bearer test-api-token"},
-        json={"model": "mock-chat", "messages": [{"role": "user", "content": 123}], "x": secret_prompt},
+        json={
+            "model": "mock-chat",
+            "messages": [{"role": "user", "content": 123}],
+            "x": secret_prompt,
+        },
     )
 
     assert response.status_code == 422

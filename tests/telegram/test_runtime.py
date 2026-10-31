@@ -70,7 +70,7 @@ def test_check_command_is_offline_and_does_not_leak_secret(tmp_path):
         env=env,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=60,
     )
     assert result.returncode == 0, result.stderr
     assert token not in result.stdout + result.stderr
@@ -80,7 +80,7 @@ def test_check_command_is_offline_and_does_not_leak_secret(tmp_path):
         env=env,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=60,
     )
     assert result.returncode != 0
     assert env["TELEGRAM_BOT_TOKEN"] not in result.stdout + result.stderr

@@ -226,3 +226,29 @@ def test_stream_aggregates_and_emits_tool_call_fragments(tmp_path):
     assert "tool_calls" in finishes
     usage = [frame for frame in frames if frame.get("usage")]
     assert usage and usage[-1]["usage"]["prompt_tokens"] == 2
+
+
+def test_models_endpoint_exposes_capabilities_optionally(tmp_path):
+    """/v1/models: capabilities присутствует у провайдера с метаданными и
+    отсутствует у провайдера без них (обратная совместимость)."""
+
+    class CapProvider:
+        name = "cap"
+
+        def list_models(self):
+            return [
+                ModelInfo(
+                    id="cap-chat",
+                    provider=self.name,
+                    capabilities={"supportsFunctionCalling": True},
+                ),
+                ModelInfo(id="plain-chat", provider=self.name),
+            ]
+
+    client = _client(tmp_path, CapProvider())
+    response = client.get("/v1/models", headers={"Authorization": "Bearer bootstrap"})
+
+    assert response.status_code == 200
+    items = {item["id"]: item for item in response.json()["data"]}
+    assert items["cap-chat"]["capabilities"] == {"supportsFunctionCalling": True}
+    assert "capabilities" not in items["plain-chat"]

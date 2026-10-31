@@ -378,3 +378,39 @@ def test_payload_preserves_tool_history_for_venice():
     }
     assert result.content == "Дождь"
 
+
+
+def test_list_models_passes_capabilities_through():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "id": "venice:cap-model",
+                        "type": "text",
+                        "model_spec": {
+                            "type": "text",
+                            "name": "Cap Model",
+                            "pricing": {"input": {"usd": 1}, "output": {"usd": 2}},
+                            "capabilities": {
+                                "supportsFunctionCalling": True,
+                                "supportsVision": False,
+                                "supportsReasoning": True,
+                                "supportsAudioInput": False,
+                                "supportsVideoInput": False,
+                            },
+                        },
+                    }
+                ]
+            },
+        )
+
+    models = _provider(handler).list_models()
+    assert models[0].capabilities == {
+        "supportsFunctionCalling": True,
+        "supportsVision": False,
+        "supportsReasoning": True,
+        "supportsAudioInput": False,
+        "supportsVideoInput": False,
+    }

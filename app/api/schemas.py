@@ -92,6 +92,9 @@ class ModelObjectSchema(BaseModel):
     object: Literal["model"] = "model"
     created: int = 0
     owned_by: str
+    # Опционально: флаги возможностей провайдера; отсутствует, если провайдер
+    # их не сообщает (обратная совместимость с существующими клиентами).
+    capabilities: dict | None = None
 
 
 class ModelListResponseSchema(BaseModel):

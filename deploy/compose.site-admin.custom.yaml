@@ -1,0 +1,11 @@
+services:
+  shluz:
+    image: shluz-local-site-admin:d298044
+    environment:
+      SHLUZ_SITE_DEMO_DATABASE_URL: sqlite+pysqlite:////app/site-demo-data/guest-test.sqlite
+    volumes:
+      - site_guest_data:/app/site-demo-data
+volumes:
+  site_guest_data:
+    external: true
+    name: noclip_web_guest_test_data

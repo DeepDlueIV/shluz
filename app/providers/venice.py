@@ -372,6 +372,7 @@ class VeniceProvider:
                     unit_price_usd=_price_usd(
                         pricing.get("unit") or pricing.get("per_image") or pricing.get("image")
                     ),
+                    capabilities=spec.get("capabilities") or None,
                 )
             )
         return models

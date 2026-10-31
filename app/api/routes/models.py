@@ -18,7 +18,7 @@ from app.providers.registry import ProviderRegistry
 router = APIRouter()
 
 
-@router.get("/models", response_model=ModelListResponseSchema)
+@router.get("/models", response_model=ModelListResponseSchema, response_model_exclude_none=True)
 def list_models(
     registry: Annotated[ProviderRegistry, Depends(get_provider_registry)],
     principal: Annotated[AuthenticatedPrincipal, Depends(require_api_token)],
@@ -39,7 +39,13 @@ def list_models(
         return JSONResponse(status_code=NoModelsProvisioned.status, content=error.model_dump())
     return ModelListResponseSchema(
         data=[
-            ModelObjectSchema(id=model.id, owned_by=model.provider)
+            ModelObjectSchema(
+                id=model.id,
+                owned_by=model.provider,
+                # exclude_none выше: без capabilities от провайдера поле не попадает
+                # в ответ — существующие клиенты видят прежнюю форму элемента.
+                capabilities=model.capabilities,
+            )
             for model in registry.list_models()
             if allowed is None or model.id in allowed
         ]
