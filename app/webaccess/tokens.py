@@ -28,8 +28,8 @@ CODE_MAX_ATTEMPTS = 3
 MINT_WINDOW_SECONDS = 60
 MINT_WINDOW_LIMIT = 5
 MAX_ACTIVE_TOKENS = 20
-CHERRY_CLIENT = "cherry"
-CHERRY_TOKEN_NAME = "NoClip Desktop"
+DESKTOP_CLIENT = "noclip-desktop"
+DESKTOP_TOKEN_NAME = "NoClip Desktop"
 
 
 def _require_active_account(session, account_id: str) -> Account:
@@ -76,7 +76,7 @@ def create_own_token(session, account_id: str, name: str) -> tuple[ApiToken, str
     token = create_api_token(
         session,
         account_id=account_id,
-        name=name.strip()[:100] or CHERRY_TOKEN_NAME,
+        name=name.strip()[:100] or DESKTOP_TOKEN_NAME,
         raw_token=raw,
         source="harness",
     )
@@ -90,7 +90,7 @@ def revoke_own_token(session, account_id: str, token_id: str) -> bool:
     return revoke_api_token(session, token_id)
 
 
-def mint_cherry_code(session, account_id: str, session_id: str, port: int):
+def mint_client_code(session, account_id: str, session_id: str, client: str, port: int):
     """Одноразовый код: 60 секунд, лимит выпуска, привязка к аккаунту и сессии."""
     now = int(time.time())
     minted = session.scalar(
@@ -112,7 +112,7 @@ def mint_cherry_code(session, account_id: str, session_id: str, port: int):
         id=code_id(raw),
         account_id=account_id,
         session_id=session_id,
-        client=CHERRY_CLIENT,
+        client=client,
         redirect_port=port,
         created=now,
         expires=now + CODE_TTL_SECONDS,
@@ -123,13 +123,13 @@ def mint_cherry_code(session, account_id: str, session_id: str, port: int):
     return {"code": raw, "redirect": redirect, "expires_in": CODE_TTL_SECONDS}
 
 
-def exchange_cherry_code(session, raw_code: str) -> tuple[ApiToken, str]:
+def exchange_client_code(session, raw_code: str) -> tuple[ApiToken, str]:
     """Обмен кода на персональный токен. Одноразово, с лимитом попыток."""
     code = session.get(WebAuthorizeCode, code_id(raw_code))
     now = int(time.time())
     if code is None or code.used or code.expires <= now:
         reject("code_invalid", 400, "Код недействителен или истёк. Запросите новый.")
-    if code.attempts >= CODE_MAX_ATTEMPTS or code.client != CHERRY_CLIENT:
+    if code.attempts >= CODE_MAX_ATTEMPTS:
         code.used = True
         reject("code_invalid", 400, "Код недействителен или истёк. Запросите новый.")
     code.attempts += 1
@@ -137,7 +137,7 @@ def exchange_cherry_code(session, raw_code: str) -> tuple[ApiToken, str]:
     token = create_api_token(
         session,
         account_id=code.account_id,
-        name=CHERRY_TOKEN_NAME,
+        name=DESKTOP_TOKEN_NAME,
         raw_token=raw,
         source="harness",
     )

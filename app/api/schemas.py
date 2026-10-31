@@ -24,7 +24,7 @@ class ToolCallSchema(BaseModel):
 
 class ChatMessageSchema(BaseModel):
     role: Literal["system", "user", "assistant", "tool"]
-    # OpenAI-формат: строка, массив частей (Cherry Studio шлёт массив всегда)
+    # OpenAI-формат: строка, массив частей (настольные клиенты шлют массив всегда)
     # или null — стандарт для assistant-сообщения с tool_calls.
     content: str | list[ContentPartSchema] | None = None
     # История tool-цикла: вызовы на assistant, ссылка на вызов на tool.

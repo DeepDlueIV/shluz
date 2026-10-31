@@ -388,7 +388,8 @@ class TokenRevokePayload(BaseModel):
     id: str = Field(min_length=1, max_length=64)
 
 
-class CherryAuthorizePayload(BaseModel):
+class DesktopAuthorizePayload(BaseModel):
+    client: str = Field(default="noclip-desktop", pattern=r"^[a-z0-9-]{2,32}$")
     port: int = Field(ge=1024, le=65535)
 
 
@@ -438,21 +439,21 @@ def web_tokens_revoke(payload: TokenRevokePayload, request: Request):
     return {"revoked": True}
 
 
-@router.post("/authorize/cherry")
-def web_authorize_cherry(payload: CherryAuthorizePayload, request: Request):
+@router.post("/authorize")
+def web_authorize_desktop(payload: DesktopAuthorizePayload, request: Request):
     row, account = _account_of(request, csrf=True)
     settings = require_enabled(request)
     with locked_session(request.app.state.database) as s:
-        grant = tokens_service.mint_cherry_code(
-            s, account.id, row.id, payload.port
+        grant = tokens_service.mint_client_code(
+            s, account.id, row.id, payload.client, payload.port
         )
     return grant
 
 
 @router.post("/token")
 def web_token_exchange(payload: TokenExchangePayload, request: Request):
-    """Обмен одноразового кода на персональный токен (Cherry, без сессии)."""
+    """Обмен одноразового кода на персональный токен (настольный клиент, без сессии)."""
     with locked_session(request.app.state.database) as s:
-        token, raw = tokens_service.exchange_cherry_code(s, payload.code)
+        token, raw = tokens_service.exchange_client_code(s, payload.code)
         data = {"raw_token": raw, "name": token.name, "token_prefix": token.token_prefix}
     return data

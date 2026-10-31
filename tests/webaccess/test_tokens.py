@@ -1,4 +1,4 @@
-"""Кабинет API-токенов и authorize-флоу Cherry: только свои, одноразовость, лимиты."""
+"""Кабинет API-токенов и authorize-флоу настольного клиента: только свои, одноразовость, лимиты."""
 
 
 from app.db.models import Account, ModelPolicy, Plan, Subscription
@@ -94,10 +94,10 @@ def test_foreign_tokens_are_invisible_and_irrevocable(browser):
     assert still_valid.status_code == 200
 
 
-def test_cherry_authorize_exchange_roundtrip(browser):
+def test_desktop_authorize_exchange_roundtrip(browser):
     aid, _, auth = _login(browser)
 
-    minted = browser.post("/v1/web/authorize/cherry", json={"port": 51000}, **auth)
+    minted = browser.post("/v1/web/authorize", json={"client": "noclip-desktop", "port": 51000}, **auth)
     assert minted.status_code == 200
     grant = minted.json()
     assert grant["redirect"].startswith("http://127.0.0.1:51000/callback?code=")
@@ -118,17 +118,17 @@ def test_cherry_authorize_exchange_roundtrip(browser):
     assert unknown.status_code == 400
 
 
-def test_cherry_authorize_rejects_bad_port(browser):
+def test_desktop_authorize_rejects_bad_port(browser):
     _login(browser)
     for port in (80, 70000, "abc"):
-        response = browser.post("/v1/web/authorize/cherry", json={"port": port})
+        response = browser.post("/v1/web/authorize", json={"client": "noclip-desktop", "port": port})
         assert response.status_code == 422
 
 
-def test_cherry_mint_is_rate_limited(browser):
+def test_desktop_mint_is_rate_limited(browser):
     aid, _, auth = _login(browser)
     statuses = [
-        browser.post("/v1/web/authorize/cherry", json={"port": 51000}, **auth).status_code
+        browser.post("/v1/web/authorize", json={"client": "noclip-desktop", "port": 51000}, **auth).status_code
         for _ in range(6)
     ]
     assert statuses[:5] == [200] * 5
@@ -144,29 +144,17 @@ def test_unauthenticated_account_session_cannot_mint(browser):
         "cookies": {browser.app.state.web_settings.cookie_name: None},
     }
     response = browser.post(
-        "/v1/web/authorize/cherry",
+        "/v1/web/authorize",
         json={"port": 51000},
         headers={"X-CSRF-Token": guest["csrf_token"], "Origin": "https://shluz.test"},
     )
     assert response.status_code == 401
 
 
-def _extract_code(page_text: str) -> str:
-    import json
-    import re
-
-    match = re.search(r'<code class="token-value" id="cherry-code">([^<]+)</code>', page_text)
-    assert match, "код должен отображаться на странице"
-    # страница экранирует URL редиректа; код — только [A-Za-z0-9_-]
-    candidate = match.group(1).strip()
-    json.loads(json.dumps(candidate))
-    return candidate
-
-
 def test_exchange_works_even_when_web_disabled(browser):
     """Главный шлюз может иметь web выключенным: обмен кода работает всегда."""
     aid, _, auth = _login(browser)
-    minted = browser.post("/v1/web/authorize/cherry", json={"port": 51715}, **auth)
+    minted = browser.post("/v1/web/authorize", json={"client": "noclip-desktop", "port": 51715}, **auth)
     assert minted.status_code == 200
     grant = minted.json()
 
