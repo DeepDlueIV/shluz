@@ -54,7 +54,7 @@ if ($password -notmatch '^[a-f0-9]{64}$') { throw 'Некорректный brid
 $policy = @"
 on_http_request:
   - expressions:
-      - "!((req.method == 'POST' && (req.url.path == '/v1/web/session' || req.url.path == '/v1/web/chat/completions')) || (req.method == 'GET' && req.url.path == '/v1/web/me'))"
+      - "!((req.method == 'POST' && (req.url.path == '/v1/web/session' || req.url.path == '/v1/web/chat/completions' || req.url.path == '/v1/web/tokens' || req.url.path == '/v1/web/tokens/revoke' || req.url.path == '/v1/web/authorize' || req.url.path == '/v1/web/token')) || (req.method == 'GET' && (req.url.path == '/v1/web/me' || req.url.path == '/v1/web/tokens')))"
     actions:
       - type: deny
   - actions:
